@@ -2,13 +2,9 @@ import "server-only";
 import { z } from "zod";
 import { AppError, ForbiddenError, InternalError, toAppError, ValidationError } from "./errors";
 import { logger } from "./logger";
+import { RATE_LIMITS, type RateLimitScope, checkRateLimit } from "./ratelimit";
 
 export type Role = "public" | "session" | "active" | "sacMember" | "sacExec" | "boothMember";
-
-export interface RateLimitConfig {
-  scope: string;
-  key: "ip" | "uid";
-}
 
 export interface HandlerSession {
   uid: string;
@@ -21,7 +17,7 @@ export interface HandlerSession {
 export interface HandlerConfig<S extends z.ZodType | undefined> {
   schema?: S;
   role?: Role;
-  rateLimit?: RateLimitConfig;
+  rateLimit?: RateLimitScope;
   idempotent?: boolean;
 }
 
@@ -93,12 +89,27 @@ async function parseInput(request: Request, schema: z.ZodType | undefined): Prom
   return parsed.data;
 }
 
+function clientIp(request: Request): string {
+  const forwarded = request.headers.get("x-forwarded-for");
+  if (forwarded) return forwarded.split(",")[0]!.trim();
+  return request.headers.get("x-real-ip")?.trim() || "unknown";
+}
+
 async function resolveSession(role: Role): Promise<HandlerSession | null> {
   if (role === "public") return null;
   throw new InternalError();
 }
 
-async function enforceRateLimit(): Promise<void> {}
+async function enforceRateLimit(
+  scope: RateLimitScope | undefined,
+  session: HandlerSession | null,
+  request: Request,
+): Promise<void> {
+  if (!scope) return;
+  const key = RATE_LIMITS[scope].key === "uid" ? session?.uid : clientIp(request);
+  if (!key) throw new InternalError();
+  await checkRateLimit(scope, key);
+}
 
 async function enforceIdempotency(): Promise<void> {}
 
@@ -133,7 +144,7 @@ export function defineHandler<
       const session = await resolveSession(config.role ?? "public");
       actorUid = session?.uid;
 
-      await enforceRateLimit();
+      await enforceRateLimit(config.rateLimit, session, request);
       await enforceIdempotency();
 
       const input = (await parseInput(request, config.schema)) as HandlerInput<S>;
