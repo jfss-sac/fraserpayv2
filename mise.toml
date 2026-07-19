@@ -1,0 +1,30 @@
+[tools]
+node = "24.18.0"
+
+[tasks.dev]
+description = "Start the Next.js dev server"
+run = "pnpm next dev"
+
+[tasks.build]
+description = "Build for production"
+run = "pnpm next build"
+
+[tasks.start]
+description = "Start the production server"
+run = "pnpm next start"
+
+[tasks.lint]
+description = "Run ESLint"
+run = "pnpm eslint"
+
+[tasks.typecheck]
+description = "Type-check with tsc"
+run = "pnpm tsc --noEmit"
+
+[tasks.test]
+description = "Run the test suite"
+run = "pnpm vitest run"
+
+[tasks.format]
+description = "Format with Prettier"
+run = "pnpm prettier --write ."
