@@ -34,6 +34,15 @@ yarn-error.log*
 .env*
 !.env.example
 
+# firebase emulators
+firebase-debug.log*
+firestore-debug.log*
+database-debug.log*
+pubsub-debug.log*
+ui-debug.log*
+.firebase/
+firebase-export-*/
+
 # vercel
 .vercel
 

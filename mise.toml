@@ -5,6 +5,10 @@ node = "24.18.0"
 description = "Start the Next.js dev server"
 run = "pnpm next dev"
 
+[tasks."dev:emulators"]
+description = "Start the auth + firestore emulators (demo-fraserpay, no cloud)"
+run = "firebase emulators:start --only auth,firestore --project demo-fraserpay"
+
 [tasks.build]
 description = "Build for production"
 run = "pnpm next build"
@@ -24,6 +28,14 @@ run = "pnpm tsc --noEmit"
 [tasks.test]
 description = "Run the test suite"
 run = "pnpm vitest run"
+
+[tasks."test:integration"]
+description = "Run the integration suite (expects emulator env; wrap with test:integration:emulate)"
+run = "pnpm test:integration"
+
+[tasks."test:integration:emulate"]
+description = "Boot emulators and run the integration suite against them"
+run = "firebase emulators:exec --only auth,firestore --project demo-fraserpay \"pnpm test:integration\""
 
 [tasks.format]
 description = "Format with Prettier"

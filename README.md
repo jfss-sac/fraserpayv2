@@ -47,15 +47,94 @@ required to build, run, or test the app. Pointing at a real project is just an
 env-file switch. Setup and deployment for cloud environments are documented in
 the architecture doc's Production handoff procedure.
 
+## Local development
+
+Local development is **emulator-first**: the Firebase Emulator Suite stands in
+for real Auth and Firestore, so you can build, run, and test the whole app with
+no cloud project and no credentials. The emulators always run under the throwaway
+project id `demo-fraserpay` — the `demo-` prefix makes the Firebase tooling
+refuse to contact any real Google Cloud backend, so a stray command can never
+read or write production data.
+
+### Prerequisite: Firebase CLI
+
+The emulators are provided by the Firebase CLI, which is **not** a project
+dependency — install it once, globally:
+
+```bash
+npm install -g firebase-tools     # or: mise use -g firebase-tools
+firebase --version                # confirm it's on your PATH
+```
+
+No `firebase login` and no `.firebaserc` are needed for emulator work; every
+command passes `--project demo-fraserpay` explicitly (committing a `.firebaserc`
+would pin a personal project id, so we don't).
+
+### Quick start (from a clean clone)
+
+```bash
+pnpm install
+cp .env.example .env.local          # then set the emulator vars below
+pnpm dev:emulators                  # terminal 1: auth + firestore emulators
+pnpm dev                            # terminal 2: the Next.js app
+```
+
+Emulator UI runs at `http://127.0.0.1:4000`, Auth on `9099`, Firestore on
+`8080` (fixed in `firebase.json`).
+
+For `pnpm dev` to talk to the emulators, set these in `.env.local`:
+
+```bash
+NEXT_PUBLIC_USE_EMULATORS=true
+FIRESTORE_EMULATOR_HOST=127.0.0.1:8080
+FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9099
+```
+
+### How the two SDKs reach the emulators
+
+FraserPay uses two Firebase SDKs, and each is wired to the emulators by a
+different environment variable:
+
+- **Admin SDK (server)** — reads `FIRESTORE_EMULATOR_HOST` and
+  `FIREBASE_AUTH_EMULATOR_HOST`. This is native `firebase-admin` behavior: when
+  those variables are present it connects to the emulators automatically, with
+  **no code branch**. This is also why `firebase emulators:exec` "just works" for
+  tests — it injects both variables into the child process for you.
+- **Client SDK (browser)** — cannot see server-only variables, so it keys off
+  the public `NEXT_PUBLIC_USE_EMULATORS` flag. When it is `true`, the browser
+  code calls `connectAuthEmulator` / `connectFirestoreEmulator` at startup;
+  when blank it talks to the real project named by the `NEXT_PUBLIC_FIREBASE_*`
+  values. (The client wiring itself lands with the login page in Phase P02.)
+
+Leave all three blank for any cloud environment — that is the single switch that
+turns emulator mode off.
+
+### Integration tests
+
+Integration tests run against the emulators rather than mocks. `pnpm test`
+(Vitest) covers pure/unit code only; the integration suite is separate:
+
+```bash
+pnpm test:integration:emulate       # boots emulators, runs the integration suite, tears down
+```
+
+Under the hood that is `firebase emulators:exec --only auth,firestore --project
+demo-fraserpay "pnpm test:integration"`. `test:integration` on its own runs the
+Vitest integration config and expects the emulator env vars to already be set
+(which `emulators:exec` provides). Integration specs live in `tests/integration/`
+or as `*.integration.test.ts`; they never run in the plain `pnpm test`.
+
 ## Scripts
 
 ```bash
-pnpm dev            # start the dev server (Turbopack)
-pnpm build          # production build
-pnpm typecheck      # tsc --noEmit
-pnpm lint           # ESLint
-pnpm format:check   # Prettier check
-pnpm test           # Vitest
+pnpm dev                      # start the dev server (Turbopack)
+pnpm dev:emulators            # start the auth + firestore emulators
+pnpm build                    # production build
+pnpm typecheck                # tsc --noEmit
+pnpm lint                     # ESLint
+pnpm format:check             # Prettier check
+pnpm test                     # Vitest (unit)
+pnpm test:integration:emulate # emulator-backed integration suite
 ```
 
 Toolchain versions (Node 24, pnpm) are pinned in [`mise.toml`](./mise.toml).
