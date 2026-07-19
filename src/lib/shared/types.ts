@@ -72,6 +72,13 @@ export interface ChargeResult {
   amountCents: number;
 }
 
+export interface TopUpResult {
+  entryId: string;
+  amountCents: number;
+  balanceAfterCents: number;
+  points: number;
+}
+
 export interface LookupResult {
   name: string;
   sufficient: boolean;
