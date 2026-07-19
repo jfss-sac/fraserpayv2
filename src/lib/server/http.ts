@@ -2,6 +2,7 @@ import "server-only";
 import { z } from "zod";
 import { type Role, type Session, authorizeRequest } from "./dal";
 import { AppError, ForbiddenError, InternalError, toAppError, ValidationError } from "./errors";
+import { type IdempotencyContext, buildIdempotencyContext } from "./idempotency";
 import { logger } from "./logger";
 import { RATE_LIMITS, type RateLimitScope, checkRateLimit } from "./ratelimit";
 
@@ -23,6 +24,7 @@ export interface HandlerContext<TInput, TParams> {
   session: HandlerSession | null;
   requestId: string;
   request: Request;
+  idempotency?: IdempotencyContext;
 }
 
 export type HandlerResult = Response | Record<string, unknown> | null | void;
@@ -100,8 +102,6 @@ async function enforceRateLimit(
   await checkRateLimit(scope, key);
 }
 
-async function enforceIdempotency(): Promise<void> {}
-
 function toResponse(result: HandlerResult): Response {
   if (result instanceof Response) return result;
   if (result === null || result === undefined) return new Response(null, { status: 204 });
@@ -141,11 +141,21 @@ export function defineHandler<
       actorUid = session?.uid;
 
       await enforceRateLimit(config.rateLimit, session, request);
-      await enforceIdempotency();
 
       const input = (await parseInput(request, config.schema)) as HandlerInput<S>;
 
-      const result = await fn({ input, params, session, requestId, request });
+      let idempotency: IdempotencyContext | undefined;
+      if (config.idempotent) {
+        if (!session) throw new InternalError();
+        idempotency = buildIdempotencyContext({
+          request,
+          actorUid: session.uid,
+          endpoint: route,
+          body: input,
+        });
+      }
+
+      const result = await fn({ input, params, session, requestId, request, idempotency });
       const response = toResponse(result);
       response.headers.set("x-request-id", requestId);
 
