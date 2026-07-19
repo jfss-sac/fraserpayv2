@@ -1,0 +1,176 @@
+import "server-only";
+import { z } from "zod";
+import { AppError, ForbiddenError, InternalError, toAppError, ValidationError } from "./errors";
+import { logger } from "./logger";
+
+export type Role = "public" | "session" | "active" | "sacMember" | "sacExec" | "boothMember";
+
+export interface RateLimitConfig {
+  scope: string;
+  key: "ip" | "uid";
+}
+
+export interface HandlerSession {
+  uid: string;
+  email: string;
+  studentNumber: string | null;
+  roles: { sacMember: boolean; sacExec: boolean };
+  suspended: boolean;
+}
+
+export interface HandlerConfig<S extends z.ZodType | undefined> {
+  schema?: S;
+  role?: Role;
+  rateLimit?: RateLimitConfig;
+  idempotent?: boolean;
+}
+
+export type HandlerInput<S> = S extends z.ZodType ? z.infer<S> : undefined;
+
+export interface HandlerContext<TInput, TParams> {
+  input: TInput;
+  params: TParams;
+  session: HandlerSession | null;
+  requestId: string;
+  request: Request;
+}
+
+export type HandlerResult = Response | Record<string, unknown> | null | void;
+
+export type HandlerFn<TInput, TParams> = (
+  ctx: HandlerContext<TInput, TParams>,
+) => Promise<HandlerResult> | HandlerResult;
+
+type RouteContext<TParams> = { params: Promise<TParams> } | undefined;
+
+function isMutation(method: string): boolean {
+  return method !== "GET" && method !== "HEAD" && method !== "OPTIONS";
+}
+
+function requestHost(request: Request): string | null {
+  const forwarded = request.headers.get("x-forwarded-host");
+  if (forwarded) return forwarded;
+  const host = request.headers.get("host");
+  if (host) return host;
+  try {
+    return new URL(request.url).host;
+  } catch {
+    return null;
+  }
+}
+
+function assertSameOrigin(request: Request): void {
+  if (request.headers.get("sec-fetch-site") === "cross-site") {
+    throw new ForbiddenError("Cross-site request rejected.");
+  }
+  const origin = request.headers.get("origin");
+  if (!origin) return;
+  let originHost: string;
+  try {
+    originHost = new URL(origin).host;
+  } catch {
+    throw new ForbiddenError("Invalid Origin header.");
+  }
+  if (originHost !== requestHost(request)) {
+    throw new ForbiddenError("Cross-origin request rejected.");
+  }
+}
+
+async function parseInput(request: Request, schema: z.ZodType | undefined): Promise<unknown> {
+  if (!schema) return undefined;
+  let raw: unknown;
+  if (isMutation(request.method)) {
+    try {
+      raw = await request.json();
+    } catch {
+      throw new ValidationError("Request body must be valid JSON.");
+    }
+  } else {
+    raw = Object.fromEntries(new URL(request.url).searchParams);
+  }
+  const parsed = schema.safeParse(raw);
+  if (!parsed.success) throw ValidationError.fromZod(parsed.error);
+  return parsed.data;
+}
+
+async function resolveSession(role: Role): Promise<HandlerSession | null> {
+  if (role === "public") return null;
+  throw new InternalError();
+}
+
+async function enforceRateLimit(): Promise<void> {}
+
+async function enforceIdempotency(): Promise<void> {}
+
+function toResponse(result: HandlerResult): Response {
+  if (result instanceof Response) return result;
+  if (result === null || result === undefined) return new Response(null, { status: 204 });
+  return Response.json(result);
+}
+
+export function defineHandler<
+  S extends z.ZodType | undefined = undefined,
+  TParams = Record<string, string>,
+>(config: HandlerConfig<S>, fn: HandlerFn<HandlerInput<S>, TParams>) {
+  return async function handler(
+    request: Request,
+    routeContext?: RouteContext<TParams>,
+  ): Promise<Response> {
+    const requestId = crypto.randomUUID();
+    const startedAt = performance.now();
+    const route = (() => {
+      try {
+        return new URL(request.url).pathname;
+      } catch {
+        return request.url;
+      }
+    })();
+    let actorUid: string | undefined;
+
+    try {
+      if (isMutation(request.method)) assertSameOrigin(request);
+
+      const session = await resolveSession(config.role ?? "public");
+      actorUid = session?.uid;
+
+      await enforceRateLimit();
+      await enforceIdempotency();
+
+      const input = (await parseInput(request, config.schema)) as HandlerInput<S>;
+      const params = (routeContext ? await routeContext.params : ({} as TParams)) as TParams;
+
+      const result = await fn({ input, params, session, requestId, request });
+      const response = toResponse(result);
+      response.headers.set("x-request-id", requestId);
+
+      logger.info({
+        event: "request",
+        requestId,
+        route,
+        actorUid,
+        latencyMs: Math.round(performance.now() - startedAt),
+      });
+      return response;
+    } catch (err) {
+      const appError = toAppError(err);
+      const isInternal = appError instanceof InternalError;
+      const headers = new Headers(appError.headers());
+      headers.set("x-request-id", requestId);
+      const response = Response.json(appError.toEnvelope(requestId), {
+        status: appError.status,
+        headers,
+      });
+
+      logger[isInternal ? "error" : "warn"]({
+        event: "request",
+        requestId,
+        route,
+        actorUid,
+        latencyMs: Math.round(performance.now() - startedAt),
+        code: appError.code,
+        err: isInternal && err instanceof AppError === false ? err : undefined,
+      });
+      return response;
+    }
+  };
+}
