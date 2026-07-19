@@ -8,8 +8,7 @@ const isDev = process.env.NODE_ENV === "development";
 // infrastructure during sign-in on /login: the gapi loader script, the auth
 // handler iframe on the project's *.firebaseapp.com authDomain, and XHRs to the
 // Identity Toolkit / Secure Token APIs. These origins are required for sign-in
-// and are used by no other route. (Deviates from a strictly self-only CSP — see
-// arch §15.)
+// and are used by no other route. (Deviates from a strictly self-only CSP)
 const FIREBASE_AUTH_SCRIPT_SRC = "https://apis.google.com";
 const FIREBASE_AUTH_CONNECT_SRC =
   "https://identitytoolkit.googleapis.com https://securetoken.googleapis.com";
