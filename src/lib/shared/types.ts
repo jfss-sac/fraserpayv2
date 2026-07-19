@@ -79,6 +79,19 @@ export interface TopUpResult {
   points: number;
 }
 
+export interface AdjustResult {
+  entryId: string;
+  amountCents: number;
+  balanceAfterCents: number;
+  points: number;
+}
+
+export interface RefundResult {
+  entryId: string;
+  amountCents: number;
+  balanceAfterCents: number;
+}
+
 export interface LookupResult {
   name: string;
   sufficient: boolean;

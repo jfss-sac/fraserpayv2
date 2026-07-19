@@ -44,6 +44,13 @@ export async function readActiveBuyer(t: Transaction, uid: string): Promise<Acti
   return { ref, data };
 }
 
+export async function readUser(t: Transaction, uid: string): Promise<ActiveBuyer> {
+  const ref = usersCol().doc(uid);
+  const data = (await t.get(ref)).data();
+  if (!data) throw new NotFoundError("Student not found.");
+  return { ref, data };
+}
+
 const dateFormatter = new Intl.DateTimeFormat("en-CA", {
   timeZone: TIMEZONE,
   year: "numeric",
