@@ -14,8 +14,10 @@
     "test:watch": "vitest",
     "test:integration": "vitest run --config vitest.integration.config.mts",
     "test:integration:emulate": "firebase emulators:exec --only auth,firestore --project demo-fraserpay \"pnpm test:integration\"",
-    "seed:dev": "node --env-file-if-exists=.env --import tsx scripts/seed-dev-data.ts",
+    "seed:dev": "node --env-file-if-exists=.env --env-file-if-exists=.env.local --import tsx scripts/seed-dev-data.ts",
     "seed:dev:emulate": "firebase emulators:exec --only auth,firestore --project demo-fraserpay \"pnpm seed:dev\"",
+    "seed:superadmin": "node --env-file-if-exists=.env --env-file-if-exists=.env.local --import tsx scripts/seed-superadmin.ts",
+    "seed:superadmin:emulate": "firebase emulators:exec --only auth,firestore --project demo-fraserpay \"pnpm seed:superadmin\"",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },

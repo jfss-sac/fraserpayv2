@@ -29,24 +29,6 @@ credentials.
   `FIREBASE_AUTH_EMULATOR_HOST`** — local Firebase Emulator Suite toggles; leave
   blank for any cloud environment.
 
-### Environment separation
-
-Each environment is a **separate Firebase project** with its own `.env` values;
-nothing is shared and development data never migrates anywhere (see
-[architecture §19](./.docs/architecture.md#19-environments-configuration-and-portability-d15)).
-
-| Environment    | Firebase project                                                           | Data                                        |
-| -------------- | -------------------------------------------------------------------------- | ------------------------------------------- |
-| **Local**      | Firebase Emulator Suite (default for `pnpm dev`) — no cloud project needed | Seed fixtures, throwaway                    |
-| **Dev**        | Each developer's own project (optional)                                    | Developer-only; never reused                |
-| **Staging**    | The deployer's staging project                                             | Booth-practice data, wiped before the event |
-| **Production** | The deployer's production project                                          | Real event data                             |
-
-Local development runs entirely against emulators, so no cloud project is
-required to build, run, or test the app. Pointing at a real project is just an
-env-file switch. Setup and deployment for cloud environments are documented in
-the architecture doc's Production handoff procedure.
-
 ## Local development
 
 Local development is **emulator-first**: the Firebase Emulator Suite stands in
@@ -135,6 +117,59 @@ pnpm lint                     # ESLint
 pnpm format:check             # Prettier check
 pnpm test                     # Vitest (unit)
 pnpm test:integration:emulate # emulator-backed integration suite
+pnpm seed:dev                 # seed emulator fixtures (emulator env must be set)
+pnpm seed:superadmin          # bootstrap the first SAC exec (see below)
+```
+
+## Superadmin bootstrap
+
+SAC roles are granted in-app by an existing exec — but the very first exec has
+to come from somewhere. `scripts/seed-superadmin.ts` promotes the account whose
+email matches `SEED_SUPERADMIN_EMAIL` to **SAC exec**. Run it once per
+environment; it is idempotent (safe to re-run) and portable (no project id,
+domain, or secret is baked into the script — everything comes from env).
+
+```bash
+# Local (emulators): the emulator env vars route it at demo-fraserpay.
+pnpm seed:superadmin:emulate            # boots emulators, seeds, tears down
+# …or against already-running emulators:
+pnpm seed:superadmin
+```
+
+What it does, depending on whether the person has signed in yet:
+
+- **Account already exists** → sets `roles.sacExec` (and `sacMember`) on their
+  user doc immediately.
+- **Never signed in** → records a **pending grant** keyed by email; the grant is
+  applied automatically the first time they sign in with Google (there is no
+  account uid to target before then). Order-independent: seed first or sign in
+  first, the result is the same.
+
+### Against a cloud project
+
+There is no emulator host in a cloud environment, so the script refuses to run
+without an explicit target and a typed confirmation — you cannot promote an exec
+on the wrong project by accident:
+
+```bash
+SEED_SUPERADMIN_EMAIL=exec@pdsb.net \
+  pnpm seed:superadmin --project your-firebase-project-id
+# → prompts: "Type the project id to confirm:"  (pass --yes to skip in CI)
+```
+
+Cloud runs use the Admin SDK service-account credentials
+(`FIREBASE_PROJECT_ID` / `FIREBASE_CLIENT_EMAIL` / `FIREBASE_PRIVATE_KEY`), so
+those must be set in the environment. Override the address ad hoc with
+`--email <address>`.
+
+If your `.env.local` still has the emulator host vars set (the normal dev
+config), `firebase-admin` would connect to the local emulator instead of the
+cloud — the script detects this and refuses. Blank them for the one-time cloud
+run (a shell value takes precedence over the env file):
+
+```bash
+FIRESTORE_EMULATOR_HOST= FIREBASE_AUTH_EMULATOR_HOST= \
+  pnpm seed:superadmin --project your-firebase-project-id
 ```
 
 Toolchain versions (Node 24, pnpm) are pinned in [`mise.toml`](./mise.toml).

@@ -41,10 +41,17 @@ async function provisionUser(token: DecodedIdToken, email: string): Promise<void
 
   const displayName = token.name ?? email.split("@")[0] ?? email;
   const paymentCode = await uniquePaymentCode();
+  const pendingRef = db.collection("pendingRoleGrants").doc(email);
 
   await db.runTransaction(async (tx) => {
     const existing = await tx.get(userRef);
     if (existing.exists) return;
+
+    const pending = await tx.get(pendingRef);
+    const pendingRoles = (pending.data()?.roles ?? {}) as {
+      sacMember?: boolean;
+      sacExec?: boolean;
+    };
 
     tx.set(userRef, {
       email,
@@ -54,11 +61,16 @@ async function provisionUser(token: DecodedIdToken, email: string): Promise<void
       paymentCode,
       balanceCents: 0,
       points: 0,
-      roles: { sacMember: false, sacExec: false },
+      roles: {
+        sacMember: pendingRoles.sacMember === true,
+        sacExec: pendingRoles.sacExec === true,
+      },
       suspended: false,
       createdAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     });
+
+    if (pending.exists) tx.delete(pendingRef);
   });
 }
 
