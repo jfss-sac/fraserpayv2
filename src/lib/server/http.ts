@@ -1,18 +1,12 @@
 import "server-only";
 import { z } from "zod";
+import { type Role, type Session, authorizeRequest } from "./dal";
 import { AppError, ForbiddenError, InternalError, toAppError, ValidationError } from "./errors";
 import { logger } from "./logger";
 import { RATE_LIMITS, type RateLimitScope, checkRateLimit } from "./ratelimit";
 
-export type Role = "public" | "session" | "active" | "sacMember" | "sacExec" | "boothMember";
-
-export interface HandlerSession {
-  uid: string;
-  email: string;
-  studentNumber: string | null;
-  roles: { sacMember: boolean; sacExec: boolean };
-  suspended: boolean;
-}
+export type { Role, Session };
+export type HandlerSession = Session;
 
 export interface HandlerConfig<S extends z.ZodType | undefined> {
   schema?: S;
@@ -95,14 +89,9 @@ function clientIp(request: Request): string {
   return request.headers.get("x-real-ip")?.trim() || "unknown";
 }
 
-async function resolveSession(role: Role): Promise<HandlerSession | null> {
-  if (role === "public") return null;
-  throw new InternalError();
-}
-
 async function enforceRateLimit(
   scope: RateLimitScope | undefined,
-  session: HandlerSession | null,
+  session: Session | null,
   request: Request,
 ): Promise<void> {
   if (!scope) return;
@@ -141,14 +130,20 @@ export function defineHandler<
     try {
       if (isMutation(request.method)) assertSameOrigin(request);
 
-      const session = await resolveSession(config.role ?? "public");
+      const params = (routeContext ? await routeContext.params : ({} as TParams)) as TParams;
+      const boothId = (params as Record<string, unknown>)?.boothId;
+
+      const session = await authorizeRequest(
+        config.role ?? "public",
+        request,
+        typeof boothId === "string" ? boothId : undefined,
+      );
       actorUid = session?.uid;
 
       await enforceRateLimit(config.rateLimit, session, request);
       await enforceIdempotency();
 
       const input = (await parseInput(request, config.schema)) as HandlerInput<S>;
-      const params = (routeContext ? await routeContext.params : ({} as TParams)) as TParams;
 
       const result = await fn({ input, params, session, requestId, request });
       const response = toResponse(result);

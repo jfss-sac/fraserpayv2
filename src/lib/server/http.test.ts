@@ -104,13 +104,13 @@ describe("defineHandler same-origin check", () => {
 });
 
 describe("defineHandler role slot", () => {
-  it("fails closed for a protected role until the DAL is wired", async () => {
+  it("rejects a protected role with 401 when no session cookie is present", async () => {
     vi.spyOn(console, "log").mockImplementation(() => {});
     const guarded = defineHandler({ role: "session" }, () => ({ ok: true }));
     const res = await guarded(post({ origin: ORIGIN }, {}));
-    expect(res.status).toBe(500);
+    expect(res.status).toBe(401);
     const json = (await res.json()) as { error: { code: string } };
-    expect(json.error.code).toBe("INTERNAL");
+    expect(json.error.code).toBe("UNAUTHORIZED");
     expect(JSON.stringify(json)).not.toContain("stack");
   });
 });
