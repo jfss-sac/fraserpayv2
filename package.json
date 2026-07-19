@@ -18,6 +18,8 @@
     "seed:dev:emulate": "firebase emulators:exec --only auth,firestore --project demo-fraserpay \"pnpm seed:dev\"",
     "seed:superadmin": "node --env-file-if-exists=.env --env-file-if-exists=.env.local --import tsx scripts/seed-superadmin.ts",
     "seed:superadmin:emulate": "firebase emulators:exec --only auth,firestore --project demo-fraserpay \"pnpm seed:superadmin\"",
+    "verify:ledger": "node --env-file-if-exists=.env --env-file-if-exists=.env.local --import tsx scripts/verify-ledger.ts",
+    "verify:ledger:emulate": "firebase emulators:exec --only firestore --project demo-fraserpay \"pnpm verify:ledger\"",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },

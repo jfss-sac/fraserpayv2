@@ -11,6 +11,7 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["tests/integration/**/*.{test,spec}.ts", "src/**/*.integration.{test,spec}.ts"],
+    globalSetup: ["./tests/integration/verify-ledger.globalsetup.ts"],
     passWithNoTests: true,
     fileParallelism: false,
   },
