@@ -4,6 +4,7 @@ import { cache } from "react";
 import type { DecodedIdToken } from "firebase-admin/auth";
 import { ForbiddenError, InternalError, SuspendedError, UnauthorizedError } from "./errors";
 import { getAdminAuth, getAdminFirestore } from "./firebase-admin";
+import { logger } from "./logger";
 import { SESSION_COOKIE_NAME } from "@/lib/shared/constants";
 
 export type Role = "public" | "session" | "active" | "sacMember" | "sacExec" | "boothMember";
@@ -67,6 +68,20 @@ const isBoothMember = cache(async (boothId: string, uid: string): Promise<boolea
     .doc(uid)
     .get();
   return snap.exists;
+});
+
+export const hasAnyBoothMembership = cache(async (uid: string): Promise<boolean> => {
+  try {
+    const snap = await getAdminFirestore()
+      .collectionGroup("members")
+      .where("uid", "==", uid)
+      .limit(1)
+      .get();
+    return !snap.empty;
+  } catch (err) {
+    logger.warn({ event: "booth-membership-check-failed", actorUid: uid, err });
+    return false;
+  }
 });
 
 function assertSession(session: Session | null): asserts session is Session {

@@ -9,12 +9,16 @@ function directive(name: string): string | undefined {
 }
 
 describe("contentSecurityPolicy", () => {
-  test("restricts default/script/style/img/connect to self", () => {
+  test("keeps default/style/img/font self-only", () => {
     expect(directive("default-src")).toBe("default-src 'self'");
-    expect(directive("script-src")).toMatch(/^script-src 'self'/);
     expect(directive("style-src")).toBe("style-src 'self'");
     expect(directive("img-src")).toBe("img-src 'self' data:");
-    expect(directive("connect-src")).toBe("connect-src 'self'");
+    expect(directive("font-src")).toBe("font-src 'self'");
+  });
+
+  test("script/connect start from self before any allowance", () => {
+    expect(directive("script-src")).toMatch(/^script-src 'self'/);
+    expect(directive("connect-src")).toMatch(/^connect-src 'self'/);
   });
 
   test("forbids framing and object embedding", () => {
@@ -22,8 +26,23 @@ describe("contentSecurityPolicy", () => {
     expect(directive("object-src")).toBe("object-src 'none'");
   });
 
-  test("does not permit third-party origins", () => {
-    expect(contentSecurityPolicy).not.toMatch(/https?:\/\//);
+  test("permits only the Firebase Auth origins, and only where sign-in needs them", () => {
+    expect(directive("script-src")).toContain("https://apis.google.com");
+    expect(directive("connect-src")).toContain("https://identitytoolkit.googleapis.com");
+    expect(directive("connect-src")).toContain("https://securetoken.googleapis.com");
+    expect(directive("frame-src")).toBe(
+      "frame-src https://apis.google.com https://accounts.google.com https://*.firebaseapp.com",
+    );
+
+    const allowed = new Set([
+      "https://apis.google.com",
+      "https://accounts.google.com",
+      "https://*.firebaseapp.com",
+      "https://identitytoolkit.googleapis.com",
+      "https://securetoken.googleapis.com",
+    ]);
+    const origins = contentSecurityPolicy.match(/https:\/\/[^\s;]+/g) ?? [];
+    for (const origin of origins) expect(allowed.has(origin)).toBe(true);
   });
 });
 
