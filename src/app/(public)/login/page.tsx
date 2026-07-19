@@ -11,9 +11,7 @@ export default function LoginPage() {
     <main className="flex min-h-dvh flex-col items-center justify-center p-6">
       <div className="w-full max-w-sm rounded-lg border border-border bg-surface p-6">
         <h1 className="text-2xl font-bold text-foreground">FraserPay</h1>
-        <p className="mt-2 mb-6 text-sm text-muted">
-          Sign in with your PDSB account to continue.
-        </p>
+        <p className="mt-2 mb-6 text-sm text-muted">Sign in with your PDSB account to continue.</p>
         <Suspense>
           <GoogleSignIn />
         </Suspense>

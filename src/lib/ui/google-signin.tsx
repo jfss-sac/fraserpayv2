@@ -16,9 +16,7 @@ async function messageForResponse(res: Response): Promise<string> {
     const body = await res.json();
     if (body?.error?.code === "FORBIDDEN") return WRONG_DOMAIN_MESSAGE;
     if (typeof body?.error?.message === "string") return body.error.message;
-  } catch {
-
-  }
+  } catch {}
   return "Sign-in failed. Please try again.";
 }
 
