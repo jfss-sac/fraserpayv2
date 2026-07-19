@@ -1,36 +1,61 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# FraserPay v2
 
-## Getting Started
+## Environment configuration
 
-First, run the development server:
+The app **never** hardcodes project IDs, domains, or secrets — every value it
+reads is an environment variable declared in [`.env.example`](./.env.example)
+with a description and no value. To run locally, copy that file and fill it in:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+cp .env.example .env.local
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+`.env.local` is gitignored; only `.env.example` is tracked. Never commit real
+credentials.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Variable groups
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- **`NEXT_PUBLIC_FIREBASE_*`** — the four public client-SDK values (API key,
+  auth domain, project id, app id) from the Firebase console Web App config.
+  These ship in the browser bundle and are environment-specific but not secret.
+- **`FIREBASE_PROJECT_ID` / `FIREBASE_CLIENT_EMAIL` / `FIREBASE_PRIVATE_KEY`** —
+  server-only Admin SDK service-account credentials. **Secret.** The private key
+  from the service-account JSON contains literal `\n` escape sequences; keep them
+  as-is (wrap the value in double quotes) and the server converts them to real
+  newlines before initializing the Admin SDK.
+- **`SEED_SUPERADMIN_EMAIL`** — the `@pdsb.net` address the one-time
+  `seed-superadmin` script promotes to superadmin.
+- **`NEXT_PUBLIC_USE_EMULATORS` / `FIRESTORE_EMULATOR_HOST` /
+  `FIREBASE_AUTH_EMULATOR_HOST`** — local Firebase Emulator Suite toggles; leave
+  blank for any cloud environment.
 
-## Learn More
+### Environment separation
 
-To learn more about Next.js, take a look at the following resources:
+Each environment is a **separate Firebase project** with its own `.env` values;
+nothing is shared and development data never migrates anywhere (see
+[architecture §19](./.docs/architecture.md#19-environments-configuration-and-portability-d15)).
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+| Environment    | Firebase project                                                           | Data                                        |
+| -------------- | -------------------------------------------------------------------------- | ------------------------------------------- |
+| **Local**      | Firebase Emulator Suite (default for `pnpm dev`) — no cloud project needed | Seed fixtures, throwaway                    |
+| **Dev**        | Each developer's own project (optional)                                    | Developer-only; never reused                |
+| **Staging**    | The deployer's staging project                                             | Booth-practice data, wiped before the event |
+| **Production** | The deployer's production project                                          | Real event data                             |
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Local development runs entirely against emulators, so no cloud project is
+required to build, run, or test the app. Pointing at a real project is just an
+env-file switch. Setup and deployment for cloud environments are documented in
+the architecture doc's Production handoff procedure.
 
-## Deploy on Vercel
+## Scripts
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```bash
+pnpm dev            # start the dev server (Turbopack)
+pnpm build          # production build
+pnpm typecheck      # tsc --noEmit
+pnpm lint           # ESLint
+pnpm format:check   # Prettier check
+pnpm test           # Vitest
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Toolchain versions (Node 24, pnpm) are pinned in [`mise.toml`](./mise.toml).
