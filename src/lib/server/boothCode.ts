@@ -1,0 +1,3 @@
+import "server-only";
+
+export const JOIN_CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";

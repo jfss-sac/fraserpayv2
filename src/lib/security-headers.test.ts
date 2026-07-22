@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import { contentSecurityPolicy, securityHeaders } from "@/lib/security-headers";
 
 function directive(name: string): string | undefined {
@@ -43,6 +43,52 @@ describe("contentSecurityPolicy", () => {
     ]);
     const origins = contentSecurityPolicy.match(/https:\/\/[^\s;]+/g) ?? [];
     for (const origin of origins) expect(allowed.has(origin)).toBe(true);
+  });
+
+  test("never allows localhost/emulator origins outside development", () => {
+    expect(contentSecurityPolicy).not.toContain("127.0.0.1");
+    expect(contentSecurityPolicy).not.toContain("localhost");
+  });
+
+  test("upgrades insecure requests and forbids inline styles in production", () => {
+    expect(contentSecurityPolicy).toContain("upgrade-insecure-requests");
+    expect(directive("style-src")).toBe("style-src 'self'");
+  });
+});
+
+describe("contentSecurityPolicy in development", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+
+  test("allows the local emulator + HMR origins so browser sign-in works", async () => {
+    vi.resetModules();
+    vi.stubEnv("NODE_ENV", "development");
+    const dev = await import("@/lib/security-headers");
+
+    const find = (name: string) =>
+      dev.contentSecurityPolicy
+        .split(";")
+        .map((d) => d.trim())
+        .find((d) => d.startsWith(`${name} `));
+
+    const connect = find("connect-src");
+    expect(connect).toContain("http://127.0.0.1:9099");
+    expect(connect).toContain("http://127.0.0.1:8080");
+    expect(connect).toContain("ws://127.0.0.1:3000");
+    expect(connect).toContain("https://identitytoolkit.googleapis.com");
+    expect(find("frame-src")).toContain("http://127.0.0.1:9099");
+    expect(find("style-src")).toContain("'unsafe-inline'");
+    expect(dev.contentSecurityPolicy).not.toContain("upgrade-insecure-requests");
+  });
+
+  test("omits HSTS in development so http/ws dev URLs are not force-upgraded", async () => {
+    vi.resetModules();
+    vi.stubEnv("NODE_ENV", "development");
+    const dev = await import("@/lib/security-headers");
+    const globalRule = dev.securityHeaders.find((r) => r.source === "/(.*)");
+    expect(globalRule?.headers.some((h) => h.key === "Strict-Transport-Security")).toBe(false);
   });
 });
 
