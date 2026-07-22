@@ -29,5 +29,12 @@ export const boothRegistrationSchema = z
   })
   .strict();
 
+export const boothJoinSchema = z
+  .object({
+    code: z.string().trim().toUpperCase().min(1).max(20),
+  })
+  .strict();
+
 export type BoothItemInput = z.infer<typeof boothItemInputSchema>;
 export type BoothRegistrationInput = z.infer<typeof boothRegistrationSchema>;
+export type BoothJoinInput = z.infer<typeof boothJoinSchema>;

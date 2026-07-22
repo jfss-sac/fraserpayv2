@@ -3,9 +3,11 @@ import { cookies } from "next/headers";
 import { cache } from "react";
 import type { DecodedIdToken } from "firebase-admin/auth";
 import { ForbiddenError, InternalError, SuspendedError, UnauthorizedError } from "./errors";
+import { boothsCol } from "./db";
 import { getAdminAuth, getAdminFirestore } from "./firebase-admin";
 import { logger } from "./logger";
 import { SESSION_COOKIE_NAME } from "@/lib/shared/constants";
+import type { MemberBooth } from "@/lib/shared/types";
 
 export type Role = "public" | "session" | "active" | "sacMember" | "sacExec" | "boothMember";
 
@@ -82,6 +84,26 @@ export const hasAnyBoothMembership = cache(async (uid: string): Promise<boolean>
     logger.warn({ event: "booth-membership-check-failed", actorUid: uid, err });
     return false;
   }
+});
+
+export const listMemberBooths = cache(async (uid: string): Promise<MemberBooth[]> => {
+  const db = getAdminFirestore();
+  const memberships = await db.collectionGroup("members").where("uid", "==", uid).get();
+  const ids = [
+    ...new Set(
+      memberships.docs
+        .map((doc) => doc.ref.parent.parent?.id)
+        .filter((id): id is string => id !== undefined),
+    ),
+  ];
+  if (ids.length === 0) return [];
+  const snaps = await db.getAll(...ids.map((id) => boothsCol().doc(id)));
+  return snaps
+    .flatMap((snap) => {
+      const data = snap.data();
+      return data ? [{ id: snap.id, name: data.name, status: data.status }] : [];
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
 });
 
 function assertSession(session: Session | null): asserts session is Session {

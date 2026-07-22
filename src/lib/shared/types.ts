@@ -67,6 +67,12 @@ export interface BoothDTO {
   items: BoothItem[];
 }
 
+export interface MemberBooth {
+  id: string;
+  name: string;
+  status: BoothStatus;
+}
+
 export interface ChargeResult {
   entryId: string;
   amountCents: number;
