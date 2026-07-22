@@ -22,5 +22,14 @@ export default defineConfig({
       "tests/integration/**",
       "src/**/*.integration.{test,spec}.{ts,tsx}",
     ],
+    coverage: {
+      provider: "v8",
+      include: ["src/lib/shared/money.ts", "src/lib/server/money/invariants.ts"],
+      reporter: ["text", "json-summary"],
+      thresholds: {
+        "src/lib/shared/money.ts": { branches: 100 },
+        "src/lib/server/money/invariants.ts": { branches: 100, functions: 100, lines: 100 },
+      },
+    },
   },
 });

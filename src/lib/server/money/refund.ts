@@ -2,9 +2,10 @@ import "server-only";
 import { Timestamp } from "firebase-admin/firestore";
 import { z } from "zod";
 import { type LedgerEntryDoc, ledgerCol } from "../db";
-import { ConflictError, InternalError, ValidationError } from "../errors";
+import { ConflictError, ValidationError } from "../errors";
 import { type IdempotencyContext, runIdempotent } from "../idempotency";
 import type { LedgerLineItem, RefundResult } from "@/lib/shared/types";
+import { assertNonNegative, assertRefundable } from "./invariants";
 import { readUser, torontoDate } from "./shared";
 
 export const refundSchema = z
@@ -100,11 +101,11 @@ export async function refundPurchase(args: {
     }
 
     const amountCents = refundLines.reduce((sum, li) => sum + li.qty * li.unitPriceCents, 0);
-    if (amountCents <= 0) throw new ConflictError("Nothing left to refund.");
+    assertRefundable(amountCents);
 
     const { ref, data } = await readUser(t, original.studentUid);
     const balanceAfterCents = data.balanceCents + amountCents;
-    if (balanceAfterCents < 0) throw new InternalError();
+    assertNonNegative(balanceAfterCents);
     const now = Timestamp.now();
 
     const entry: LedgerEntryDoc = {

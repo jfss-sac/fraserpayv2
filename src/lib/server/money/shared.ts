@@ -3,6 +3,7 @@ import { type DocumentReference, type Transaction } from "firebase-admin/firesto
 import { z } from "zod";
 import { type UserDoc, usersCol } from "../db";
 import { NotFoundError, SuspendedError } from "../errors";
+import { requireUser } from "./invariants";
 import { TIMEZONE } from "@/lib/shared/constants";
 
 export const buyerSchema = z
@@ -38,16 +39,14 @@ export interface ActiveBuyer {
 
 export async function readActiveBuyer(t: Transaction, uid: string): Promise<ActiveBuyer> {
   const ref = usersCol().doc(uid);
-  const data = (await t.get(ref)).data();
-  if (!data) throw new NotFoundError("No student found for that code or number.");
+  const data = requireUser((await t.get(ref)).data(), "No student found for that code or number.");
   if (data.suspended) throw new SuspendedError();
   return { ref, data };
 }
 
 export async function readUser(t: Transaction, uid: string): Promise<ActiveBuyer> {
   const ref = usersCol().doc(uid);
-  const data = (await t.get(ref)).data();
-  if (!data) throw new NotFoundError("Student not found.");
+  const data = requireUser((await t.get(ref)).data(), "Student not found.");
   return { ref, data };
 }
 

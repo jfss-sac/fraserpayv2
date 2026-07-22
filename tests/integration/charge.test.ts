@@ -269,6 +269,33 @@ describe("POST /api/booth/charge", () => {
     expect(await errorCode(res)).toBe("BOOTH_NOT_SELLABLE");
   });
 
+  it("rejects an itemId not sold at the booth with BOOTH_NOT_SELLABLE", async () => {
+    const buyer = await freshBuyer(2000);
+    const res = await chargeRoute(
+      post(OPERATOR.uid, {
+        boothId: BOOTH_ID,
+        buyer: { studentNumber: buyer.studentNumber },
+        items: [{ itemId: "not-on-menu", qty: 1 }],
+      }),
+    );
+    expect(res.status).toBe(409);
+    expect(await errorCode(res)).toBe("BOOTH_NOT_SELLABLE");
+    expect((await usersCol().doc(buyer.uid).get()).data()?.balanceCents).toBe(2000);
+    expect(await ledgerFor(buyer.uid)).toHaveLength(0);
+  });
+
+  it("rejects a buyer that matches no student with NOT_FOUND", async () => {
+    const res = await chargeRoute(
+      post(OPERATOR.uid, {
+        boothId: BOOTH_ID,
+        buyer: { studentNumber: "999999999" },
+        items: [{ itemId: "coffee", qty: 1 }],
+      }),
+    );
+    expect(res.status).toBe(404);
+    expect(await errorCode(res)).toBe("NOT_FOUND");
+  });
+
   it("forbids an operator who is not a member of the booth", async () => {
     const buyer = await freshBuyer(2000);
     const res = await chargeRoute(

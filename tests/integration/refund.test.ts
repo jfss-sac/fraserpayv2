@@ -208,6 +208,22 @@ describe("POST /api/exec/refund", () => {
     ]);
   });
 
+  it("merges duplicate line items of the same id when refunding in full", async () => {
+    const student = await freshStudent(0);
+    const purchaseId = await makePurchase(student.uid, [COFFEE, COFFEE]);
+    const res = await refundRoute(
+      post(EXEC.uid, { originalEntryId: purchaseId, reason: "double coffee dispute" }),
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as RefundResult;
+    expect(body.amountCents).toBe(1000);
+    expect((await usersCol().doc(student.uid).get()).data()?.balanceCents).toBe(1000);
+    const refund = (await refundsFor(purchaseId)).find((e) => e.type === "refund");
+    expect(refund?.lineItems).toEqual([
+      { itemId: "coffee", name: "Coffee", qty: 4, unitPriceCents: 250 },
+    ]);
+  });
+
   it("rejects refunding a line beyond the original quantity with CONFLICT", async () => {
     const student = await freshStudent(0);
     const purchaseId = await makePurchase(student.uid, [COFFEE]);

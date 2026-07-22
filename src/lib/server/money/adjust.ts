@@ -2,11 +2,12 @@ import "server-only";
 import { Timestamp } from "firebase-admin/firestore";
 import { z } from "zod";
 import { type LedgerEntryDoc, ledgerCol } from "../db";
-import { InsufficientFundsError, InternalError, ValidationError } from "../errors";
+import { InsufficientFundsError, ValidationError } from "../errors";
 import { type IdempotencyContext, runIdempotent } from "../idempotency";
 import { CENT_STEP } from "@/lib/shared/constants";
 import { pointsFor } from "@/lib/shared/money";
 import type { AdjustResult } from "@/lib/shared/types";
+import { assertNonNegative } from "./invariants";
 import { readUser, torontoDate } from "./shared";
 
 export const adjustSchema = z
@@ -55,7 +56,7 @@ export async function adjustBalance(args: {
     }
 
     const pointsAfter = data.points + (pointsDelta ?? 0);
-    if (pointsAfter < 0) throw new InternalError();
+    assertNonNegative(pointsAfter);
     const now = Timestamp.now();
 
     const entry: LedgerEntryDoc = {

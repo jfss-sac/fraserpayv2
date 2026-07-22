@@ -236,6 +236,14 @@ describe("POST /api/exec/adjust", () => {
     expect(await errorCode(res)).toBe("VALIDATION");
   });
 
+  it("rejects an adjustment to a non-existent student with NOT_FOUND", async () => {
+    const res = await adjustRoute(
+      post(EXEC.uid, { studentUid: "no-such-student", amountCents: 500, reason: "ghost" }),
+    );
+    expect(res.status).toBe(404);
+    expect(await errorCode(res)).toBe("NOT_FOUND");
+  });
+
   it("rejects a link to another student's top-up with VALIDATION", async () => {
     const owner = await freshStudent({ balanceCents: 1050, points: 52.5 });
     const other = await freshStudent({ balanceCents: 1050, points: 52.5 });

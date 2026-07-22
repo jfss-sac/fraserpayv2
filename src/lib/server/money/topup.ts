@@ -2,8 +2,9 @@ import "server-only";
 import { Timestamp } from "firebase-admin/firestore";
 import { z } from "zod";
 import { type LedgerEntryDoc, ledgerCol } from "../db";
-import { CapExceededError, InternalError } from "../errors";
+import { CapExceededError } from "../errors";
 import { type IdempotencyContext, runIdempotent } from "../idempotency";
+import { assertNonNegative } from "./invariants";
 import { CENT_STEP } from "@/lib/shared/constants";
 import { exceedsBalanceCap, exceedsTopupCap, pointsFor } from "@/lib/shared/money";
 import type { TopUpResult } from "@/lib/shared/types";
@@ -52,7 +53,7 @@ export async function topUp(args: {
       tags.push("cap-override");
     }
 
-    if (balanceAfterCents < 0) throw new InternalError();
+    assertNonNegative(balanceAfterCents);
 
     const points = pointsFor(input.amountCents);
     const pointsAfter = data.points + points;

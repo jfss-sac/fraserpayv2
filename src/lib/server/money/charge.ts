@@ -2,15 +2,11 @@ import "server-only";
 import { Timestamp } from "firebase-admin/firestore";
 import { z } from "zod";
 import { type LedgerEntryDoc, boothsCol, ledgerCol, membersCol } from "../db";
-import {
-  BoothNotSellableError,
-  ForbiddenError,
-  InsufficientFundsError,
-  InternalError,
-} from "../errors";
+import { BoothNotSellableError, ForbiddenError, InsufficientFundsError } from "../errors";
 import { type IdempotencyContext, runIdempotent } from "../idempotency";
 import { isHighAmount } from "@/lib/shared/money";
 import type { ChargeResult, LedgerLineItem } from "@/lib/shared/types";
+import { assertNonNegative } from "./invariants";
 import { buyerSchema, readActiveBuyer, resolveBuyerUid, torontoDate } from "./shared";
 
 export const chargeSchema = z
@@ -61,7 +57,7 @@ export async function charge(args: {
 
     if (data.balanceCents < amountCents) throw new InsufficientFundsError();
     const balanceAfterCents = data.balanceCents - amountCents;
-    if (balanceAfterCents < 0) throw new InternalError();
+    assertNonNegative(balanceAfterCents);
 
     const tags = isHighAmount(amountCents) ? ["high-amount"] : [];
     const now = Timestamp.now();
