@@ -73,6 +73,23 @@ export interface MemberBooth {
   status: BoothStatus;
 }
 
+export interface BoothItemSummary {
+  itemId: string;
+  name: string;
+  qty: number;
+  revenueCents: number;
+}
+
+export interface BoothSummary {
+  boothId: string;
+  boothName: string;
+  status: BoothStatus;
+  grossCents: number;
+  purchaseCount: number;
+  refundCount: number;
+  items: BoothItemSummary[];
+}
+
 export interface ChargeResult {
   entryId: string;
   amountCents: number;

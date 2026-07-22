@@ -3,11 +3,16 @@ import { cookies } from "next/headers";
 import { cache } from "react";
 import type { DecodedIdToken } from "firebase-admin/auth";
 import { ForbiddenError, InternalError, SuspendedError, UnauthorizedError } from "./errors";
-import { boothsCol } from "./db";
+import { boothsCol, ledgerCol } from "./db";
 import { getAdminAuth, getAdminFirestore } from "./firebase-admin";
 import { logger } from "./logger";
 import { SESSION_COOKIE_NAME } from "@/lib/shared/constants";
-import type { MemberBooth } from "@/lib/shared/types";
+import type {
+  BoothItemSummary,
+  BoothSummary,
+  LedgerLineItem,
+  MemberBooth,
+} from "@/lib/shared/types";
 
 export type Role = "public" | "session" | "active" | "sacMember" | "sacExec" | "boothMember";
 
@@ -62,7 +67,7 @@ const resolveSessionFromCookie = cache(
   },
 );
 
-const isBoothMember = cache(async (boothId: string, uid: string): Promise<boolean> => {
+export const isBoothMember = cache(async (boothId: string, uid: string): Promise<boolean> => {
   const snap = await getAdminFirestore()
     .collection("booths")
     .doc(boothId)
@@ -105,6 +110,58 @@ export const listMemberBooths = cache(async (uid: string): Promise<MemberBooth[]
     })
     .sort((a, b) => a.name.localeCompare(b.name));
 });
+
+export async function getBoothSummary(boothId: string): Promise<BoothSummary | null> {
+  const booth = (await boothsCol().doc(boothId).get()).data();
+  if (!booth) return null;
+
+  const [purchases, refunds] = await Promise.all([
+    ledgerCol().where("type", "==", "purchase").where("boothId", "==", boothId).get(),
+    ledgerCol().where("type", "==", "refund").where("boothId", "==", boothId).get(),
+  ]);
+
+  const itemOrder = new Map(booth.items.map((item, index) => [item.id, index]));
+  const byItem = new Map<string, BoothItemSummary>();
+  const accumulate = (line: LedgerLineItem, sign: 1 | -1): void => {
+    const current = byItem.get(line.itemId) ?? {
+      itemId: line.itemId,
+      name: line.name,
+      qty: 0,
+      revenueCents: 0,
+    };
+    current.qty += sign * line.qty;
+    current.revenueCents += sign * line.qty * line.unitPriceCents;
+    byItem.set(line.itemId, current);
+  };
+
+  let grossCents = 0;
+  for (const doc of purchases.docs) {
+    const entry = doc.data();
+    grossCents += entry.amountCents;
+    for (const line of entry.lineItems ?? []) accumulate(line, 1);
+  }
+  for (const doc of refunds.docs) {
+    const entry = doc.data();
+    grossCents -= entry.amountCents;
+    for (const line of entry.lineItems ?? []) accumulate(line, -1);
+  }
+
+  const items = [...byItem.values()].sort((a, b) => {
+    const ai = itemOrder.get(a.itemId) ?? Number.MAX_SAFE_INTEGER;
+    const bi = itemOrder.get(b.itemId) ?? Number.MAX_SAFE_INTEGER;
+    return ai - bi || a.name.localeCompare(b.name);
+  });
+
+  return {
+    boothId,
+    boothName: booth.name,
+    status: booth.status,
+    grossCents,
+    purchaseCount: purchases.size,
+    refundCount: refunds.size,
+    items,
+  };
+}
 
 function assertSession(session: Session | null): asserts session is Session {
   if (!session) throw new UnauthorizedError();
