@@ -8,6 +8,7 @@ import { getAdminAuth, getAdminFirestore } from "./firebase-admin";
 import { logger } from "./logger";
 import { SESSION_COOKIE_NAME } from "@/lib/shared/constants";
 import type {
+  BoothDTO,
   BoothItemSummary,
   BoothSummary,
   LedgerLineItem,
@@ -109,6 +110,18 @@ export const listMemberBooths = cache(async (uid: string): Promise<MemberBooth[]
       return data ? [{ id: snap.id, name: data.name, status: data.status }] : [];
     })
     .sort((a, b) => a.name.localeCompare(b.name));
+});
+
+export const getBoothForSale = cache(async (boothId: string): Promise<BoothDTO | null> => {
+  const data = (await boothsCol().doc(boothId).get()).data();
+  if (!data) return null;
+  return {
+    id: boothId,
+    name: data.name,
+    description: data.description,
+    status: data.status,
+    items: data.items,
+  };
 });
 
 export async function getBoothSummary(boothId: string): Promise<BoothSummary | null> {
