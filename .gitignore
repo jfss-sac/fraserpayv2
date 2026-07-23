@@ -49,3 +49,5 @@ firebase-export-*/
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+certificates
