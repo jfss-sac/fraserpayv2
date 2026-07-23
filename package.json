@@ -5,6 +5,7 @@
   "packageManager": "pnpm@11.14.0",
   "scripts": {
     "dev": "next dev",
+    "dev:demo": "set -a && . ./.env.demo && set +a && next dev",
     "dev:emulators": "firebase emulators:start --only auth,firestore --project demo-fraserpay",
     "build": "next build",
     "start": "next start",
