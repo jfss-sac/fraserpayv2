@@ -1,5 +1,4 @@
 import { randomBytes, randomUUID } from "node:crypto";
-import { pathToFileURL } from "node:url";
 import { type App, getApps, initializeApp } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
 import { FieldValue, getFirestore, Timestamp } from "firebase-admin/firestore";
@@ -277,7 +276,12 @@ async function main(): Promise<void> {
   console.log(JSON.stringify(summary, null, 2));
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+function invokedDirectly(): boolean {
+  const entry = process.argv[1] ?? "";
+  return /seed-dev-data\.(ts|js|mjs)$/.test(entry);
+}
+
+if (invokedDirectly()) {
   main().catch((err) => {
     console.error(err);
     process.exitCode = 1;
