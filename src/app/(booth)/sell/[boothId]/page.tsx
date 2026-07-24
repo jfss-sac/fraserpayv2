@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { getBoothForSale, getSession, isBoothMember } from "@/lib/server/dal";
 import { buttonVariants } from "@/lib/ui/vendor/button";
-import { PosCart } from "./pos-cart";
+import { PosTerminal } from "./pos-terminal";
 
 export const metadata: Metadata = {
   title: "Point of sale",
@@ -28,7 +28,7 @@ export default async function PosPage({ params }: { params: Promise<{ boothId: s
       </div>
 
       {booth.status === "approved" ? (
-        <PosCart items={booth.items} />
+        <PosTerminal boothId={booth.id} items={booth.items} />
       ) : (
         <p role="status" className="text-sm text-muted">
           This booth can&apos;t sell yet. It&apos;s{" "}

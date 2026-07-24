@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { formatCents } from "@/lib/shared/money";
 import type { BoothItem } from "@/lib/shared/types";
 import { Button } from "@/lib/ui/vendor/button";
@@ -19,14 +19,20 @@ export function cartItemCount(quantities: CartQuantities): number {
 export function PosCart({
   items,
   onCharge,
+  onTotalChange,
 }: {
   items: BoothItem[];
   onCharge?: (quantities: CartQuantities) => void;
+  onTotalChange?: (totalCents: number) => void;
 }) {
   const [quantities, setQuantities] = useState<CartQuantities>({});
 
   const total = cartTotalCents(items, quantities);
   const count = cartItemCount(quantities);
+
+  useEffect(() => {
+    onTotalChange?.(total);
+  }, [total, onTotalChange]);
 
   function step(id: string, delta: number) {
     setQuantities((current) => {
