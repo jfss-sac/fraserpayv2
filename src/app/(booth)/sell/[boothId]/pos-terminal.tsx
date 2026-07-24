@@ -5,8 +5,10 @@ import { formatCents } from "@/lib/shared/money";
 import type { BoothItem } from "@/lib/shared/types";
 import { Scanner, type BuyerId } from "@/lib/ui/scanner";
 import { Button } from "@/lib/ui/vendor/button";
+import { OfflineBanner } from "./offline-banner";
 import { type CartQuantities, PosCart } from "./pos-cart";
 import { Toaster, useToasts } from "./toast";
+import { useConnectivity } from "./use-connectivity";
 import { cartToItems, chargeErrorMessage, useCharge } from "./use-charge";
 import { type SufficiencyState, useSufficiency } from "./use-sufficiency";
 
@@ -62,6 +64,7 @@ export function PosTerminal({ boothId, items }: { boothId: string; items: BoothI
   const [cartTotalCents, setCartTotalCents] = useState(0);
   const [cartKey, setCartKey] = useState(0);
   const sufficiency = useSufficiency({ boothId, buyer, cartTotalCents });
+  const online = useConnectivity();
   const { toasts, push, dismiss } = useToasts();
 
   const { state: chargeState, submit } = useCharge({
@@ -86,10 +89,12 @@ export function PosTerminal({ boothId, items }: { boothId: string; items: BoothI
     [buyer, buyerName, submit],
   );
 
-  const canCharge = buyer !== null && sufficiency.status === "ready";
+  const canCharge = buyer !== null && sufficiency.status === "ready" && online;
 
   return (
     <div className="flex flex-col gap-6">
+      {!online && <OfflineBanner />}
+
       <PosCart
         key={cartKey}
         items={items}
