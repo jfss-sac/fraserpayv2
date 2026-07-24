@@ -20,10 +20,12 @@ export function PosCart({
   items,
   onCharge,
   onTotalChange,
+  busy = false,
 }: {
   items: BoothItem[];
   onCharge?: (quantities: CartQuantities) => void;
   onTotalChange?: (totalCents: number) => void;
+  busy?: boolean;
 }) {
   const [quantities, setQuantities] = useState<CartQuantities>({});
 
@@ -106,9 +108,9 @@ export function PosCart({
           type="button"
           size="lg"
           onClick={() => onCharge?.(quantities)}
-          disabled={count === 0 || !onCharge}
+          disabled={count === 0 || !onCharge || busy}
         >
-          Charge
+          {busy ? "Charging…" : "Charge"}
         </Button>
       </div>
     </div>
