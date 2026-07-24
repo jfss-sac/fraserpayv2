@@ -1,0 +1,102 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`history itemization structure snapshot 1`] = `
+<ul
+  class="flex flex-col divide-y divide-border"
+>
+  <li
+    class="flex flex-col gap-1 py-3"
+  >
+    <div
+      class="flex items-baseline justify-between gap-4"
+    >
+      <span
+        class="font-medium text-foreground"
+      >
+        Taco Stand
+      </span>
+      <span
+        class="font-semibold text-foreground"
+      >
+        -$7.50
+      </span>
+    </div>
+    <ul
+      class="flex flex-col gap-0.5 text-sm text-muted"
+    >
+      <li
+        class="flex justify-between gap-4"
+      >
+        <span>
+          Taco
+           × 
+          2
+           @ 
+          $2.50
+        </span>
+        <span>
+          $5.00
+        </span>
+      </li>
+      <li
+        class="flex justify-between gap-4"
+      >
+        <span>
+          Custom
+           × 
+          1
+           @ 
+          $2.50
+        </span>
+        <span>
+          $2.50
+        </span>
+      </li>
+    </ul>
+    <div
+      class="flex items-baseline justify-between gap-4 text-xs text-muted"
+    >
+      <time
+        datetime="2026-07-24T15:04:00.000Z"
+      >
+        Jul 24, 11:04 a.m.
+      </time>
+      <span>
+        Balance 
+        $12.50
+      </span>
+    </div>
+  </li>
+  <li
+    class="flex flex-col gap-1 py-3"
+  >
+    <div
+      class="flex items-baseline justify-between gap-4"
+    >
+      <span
+        class="font-medium text-foreground"
+      >
+        Top-up · Cash
+      </span>
+      <span
+        class="font-semibold text-success"
+      >
+        +$20.00
+      </span>
+    </div>
+    <div
+      class="flex items-baseline justify-between gap-4 text-xs text-muted"
+    >
+      <time
+        datetime="2026-07-24T14:00:00.000Z"
+      >
+        Jul 24, 10:00 a.m.
+      </time>
+      <span>
+        Balance 
+        $20.00
+      </span>
+    </div>
+  </li>
+</ul>
+`;
