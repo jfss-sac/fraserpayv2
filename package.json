@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "next dev",
     "dev:demo": "set -a && . ./.env.demo && set +a && next dev",
+    "dev:demo:lan": "set -a && . ./.env.demo && set +a && next dev --experimental-https",
     "dev:emulators": "firebase emulators:start --only auth,firestore --project demo-fraserpay",
     "build": "next build",
     "start": "next start",
