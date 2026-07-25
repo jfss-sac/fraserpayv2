@@ -111,29 +111,43 @@ export function WalletView({
       <section className="grid grid-cols-2 gap-4">
         <div className="flex flex-col gap-1 rounded-lg border border-border bg-surface p-4">
           <span className="text-sm text-muted">Balance</span>
-          <span className="text-3xl font-bold text-foreground">{formatCents(balanceCents)}</span>
+          <span data-wallet-balance="" className="text-3xl font-bold text-foreground">
+            {formatCents(balanceCents)}
+          </span>
         </div>
         <div className="flex flex-col gap-1 rounded-lg border border-border bg-surface p-4">
           <span className="text-sm text-muted">Points</span>
-          <span className="text-3xl font-bold text-foreground">{points}</span>
+          <span data-wallet-points="" className="text-3xl font-bold text-foreground">
+            {points}
+          </span>
         </div>
       </section>
 
-      <p className="text-center text-xs text-muted">
-        As of <time dateTime={asOfIso}>{formatStamp(asOfIso)}</time>
+      <p
+        data-wallet-stamp=""
+        data-stale="false"
+        className="group text-center text-xs text-muted data-[stale=true]:text-warning"
+      >
+        As of{" "}
+        <time data-wallet-asof="" dateTime={asOfIso}>
+          {formatStamp(asOfIso)}
+        </time>
+        <span className="hidden group-data-[stale=true]:inline"> · may be out of date</span>
       </p>
 
       <section className="flex flex-col gap-2">
         <h2 className="text-lg font-semibold text-foreground">Recent transactions</h2>
-        {history.length === 0 ? (
-          <p className="text-sm text-muted">No transactions yet.</p>
-        ) : (
-          <ul className="flex flex-col divide-y divide-border">
-            {history.map((item) => (
-              <HistoryRow key={item.id} item={item} />
-            ))}
-          </ul>
-        )}
+        <div data-wallet-history="">
+          {history.length === 0 ? (
+            <p className="text-sm text-muted">No transactions yet.</p>
+          ) : (
+            <ul className="flex flex-col divide-y divide-border">
+              {history.map((item) => (
+                <HistoryRow key={item.id} item={item} />
+              ))}
+            </ul>
+          )}
+        </div>
       </section>
     </div>
   );

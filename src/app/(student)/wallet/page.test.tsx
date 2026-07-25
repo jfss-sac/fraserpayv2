@@ -17,6 +17,9 @@ const { getSession, redirect, usersCol, ledgerCol, renderPaymentQrSvg, walletPro
 
 vi.mock("@/lib/server/dal", () => ({ getSession }));
 vi.mock("next/navigation", () => ({ redirect }));
+vi.mock("next/headers", () => ({
+  headers: async () => new Headers({ "x-nonce": "test-nonce" }),
+}));
 vi.mock("@/lib/server/db", () => ({ usersCol, ledgerCol }));
 vi.mock("@/lib/server/qr", () => ({ renderPaymentQrSvg }));
 vi.mock("./wallet-view", () => ({

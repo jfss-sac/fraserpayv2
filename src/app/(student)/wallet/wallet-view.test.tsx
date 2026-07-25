@@ -82,7 +82,17 @@ test("stamps the as-of time as a machine-readable time element", () => {
   expect(stamp).not.toBeNull();
 });
 
+test("exposes the refresh-script DOM hooks and starts non-stale", () => {
+  const { container } = render(<WalletView {...baseProps([purchase])} />);
+  expect(container.querySelector("[data-wallet-balance]")?.textContent).toBe("$12.50");
+  expect(container.querySelector("[data-wallet-points]")?.textContent).toBe("100");
+  expect(container.querySelector("[data-wallet-asof]")).not.toBeNull();
+  expect(container.querySelector("[data-wallet-history]")).not.toBeNull();
+  const stamp = container.querySelector("[data-wallet-stamp]");
+  expect(stamp?.getAttribute("data-stale")).toBe("false");
+});
+
 test("history itemization structure snapshot", () => {
   const { container } = render(<WalletView {...baseProps([purchase, topup])} />);
-  expect(container.querySelector("section:last-of-type > ul")).toMatchSnapshot();
+  expect(container.querySelector("[data-wallet-history] > ul")).toMatchSnapshot();
 });

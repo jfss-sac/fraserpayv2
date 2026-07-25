@@ -1,9 +1,13 @@
 const isDev = process.env.NODE_ENV === "development";
 
-// TODO: will replace 'unsafe-inline' with per-script hashes. Next's App
-// Router emits inline bootstrap scripts (self.__next_f.push) that a nonce/hash
-// scheme will cover; until then
-// 'unsafe-inline' is required for the page to hydrate without CSP violations.
+// script-src carries a per-request nonce (minted in src/proxy.ts) instead of
+// 'unsafe-inline'. Next's App Router emits inline bootstrap scripts
+// (self.__next_f.push) that vary per render; Next stamps them — and the wallet
+// refresh script — with the nonce it reads from the request CSP header, so no
+// static hash or 'unsafe-inline' is needed. 'self' still covers Next's static
+// chunks and the Firebase gapi loader (host-source below), so 'strict-dynamic'
+// is intentionally omitted.
+//
 // Firebase Auth (signInWithPopup, Google provider) loads Google-hosted OAuth
 // infrastructure during sign-in on /login: the gapi loader script, the auth
 // handler iframe on the project's *.firebaseapp.com authDomain, and XHRs to the
@@ -28,28 +32,30 @@ const EMULATOR_WS_SRC =
   "ws://127.0.0.1:3000 ws://localhost:3000 ws://127.0.0.1:8080 ws://localhost:8080";
 const EMULATOR_FRAME_SRC = "http://127.0.0.1:9099 http://localhost:9099";
 
-const cspDirectives: string[] = [
-  "default-src 'self'",
-  "base-uri 'self'",
-  "object-src 'none'",
-  `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""} ${FIREBASE_AUTH_SCRIPT_SRC}`,
-  `style-src 'self'${isDev ? " 'unsafe-inline'" : ""}`,
-  "img-src 'self' data:",
-  `connect-src 'self' ${FIREBASE_AUTH_CONNECT_SRC}${isDev ? ` ${EMULATOR_CONNECT_SRC} ${EMULATOR_WS_SRC}` : ""}`,
-  "font-src 'self'",
-  `frame-src ${FIREBASE_AUTH_FRAME_SRC}${isDev ? ` ${EMULATOR_FRAME_SRC}` : ""}`,
-  "form-action 'self'",
-  "frame-ancestors 'none'",
-  isDev ? "" : "upgrade-insecure-requests",
-];
+export function buildContentSecurityPolicy(nonce: string): string {
+  const directives: string[] = [
+    "default-src 'self'",
+    "base-uri 'self'",
+    "object-src 'none'",
+    `script-src 'self' 'nonce-${nonce}'${isDev ? " 'unsafe-eval'" : ""} ${FIREBASE_AUTH_SCRIPT_SRC}`,
+    `style-src 'self'${isDev ? " 'unsafe-inline'" : ""}`,
+    "img-src 'self' data:",
+    `connect-src 'self' ${FIREBASE_AUTH_CONNECT_SRC}${isDev ? ` ${EMULATOR_CONNECT_SRC} ${EMULATOR_WS_SRC}` : ""}`,
+    "font-src 'self'",
+    `frame-src ${FIREBASE_AUTH_FRAME_SRC}${isDev ? ` ${EMULATOR_FRAME_SRC}` : ""}`,
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+    isDev ? "" : "upgrade-insecure-requests",
+  ];
+  return directives.filter(Boolean).join("; ");
+}
 
-export const contentSecurityPolicy = cspDirectives.filter(Boolean).join("; ");
-
+// The CSP itself is set per-request in src/proxy.ts (it needs the nonce). These
+// baseline headers are static and apply to every response via next.config.ts.
 // HSTS is production-only: served over plaintext http on localhost it would be
 // cached by the browser and force every dev http/ws request to https/wss, which
 // the dev server and emulators don't speak.
 export const baselineSecurityHeaders = [
-  { key: "Content-Security-Policy", value: contentSecurityPolicy },
   ...(isDev
     ? []
     : [

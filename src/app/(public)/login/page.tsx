@@ -6,6 +6,10 @@ export const metadata: Metadata = {
   title: "Sign in to FraserPay",
 };
 
+// Rendered per request so the proxy's CSP nonce is stamped onto the framework
+// scripts; a static prerender would ship non-nonced scripts that the CSP blocks.
+export const dynamic = "force-dynamic";
+
 export default function LoginPage() {
   return (
     <main className="flex min-h-dvh flex-col items-center justify-center p-6">

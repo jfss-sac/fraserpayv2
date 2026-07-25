@@ -1,36 +1,47 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { contentSecurityPolicy, securityHeaders } from "@/lib/security-headers";
+import { buildContentSecurityPolicy, securityHeaders } from "@/lib/security-headers";
 
-function directive(name: string): string | undefined {
-  return contentSecurityPolicy
+const NONCE = "test-nonce-value";
+
+function directive(csp: string, name: string): string | undefined {
+  return csp
     .split(";")
     .map((d) => d.trim())
     .find((d) => d === name || d.startsWith(`${name} `));
 }
 
-describe("contentSecurityPolicy", () => {
+describe("buildContentSecurityPolicy", () => {
+  const csp = buildContentSecurityPolicy(NONCE);
+
   test("keeps default/style/img/font self-only", () => {
-    expect(directive("default-src")).toBe("default-src 'self'");
-    expect(directive("style-src")).toBe("style-src 'self'");
-    expect(directive("img-src")).toBe("img-src 'self' data:");
-    expect(directive("font-src")).toBe("font-src 'self'");
+    expect(directive(csp, "default-src")).toBe("default-src 'self'");
+    expect(directive(csp, "style-src")).toBe("style-src 'self'");
+    expect(directive(csp, "img-src")).toBe("img-src 'self' data:");
+    expect(directive(csp, "font-src")).toBe("font-src 'self'");
   });
 
-  test("script/connect start from self before any allowance", () => {
-    expect(directive("script-src")).toMatch(/^script-src 'self'/);
-    expect(directive("connect-src")).toMatch(/^connect-src 'self'/);
+  test("script-src uses the per-request nonce and never 'unsafe-inline'", () => {
+    const scriptSrc = directive(csp, "script-src") ?? "";
+    expect(scriptSrc).toMatch(/^script-src 'self'/);
+    expect(scriptSrc).toContain(`'nonce-${NONCE}'`);
+    expect(scriptSrc).not.toContain("'unsafe-inline'");
+    expect(csp).not.toContain("'unsafe-inline'");
+  });
+
+  test("connect-src starts from self before any allowance", () => {
+    expect(directive(csp, "connect-src")).toMatch(/^connect-src 'self'/);
   });
 
   test("forbids framing and object embedding", () => {
-    expect(directive("frame-ancestors")).toBe("frame-ancestors 'none'");
-    expect(directive("object-src")).toBe("object-src 'none'");
+    expect(directive(csp, "frame-ancestors")).toBe("frame-ancestors 'none'");
+    expect(directive(csp, "object-src")).toBe("object-src 'none'");
   });
 
   test("permits only the Firebase Auth origins, and only where sign-in needs them", () => {
-    expect(directive("script-src")).toContain("https://apis.google.com");
-    expect(directive("connect-src")).toContain("https://identitytoolkit.googleapis.com");
-    expect(directive("connect-src")).toContain("https://securetoken.googleapis.com");
-    expect(directive("frame-src")).toBe(
+    expect(directive(csp, "script-src")).toContain("https://apis.google.com");
+    expect(directive(csp, "connect-src")).toContain("https://identitytoolkit.googleapis.com");
+    expect(directive(csp, "connect-src")).toContain("https://securetoken.googleapis.com");
+    expect(directive(csp, "frame-src")).toBe(
       "frame-src https://apis.google.com https://accounts.google.com https://*.firebaseapp.com",
     );
 
@@ -41,22 +52,21 @@ describe("contentSecurityPolicy", () => {
       "https://identitytoolkit.googleapis.com",
       "https://securetoken.googleapis.com",
     ]);
-    const origins = contentSecurityPolicy.match(/https:\/\/[^\s;]+/g) ?? [];
+    const origins = csp.match(/https:\/\/[^\s;]+/g) ?? [];
     for (const origin of origins) expect(allowed.has(origin)).toBe(true);
   });
 
   test("never allows localhost/emulator origins outside development", () => {
-    expect(contentSecurityPolicy).not.toContain("127.0.0.1");
-    expect(contentSecurityPolicy).not.toContain("localhost");
+    expect(csp).not.toContain("127.0.0.1");
+    expect(csp).not.toContain("localhost");
   });
 
-  test("upgrades insecure requests and forbids inline styles in production", () => {
-    expect(contentSecurityPolicy).toContain("upgrade-insecure-requests");
-    expect(directive("style-src")).toBe("style-src 'self'");
+  test("upgrades insecure requests in production", () => {
+    expect(csp).toContain("upgrade-insecure-requests");
   });
 });
 
-describe("contentSecurityPolicy in development", () => {
+describe("buildContentSecurityPolicy in development", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
     vi.resetModules();
@@ -66,9 +76,10 @@ describe("contentSecurityPolicy in development", () => {
     vi.resetModules();
     vi.stubEnv("NODE_ENV", "development");
     const dev = await import("@/lib/security-headers");
+    const csp = dev.buildContentSecurityPolicy(NONCE);
 
     const find = (name: string) =>
-      dev.contentSecurityPolicy
+      csp
         .split(";")
         .map((d) => d.trim())
         .find((d) => d.startsWith(`${name} `));
@@ -79,8 +90,10 @@ describe("contentSecurityPolicy in development", () => {
     expect(connect).toContain("ws://127.0.0.1:3000");
     expect(connect).toContain("https://identitytoolkit.googleapis.com");
     expect(find("frame-src")).toContain("http://127.0.0.1:9099");
+    expect(find("script-src")).toContain("'unsafe-eval'");
+    expect(find("script-src")).not.toContain("'unsafe-inline'");
     expect(find("style-src")).toContain("'unsafe-inline'");
-    expect(dev.contentSecurityPolicy).not.toContain("upgrade-insecure-requests");
+    expect(csp).not.toContain("upgrade-insecure-requests");
   });
 
   test("omits HSTS in development so http/ws dev URLs are not force-upgraded", async () => {
@@ -100,12 +113,15 @@ describe("securityHeaders", () => {
   }
 
   test("applies the baseline hardening headers to every path", () => {
-    expect(header("Content-Security-Policy")).toBe(contentSecurityPolicy);
     expect(header("Strict-Transport-Security")).toMatch(/max-age=\d+/);
     expect(header("Strict-Transport-Security")).toContain("includeSubDomains");
     expect(header("X-Content-Type-Options")).toBe("nosniff");
     expect(header("Referrer-Policy")).toBe("strict-origin-when-cross-origin");
     expect(header("Permissions-Policy")).toContain("camera=(self)");
+  });
+
+  test("does not set the CSP statically (proxy sets it per request with a nonce)", () => {
+    expect(header("Content-Security-Policy")).toBeUndefined();
   });
 
   test("marks the service worker as non-cacheable", () => {

@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/server/dal";
 import { type LedgerEntryDoc, ledgerCol, usersCol } from "@/lib/server/db";
 import { renderPaymentQrSvg } from "@/lib/server/qr";
+import { WALLET_REFRESH_SCRIPT } from "./refresh-script";
 import { WalletView, type WalletHistoryItem } from "./wallet-view";
 
 export const metadata: Metadata = {
@@ -43,15 +45,19 @@ export default async function WalletPage() {
   if (!user) redirect("/login");
 
   const qrSvg = renderPaymentQrSvg(user.paymentCode);
+  const nonce = (await headers()).get("x-nonce") ?? undefined;
 
   return (
-    <WalletView
-      qrSvg={qrSvg}
-      studentNumber={user.studentNumber}
-      balanceCents={user.balanceCents}
-      points={user.points}
-      asOfIso={new Date().toISOString()}
-      history={ledgerSnap.docs.map((doc) => toHistoryItem(doc.id, doc.data()))}
-    />
+    <>
+      <WalletView
+        qrSvg={qrSvg}
+        studentNumber={user.studentNumber}
+        balanceCents={user.balanceCents}
+        points={user.points}
+        asOfIso={new Date().toISOString()}
+        history={ledgerSnap.docs.map((doc) => toHistoryItem(doc.id, doc.data()))}
+      />
+      <script nonce={nonce} dangerouslySetInnerHTML={{ __html: WALLET_REFRESH_SCRIPT }} />
+    </>
   );
 }

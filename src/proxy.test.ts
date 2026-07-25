@@ -11,8 +11,16 @@ function matches(url: string): boolean {
   return unstable_doesMiddlewareMatch({ config, url });
 }
 
+function cspOf(res: Response): string {
+  return res.headers.get("Content-Security-Policy") ?? "";
+}
+
+function nonceOf(res: Response): string | null {
+  return cspOf(res).match(/'nonce-([^']+)'/)?.[1] ?? null;
+}
+
 describe("proxy matcher", () => {
-  const guarded = ["/", "/wallet", "/leaderboard", "/sell", "/admin", "/booths/register"];
+  const guarded = ["/", "/wallet", "/leaderboard", "/sell", "/admin", "/booths/register", "/login"];
   for (const path of guarded) {
     it(`runs on app page ${path}`, () => {
       expect(matches(path)).toBe(true);
@@ -21,7 +29,6 @@ describe("proxy matcher", () => {
 
   const excluded = [
     "/api/auth/session",
-    "/login",
     "/sw.js",
     "/manifest.webmanifest",
     "/favicon.ico",
@@ -59,5 +66,39 @@ describe("proxy redirect", () => {
     const res = proxy(request);
     expect(getRedirectUrl(res)).toBeNull();
     expect(res.headers.get("location")).toBeNull();
+  });
+
+  it("serves /login to cookieless visitors instead of redirecting", () => {
+    const res = proxy(new NextRequest(`${ORIGIN}/login?next=%2Fwallet`));
+    expect(getRedirectUrl(res)).toBeNull();
+    expect(res.headers.get("location")).toBeNull();
+  });
+});
+
+describe("proxy CSP nonce", () => {
+  it("stamps a nonce-based CSP with no 'unsafe-inline' on served responses", () => {
+    const request = new NextRequest(`${ORIGIN}/wallet`, {
+      headers: { cookie: `${SESSION_COOKIE_NAME}=abc123` },
+    });
+    const res = proxy(request);
+    const csp = cspOf(res);
+    expect(csp).toMatch(/script-src 'self' 'nonce-[^']+'/);
+    expect(csp).not.toContain("'unsafe-inline'");
+    expect(nonceOf(res)).toBeTruthy();
+  });
+
+  it("stamps the CSP on the /login response too", () => {
+    const res = proxy(new NextRequest(`${ORIGIN}/login`));
+    expect(nonceOf(res)).toBeTruthy();
+  });
+
+  it("mints a fresh nonce per request", () => {
+    const make = () =>
+      proxy(
+        new NextRequest(`${ORIGIN}/wallet`, {
+          headers: { cookie: `${SESSION_COOKIE_NAME}=abc123` },
+        }),
+      );
+    expect(nonceOf(make())).not.toBe(nonceOf(make()));
   });
 });
