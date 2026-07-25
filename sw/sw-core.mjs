@@ -1,5 +1,7 @@
 export const CACHE_PREFIX = "fraserpay-cache";
 
+export const PURGE_CACHES_MESSAGE = "fraserpay/purge-caches";
+
 export const STRATEGY = {
   NEVER_CACHE: "never-cache",
   STATIC_CACHE_FIRST: "static-cache-first",
@@ -40,4 +42,8 @@ export function isManagedCache(name) {
 
 export function isStaleCache(name, version) {
   return isManagedCache(name) && name !== cacheName(version);
+}
+
+export function cachesToPurge(names) {
+  return names.filter(isManagedCache);
 }

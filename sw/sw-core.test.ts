@@ -1,8 +1,10 @@
 import { describe, expect, test } from "vitest";
 import {
   CACHE_PREFIX,
+  PURGE_CACHES_MESSAGE,
   STRATEGY,
   cacheName,
+  cachesToPurge,
   isManagedCache,
   isShellRoute,
   isStaleCache,
@@ -94,5 +96,20 @@ describe("cache-name math", () => {
     expect(isStaleCache(cacheName("old"), "new")).toBe(true);
     expect(isStaleCache(cacheName("same"), "same")).toBe(false);
     expect(isStaleCache("unmanaged-cache", "new")).toBe(false);
+  });
+});
+
+describe("sign-out purge", () => {
+  test("selects every managed cache regardless of version, sparing foreign caches", () => {
+    const names = [cacheName("v1"), cacheName("v2"), "workbox-precache", "some-other-cache"];
+    expect(cachesToPurge(names)).toEqual([cacheName("v1"), cacheName("v2")]);
+  });
+
+  test("purges nothing when no managed caches are present", () => {
+    expect(cachesToPurge(["workbox-precache", "images"])).toEqual([]);
+  });
+
+  test("exposes a stable message-type contract for the sign-out belt", () => {
+    expect(PURGE_CACHES_MESSAGE).toBe("fraserpay/purge-caches");
   });
 });

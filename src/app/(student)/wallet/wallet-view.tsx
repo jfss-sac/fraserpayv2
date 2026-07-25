@@ -106,6 +106,9 @@ export function WalletView({
             Student <span className="font-medium text-foreground">#{studentNumber}</span>
           </p>
         ) : null}
+        <p className="text-center text-xs text-muted">
+          If SAC regenerated your payment code, refresh this page to load the new one.
+        </p>
       </section>
 
       <section className="grid grid-cols-2 gap-4">

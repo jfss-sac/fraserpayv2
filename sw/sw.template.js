@@ -24,6 +24,17 @@ self.addEventListener("activate", (event) => {
   );
 });
 
+self.addEventListener("message", (event) => {
+  if (!event.data || event.data.type !== PURGE_CACHES_MESSAGE) return;
+  const purged = (async () => {
+    const names = await caches.keys();
+    await Promise.all(cachesToPurge(names).map((name) => caches.delete(name)));
+    const port = event.ports && event.ports[0];
+    if (port) port.postMessage({ type: PURGE_CACHES_MESSAGE, ok: true });
+  })();
+  event.waitUntil(purged);
+});
+
 self.addEventListener("fetch", (event) => {
   const request = event.request;
   const url = new URL(request.url);
