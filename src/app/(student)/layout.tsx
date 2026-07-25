@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSession, hasAnyBoothMembership } from "@/lib/server/dal";
 import { AppShell, buildModes } from "@/lib/ui/shell";
+import { ServiceWorkerRegister } from "@/lib/ui/sw-register";
 
 export default async function StudentLayout({ children }: { children: React.ReactNode }) {
   const session = await getSession();
@@ -9,8 +10,11 @@ export default async function StudentLayout({ children }: { children: React.Reac
   const modes = buildModes(session.roles, await hasAnyBoothMembership(session.uid));
 
   return (
-    <AppShell active="student" modes={modes} suspended={session.suspended}>
-      {children}
-    </AppShell>
+    <>
+      <AppShell active="student" modes={modes} suspended={session.suspended}>
+        {children}
+      </AppShell>
+      <ServiceWorkerRegister />
+    </>
   );
 }

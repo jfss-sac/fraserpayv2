@@ -16,7 +16,7 @@ export default defineConfig({
     globals: true,
     setupFiles: ["./vitest.setup.ts"],
     // Keep Playwright E2E specs (added in Phase 6) out of the Vitest run.
-    include: ["src/**/*.{test,spec}.{ts,tsx}"],
+    include: ["src/**/*.{test,spec}.{ts,tsx}", "sw/**/*.{test,spec}.{ts,tsx}"],
     exclude: [
       ...configDefaults.exclude,
       "tests/integration/**",

@@ -17,6 +17,7 @@ vi.mock("@/lib/ui/shell", () => ({
   AppShell: () => null,
   buildModes: () => [],
 }));
+vi.mock("@/lib/ui/sw-register", () => ({ ServiceWorkerRegister: () => null }));
 
 import StudentLayout from "@/app/(student)/layout";
 import BoothLayout from "@/app/(booth)/layout";
