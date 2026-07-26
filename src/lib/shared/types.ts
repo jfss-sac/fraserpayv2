@@ -172,3 +172,46 @@ export interface StudentLedgerDTO {
   entries: SacLedgerEntry[];
   nextCursor: string | null;
 }
+
+export interface FeedLedgerEntry {
+  kind: "ledger";
+  id: string;
+  createdAt: string;
+  type: LedgerType;
+  direction: LedgerDirection;
+  amountCents: number;
+  balanceAfterCents: number;
+  studentUid: string;
+  studentNumber: string | null;
+  studentName: string;
+  actorUid: string;
+  actorName: string;
+  tags: string[];
+  boothId?: string;
+  boothName?: string;
+  method?: PaymentMethod;
+  lineItems?: LedgerLineItem[];
+  reason?: string;
+  originalEntryId?: string;
+  pointsDelta?: number;
+}
+
+export interface FeedAuditEntry {
+  kind: "audit";
+  id: string;
+  createdAt: string;
+  action: AuditAction;
+  actorUid: string;
+  actorName: string;
+  targetType: string;
+  targetId: string;
+  targetLabel: string;
+  details: Record<string, unknown>;
+}
+
+export type FeedEntry = FeedLedgerEntry | FeedAuditEntry;
+
+export interface FeedDTO {
+  entries: FeedEntry[];
+  nextCursor: string | null;
+}
