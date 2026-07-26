@@ -1,0 +1,169 @@
+import { act, renderHook } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import type { FeedLedgerEntry } from "@/lib/shared/types";
+import { FeedApiError, requestFeed } from "./api";
+import { FEED_POLL_MS, useFeed } from "./use-feed";
+
+vi.mock("./api", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./api")>();
+  return { ...actual, requestFeed: vi.fn() };
+});
+
+const mockRequestFeed = vi.mocked(requestFeed);
+
+function ledger(id: string, overrides: Partial<FeedLedgerEntry> = {}): FeedLedgerEntry {
+  return {
+    kind: "ledger",
+    id,
+    createdAt: "2026-07-26T12:00:00.000Z",
+    type: "purchase",
+    direction: "debit",
+    amountCents: 100,
+    balanceAfterCents: 0,
+    studentUid: "s1",
+    studentNumber: "700001",
+    studentName: "Stu Dent",
+    actorUid: "a1",
+    actorName: "Ada Actor",
+    tags: [],
+    ...overrides,
+  };
+}
+
+async function flush(): Promise<void> {
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+}
+
+afterEach(() => {
+  vi.clearAllMocks();
+});
+
+describe("filters and pagination", () => {
+  test("changing the filter fetches with that filter and replaces the entries", async () => {
+    mockRequestFeed.mockResolvedValue({ entries: [ledger("t1")], nextCursor: null });
+    const { result } = renderHook(() =>
+      useFeed({ initialEntries: [ledger("a")], initialCursor: null }),
+    );
+
+    act(() => {
+      result.current.setFilter({ kind: "type", type: "topup" });
+    });
+    await flush();
+
+    expect(mockRequestFeed).toHaveBeenCalledWith({ type: "topup" });
+    expect(result.current.filter).toEqual({ kind: "type", type: "topup" });
+    expect(result.current.entries.map((e) => e.id)).toEqual(["t1"]);
+    expect(result.current.loading).toBe(false);
+  });
+
+  test("re-selecting the active filter does not refetch", async () => {
+    const { result } = renderHook(() =>
+      useFeed({ initialEntries: [ledger("a")], initialCursor: null }),
+    );
+    act(() => {
+      result.current.setFilter({ kind: "all" });
+    });
+    await flush();
+    expect(mockRequestFeed).not.toHaveBeenCalled();
+  });
+
+  test("loadOlder appends the next page and advances the cursor", async () => {
+    mockRequestFeed.mockResolvedValue({ entries: [ledger("b")], nextCursor: "c2" });
+    const { result } = renderHook(() =>
+      useFeed({ initialEntries: [ledger("a")], initialCursor: "c1" }),
+    );
+
+    act(() => {
+      result.current.loadOlder();
+    });
+    await flush();
+
+    expect(mockRequestFeed).toHaveBeenCalledWith({ cursor: "c1" });
+    expect(result.current.entries.map((e) => e.id)).toEqual(["a", "b"]);
+    expect(result.current.cursor).toBe("c2");
+  });
+
+  test("a failed fetch surfaces an error message", async () => {
+    mockRequestFeed.mockRejectedValue(new FeedApiError("RATE_LIMITED"));
+    const { result } = renderHook(() =>
+      useFeed({ initialEntries: [ledger("a")], initialCursor: null }),
+    );
+
+    act(() => {
+      result.current.setFilter({ kind: "type", type: "refund" });
+    });
+    await flush();
+
+    expect(result.current.error).toMatch(/too many/i);
+    expect(result.current.loading).toBe(false);
+  });
+
+  test("manual refresh prepends only genuinely new entries", async () => {
+    mockRequestFeed.mockResolvedValue({
+      entries: [ledger("b"), ledger("a")],
+      nextCursor: null,
+    });
+    const { result } = renderHook(() =>
+      useFeed({ initialEntries: [ledger("a")], initialCursor: null }),
+    );
+
+    act(() => {
+      result.current.refresh();
+    });
+    await flush();
+
+    expect(result.current.entries.map((e) => e.id)).toEqual(["b", "a"]);
+  });
+});
+
+describe("polling", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  test("surfaces new items as pending on the poll interval without disrupting the list", async () => {
+    mockRequestFeed.mockResolvedValue({
+      entries: [ledger("b"), ledger("a")],
+      nextCursor: null,
+    });
+    const { result } = renderHook(() =>
+      useFeed({ initialEntries: [ledger("a")], initialCursor: null }),
+    );
+
+    expect(mockRequestFeed).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(FEED_POLL_MS);
+    });
+
+    expect(mockRequestFeed).toHaveBeenCalledTimes(1);
+    expect(result.current.pending.map((e) => e.id)).toEqual(["b"]);
+    expect(result.current.entries.map((e) => e.id)).toEqual(["a"]);
+
+    act(() => {
+      result.current.applyPending();
+    });
+
+    expect(result.current.pending).toHaveLength(0);
+    expect(result.current.entries.map((e) => e.id)).toEqual(["b", "a"]);
+  });
+
+  test("a poll with nothing new leaves pending empty", async () => {
+    mockRequestFeed.mockResolvedValue({ entries: [ledger("a")], nextCursor: null });
+    const { result } = renderHook(() =>
+      useFeed({ initialEntries: [ledger("a")], initialCursor: null }),
+    );
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(FEED_POLL_MS);
+    });
+
+    expect(result.current.pending).toHaveLength(0);
+  });
+});
