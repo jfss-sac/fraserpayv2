@@ -125,3 +125,50 @@ export interface SacLookupResult {
   balanceCents: number;
   points: number;
 }
+
+export interface StudentSearchResult {
+  uid: string;
+  displayName: string;
+  studentNumber: string | null;
+  email: string;
+  balanceCents: number;
+  points: number;
+  suspended: boolean;
+}
+
+export interface StudentSearchDTO {
+  results: StudentSearchResult[];
+}
+
+export interface StudentDetail {
+  uid: string;
+  displayName: string;
+  studentNumber: string | null;
+  email: string;
+  balanceCents: number;
+  points: number;
+  suspended: boolean;
+  hasPaymentCode: boolean;
+}
+
+export interface SacLedgerEntry {
+  id: string;
+  type: LedgerType;
+  direction: LedgerDirection;
+  amountCents: number;
+  balanceAfterCents: number;
+  createdAt: string;
+  tags: string[];
+  actorName: string;
+  boothName?: string;
+  method?: PaymentMethod;
+  lineItems?: LedgerLineItem[];
+  reason?: string;
+  originalEntryId?: string;
+  pointsDelta?: number;
+}
+
+export interface StudentLedgerDTO {
+  entries: SacLedgerEntry[];
+  nextCursor: string | null;
+}
