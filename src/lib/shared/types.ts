@@ -119,3 +119,9 @@ export interface LookupResult {
   name: string;
   sufficient: boolean;
 }
+
+export interface SacLookupResult {
+  name: string;
+  balanceCents: number;
+  points: number;
+}
