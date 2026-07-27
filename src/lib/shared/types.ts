@@ -291,3 +291,17 @@ export interface ReconciliationDTO {
   members: ReconMemberTotals[];
   totals: ReconciliationTotals;
 }
+
+export interface ReportTopupTotals {
+  cashCents: number;
+  cardCents: number;
+  totalCents: number;
+  count: number;
+}
+
+export interface ReportsDTO {
+  booths: BoothSummary[];
+  grossTotalCents: number;
+  topups: ReportTopupTotals;
+  outstandingLiabilityCents: number;
+}
