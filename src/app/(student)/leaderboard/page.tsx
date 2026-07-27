@@ -1,9 +1,17 @@
 import type { Metadata } from "next";
+import { redirect } from "next/navigation";
+import { getSession } from "@/lib/server/dal";
+import { getLeaderboard } from "@/lib/server/leaderboard";
+import { LeaderboardView } from "./leaderboard-view";
 
 export const metadata: Metadata = {
   title: "Leaderboard",
 };
 
-export default function LeaderboardPage() {
-  return <h1 className="text-2xl font-bold text-foreground">Leaderboard</h1>;
+export default async function LeaderboardPage() {
+  const session = await getSession();
+  if (!session) redirect("/login");
+
+  const data = await getLeaderboard();
+  return <LeaderboardView data={data} />;
 }

@@ -305,3 +305,14 @@ export interface ReportsDTO {
   topups: ReportTopupTotals;
   outstandingLiabilityCents: number;
 }
+
+export interface LeaderboardRow {
+  rank: number;
+  boothId: string;
+  boothName: string;
+  grossCents: number;
+}
+
+export interface LeaderboardDTO {
+  rows: LeaderboardRow[];
+}
