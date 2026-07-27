@@ -245,3 +245,49 @@ export interface FeedDTO {
   entries: FeedEntry[];
   nextCursor: string | null;
 }
+
+export interface ReconTopupEntry {
+  id: string;
+  createdAt: string;
+  amountCents: number;
+  method: PaymentMethod;
+  studentName: string;
+  studentNumber: string | null;
+  tags: string[];
+}
+
+export interface ReconCorrectionEntry {
+  id: string;
+  createdAt: string;
+  amountCents: number;
+  direction: LedgerDirection;
+  studentName: string;
+  studentNumber: string | null;
+  reason: string | null;
+  originalEntryId: string;
+  pointsDelta: number | null;
+}
+
+export interface ReconMemberTotals {
+  actorUid: string;
+  actorName: string;
+  cashCents: number;
+  cashCount: number;
+  cardCents: number;
+  cardCount: number;
+  topups: ReconTopupEntry[];
+  corrections: ReconCorrectionEntry[];
+}
+
+export interface ReconciliationTotals {
+  cashCents: number;
+  cardCents: number;
+  topupCount: number;
+  correctionCount: number;
+}
+
+export interface ReconciliationDTO {
+  date: string;
+  members: ReconMemberTotals[];
+  totals: ReconciliationTotals;
+}
