@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { getSession } from "@/lib/server/dal";
 import { getStudentDetail, getStudentLedger } from "@/lib/server/sac-students";
 import { formatCents } from "@/lib/shared/money";
-import { StudentLedger } from "./student-ledger";
+import { StudentActions } from "./student-actions";
 
 export const metadata: Metadata = {
   title: "Student",
@@ -54,8 +54,10 @@ export default async function StudentDetailPage({ params }: { params: Promise<{ 
         </div>
       </section>
 
-      <StudentLedger
-        studentUid={student.uid}
+      <StudentActions
+        student={student}
+        viewerUid={session.uid}
+        isExec={session.roles.sacExec}
         initialEntries={ledger.entries}
         initialCursor={ledger.nextCursor}
       />

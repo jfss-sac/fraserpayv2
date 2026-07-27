@@ -32,7 +32,13 @@ function entryTitle(entry: SacLedgerEntry): string {
   }
 }
 
-function LedgerRow({ entry }: { entry: SacLedgerEntry }) {
+function LedgerRow({
+  entry,
+  onRefund,
+}: {
+  entry: SacLedgerEntry;
+  onRefund?: (entry: SacLedgerEntry) => void;
+}) {
   const credit = entry.direction === "credit";
   const amount = credit ? `+${formatCents(entry.amountCents)}` : formatCents(-entry.amountCents);
   return (
@@ -49,8 +55,21 @@ function LedgerRow({ entry }: { entry: SacLedgerEntry }) {
             </span>
           ))}
         </span>
-        <span className={credit ? "font-semibold text-success" : "font-semibold text-foreground"}>
-          {amount}
+        <span className="flex items-center gap-3">
+          {onRefund && entry.type === "purchase" ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              className="h-8 w-auto px-3 text-sm"
+              onClick={() => onRefund(entry)}
+            >
+              Refund
+            </Button>
+          ) : null}
+          <span className={credit ? "font-semibold text-success" : "font-semibold text-foreground"}>
+            {amount}
+          </span>
         </span>
       </div>
       {entry.lineItems && entry.lineItems.length > 0 ? (
@@ -80,10 +99,12 @@ export function StudentLedger({
   studentUid,
   initialEntries,
   initialCursor,
+  onRefund,
 }: {
   studentUid: string;
   initialEntries: SacLedgerEntry[];
   initialCursor: string | null;
+  onRefund?: (entry: SacLedgerEntry) => void;
 }) {
   const [entries, setEntries] = useState<SacLedgerEntry[]>(initialEntries);
   const [cursor, setCursor] = useState<string | null>(initialCursor);
@@ -114,7 +135,7 @@ export function StudentLedger({
       ) : (
         <ul className="flex flex-col divide-y divide-border">
           {entries.map((entry) => (
-            <LedgerRow key={entry.id} entry={entry} />
+            <LedgerRow key={entry.id} entry={entry} onRefund={onRefund} />
           ))}
         </ul>
       )}

@@ -76,6 +76,7 @@ export async function getStudentDetail(uid: string): Promise<StudentDetail | nul
     points: doc.points,
     suspended: doc.suspended,
     hasPaymentCode: typeof doc.paymentCode === "string" && doc.paymentCode.length > 0,
+    roles: { sacMember: doc.roles.sacMember === true, sacExec: doc.roles.sacExec === true },
   };
 }
 

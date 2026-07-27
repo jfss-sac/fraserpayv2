@@ -149,6 +149,7 @@ export interface StudentDetail {
   points: number;
   suspended: boolean;
   hasPaymentCode: boolean;
+  roles: SacRoles;
 }
 
 export interface SacLedgerEntry {
