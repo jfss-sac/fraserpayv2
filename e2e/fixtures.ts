@@ -5,6 +5,8 @@ export const BUYER_STUDENT_NUMBER = "843902";
 export const BUYER_NAME = "Ben Carter";
 export const BUYER_UID = "seed-student-ben";
 
+export const PENDING_BOOTH_ID = "seed-booth-pending";
+export const PENDING_BOOTH_SUBMITTER = "jmurray@pdsb.net";
 export const APPROVED_BOOTH_ID = "seed-booth-approved";
 export const DEACTIVATED_BOOTH_ID = "seed-booth-deactivated";
 

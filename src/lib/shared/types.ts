@@ -73,6 +73,20 @@ export interface MemberBooth {
   status: BoothStatus;
 }
 
+export interface AdminBoothListItem {
+  id: string;
+  name: string;
+  status: BoothStatus;
+  submitterEmail: string;
+  joinCode: string | null;
+}
+
+export interface BoothMemberDTO {
+  uid: string;
+  displayName: string;
+  joinedAt: string;
+}
+
 export interface BoothItemSummary {
   itemId: string;
   name: string;
@@ -88,6 +102,21 @@ export interface BoothSummary {
   purchaseCount: number;
   refundCount: number;
   items: BoothItemSummary[];
+}
+
+export interface BoothDetail {
+  id: string;
+  name: string;
+  description: string;
+  status: BoothStatus;
+  items: BoothItem[];
+  joinCode: string | null;
+  submitterUid: string;
+  submitterEmail: string;
+  createdAt: string;
+  approvedAt: string | null;
+  members: BoothMemberDTO[];
+  summary: BoothSummary | null;
 }
 
 export interface ChargeResult {
