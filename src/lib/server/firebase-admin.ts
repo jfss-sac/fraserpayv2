@@ -16,6 +16,10 @@ function createApp(): App {
   if (usingEmulators()) {
     const projectId =
       process.env.FIREBASE_PROJECT_ID || process.env.GCLOUD_PROJECT || "demo-fraserpay";
+    // No credentials exist against the emulators; without this the google-auth
+    // client probes the absent GCE metadata server on first use, adding a ~3s
+    // cold-start hang and a MetadataLookupWarning to every emulator process.
+    process.env.METADATA_SERVER_DETECTION ??= "none";
     return initializeApp({ projectId });
   }
 
