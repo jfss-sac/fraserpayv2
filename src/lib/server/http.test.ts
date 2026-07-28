@@ -41,6 +41,26 @@ describe("defineHandler success path", () => {
     expect(line).toMatchObject({ event: "request", route: "/api/echo", level: "info" });
     expect(typeof line.latencyMs).toBe("number");
   });
+
+  it("correlates the log line to the ledger when the handler returns an entryId", async () => {
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const committed = defineHandler({}, () => ({ entryId: "ledger-abc", amountCents: 500 }));
+    await committed(post({ origin: ORIGIN }, {}));
+    expect(JSON.parse(spy.mock.calls[0][0] as string).entryId).toBe("ledger-abc");
+  });
+
+  it("omits entryId for handlers that are not money operations", async () => {
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    await echo(post({ origin: ORIGIN }, { value: 1 }));
+    expect(JSON.parse(spy.mock.calls[0][0] as string)).not.toHaveProperty("entryId");
+  });
+
+  it("keeps amounts out of the log line", async () => {
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const committed = defineHandler({}, () => ({ entryId: "ledger-abc", amountCents: 500 }));
+    await committed(post({ origin: ORIGIN }, {}));
+    expect(JSON.parse(spy.mock.calls[0][0] as string)).not.toHaveProperty("amountCents");
+  });
 });
 
 describe("defineHandler validation", () => {

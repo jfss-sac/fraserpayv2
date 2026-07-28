@@ -35,6 +35,11 @@ export type HandlerFn<TInput, TParams> = (
 
 type RouteContext<TParams> = { params: Promise<TParams> } | undefined;
 
+export type DefinedHandler<S extends z.ZodType | undefined, TParams> = ((
+  request: Request,
+  routeContext?: RouteContext<TParams>,
+) => Promise<Response>) & { config: HandlerConfig<S> };
+
 function isMutation(method: string): boolean {
   return method !== "GET" && method !== "HEAD" && method !== "OPTIONS";
 }
@@ -102,6 +107,12 @@ async function enforceRateLimit(
   await checkRateLimit(scope, key);
 }
 
+function ledgerEntryId(result: HandlerResult): string | undefined {
+  if (result === null || result === undefined || result instanceof Response) return undefined;
+  const entryId = result.entryId;
+  return typeof entryId === "string" ? entryId : undefined;
+}
+
 function toResponse(result: HandlerResult): Response {
   if (result instanceof Response) return result;
   if (result === null || result === undefined) return new Response(null, { status: 204 });
@@ -111,8 +122,8 @@ function toResponse(result: HandlerResult): Response {
 export function defineHandler<
   S extends z.ZodType | undefined = undefined,
   TParams = Record<string, string>,
->(config: HandlerConfig<S>, fn: HandlerFn<HandlerInput<S>, TParams>) {
-  return async function handler(
+>(config: HandlerConfig<S>, fn: HandlerFn<HandlerInput<S>, TParams>): DefinedHandler<S, TParams> {
+  const handler = async function handler(
     request: Request,
     routeContext?: RouteContext<TParams>,
   ): Promise<Response> {
@@ -165,6 +176,7 @@ export function defineHandler<
         route,
         actorUid,
         latencyMs: Math.round(performance.now() - startedAt),
+        entryId: ledgerEntryId(result),
       });
       return response;
     } catch (err) {
@@ -189,4 +201,6 @@ export function defineHandler<
       return response;
     }
   };
+
+  return Object.assign(handler, { config });
 }

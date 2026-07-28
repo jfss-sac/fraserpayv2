@@ -4,7 +4,7 @@ import { ForbiddenError, NotFoundError } from "@/lib/server/errors";
 import { defineHandler } from "@/lib/server/http";
 
 export const GET = defineHandler<undefined, { id: string }>(
-  { role: "active" },
+  { role: "active", rateLimit: "reads" },
   async ({ params, session }) => {
     if (!(await isBoothMember(params.id, session!.uid))) {
       throw new ForbiddenError("You are not a member of this booth.");

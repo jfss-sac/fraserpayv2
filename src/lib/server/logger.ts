@@ -12,8 +12,6 @@ export interface LogRecord {
   latencyMs?: number;
   code?: string;
   entryId?: string;
-  amountCents?: number;
-  type?: string;
   err?: unknown;
 }
 

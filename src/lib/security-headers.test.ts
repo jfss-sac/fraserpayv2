@@ -28,6 +28,10 @@ describe("buildContentSecurityPolicy", () => {
     expect(csp).not.toContain("'unsafe-inline'");
   });
 
+  test("carries no unsafe-* keyword in any directive", () => {
+    expect(csp).not.toMatch(/'unsafe-[a-z-]+'/);
+  });
+
   test("connect-src starts from self before any allowance", () => {
     expect(directive(csp, "connect-src")).toMatch(/^connect-src 'self'/);
   });

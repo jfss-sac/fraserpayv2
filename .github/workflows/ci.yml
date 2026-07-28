@@ -53,6 +53,9 @@ jobs:
       - name: Format check
         run: pnpm format:check
 
+      - name: Server-only pragma check
+        run: pnpm scan:server-only
+
       - name: Test
         run: pnpm test:coverage
 
@@ -61,3 +64,6 @@ jobs:
 
       - name: Build
         run: pnpm build
+
+      - name: Client bundle secret scan
+        run: pnpm scan:secrets
