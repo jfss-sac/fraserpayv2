@@ -5,15 +5,16 @@ import { SESSION_COOKIE_NAME } from "../src/lib/shared/constants";
 import {
   DEACTIVATED_BOOTH_ID,
   OPERATOR_NAME,
+  OPERATOR_STATE,
   OPERATOR_UID,
   SAC_EXEC_STATE,
   SAC_EXEC_UID,
   SAC_MEMBER_STATE,
   SAC_MEMBER_UID,
+  TEACHER_STATE,
+  TEACHER_UID,
 } from "./fixtures";
 import { db, mintSessionCookie } from "./helpers/firebase";
-
-const OPERATOR_STATE = "e2e/.auth/operator.json";
 
 async function writeStorageState(path: string, uid: string): Promise<void> {
   const cookie = await mintSessionCookie(uid);
@@ -49,6 +50,7 @@ export default async function globalSetup(): Promise<void> {
 
   mkdirSync("e2e/.auth", { recursive: true });
   await writeStorageState(OPERATOR_STATE, OPERATOR_UID);
+  await writeStorageState(TEACHER_STATE, TEACHER_UID);
   await writeStorageState(SAC_MEMBER_STATE, SAC_MEMBER_UID);
   await writeStorageState(SAC_EXEC_STATE, SAC_EXEC_UID);
 }

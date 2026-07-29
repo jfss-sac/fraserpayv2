@@ -1,6 +1,6 @@
 import AxeBuilder from "@axe-core/playwright";
 import { type Page, expect, test } from "@playwright/test";
-import { APPROVED_BOOTH_ID, SAC_MEMBER_STATE } from "./fixtures";
+import { APPROVED_BOOTH_ID, SAC_MEMBER_STATE } from "../fixtures";
 
 async function expectNoSeriousViolations(page: Page): Promise<void> {
   const { violations } = await new AxeBuilder({ page })

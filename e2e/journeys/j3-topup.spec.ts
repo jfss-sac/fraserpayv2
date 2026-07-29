@@ -1,49 +1,38 @@
 import { type Page, expect, test } from "@playwright/test";
-import { Timestamp } from "firebase-admin/firestore";
-import { SAC_EXEC_STATE, SAC_MEMBER_STATE } from "./fixtures";
-import { db } from "./helpers/firebase";
+import { SAC_EXEC_STATE, SAC_MEMBER_STATE } from "../fixtures";
+import { enterStudentNumber } from "../helpers/numpad";
+import { makeUser } from "../helpers/users";
 
 const HAPPY = { uid: "e2e-topup-happy", number: "870001", name: "Tilly Topup" };
 const RECONFIRM = { uid: "e2e-topup-reconfirm", number: "870002", name: "Ronan Reconfirm" };
 const NEARCAP = { uid: "e2e-topup-nearcap", number: "870003", name: "Cappy Nearcap" };
 
-async function makeBuyer(
-  buyer: { uid: string; number: string; name: string },
-  balanceCents: number,
-): Promise<void> {
-  await db()
-    .collection("users")
-    .doc(buyer.uid)
-    .set({
-      email: `${buyer.number}@pdsb.net`,
-      displayName: buyer.name,
-      displayNameLower: buyer.name.toLowerCase(),
-      studentNumber: buyer.number,
-      paymentCode: `fp1-${buyer.uid}`,
-      balanceCents,
-      points: 0,
-      roles: { sacMember: false, sacExec: false },
-      suspended: false,
-      createdAt: Timestamp.now(),
-      updatedAt: Timestamp.now(),
-    });
-}
-
 async function identify(page: Page, studentNumber: string): Promise<void> {
   await page.goto("/admin/topup");
-  for (const digit of studentNumber) {
-    await page.getByRole("button", { name: `Digit ${digit}`, exact: true }).click();
-  }
-  await page.getByRole("button", { name: "Look up student" }).click();
+  await enterStudentNumber(page, studentNumber);
 }
 
 test.beforeAll(async () => {
-  await makeBuyer(HAPPY, 500);
-  await makeBuyer(RECONFIRM, 0);
-  await makeBuyer(NEARCAP, 19_900);
+  await makeUser({
+    uid: HAPPY.uid,
+    studentNumber: HAPPY.number,
+    displayName: HAPPY.name,
+    balanceCents: 500,
+  });
+  await makeUser({
+    uid: RECONFIRM.uid,
+    studentNumber: RECONFIRM.number,
+    displayName: RECONFIRM.name,
+  });
+  await makeUser({
+    uid: NEARCAP.uid,
+    studentNumber: NEARCAP.number,
+    displayName: NEARCAP.name,
+    balanceCents: 19_900,
+  });
 });
 
-test.describe("SAC member top-up", () => {
+test.describe("J3 · SAC member top-up with guards", () => {
   test.use({ storageState: SAC_MEMBER_STATE });
 
   test("happy path: identify, confirm name, enter amount, success shows balance + points", async ({
@@ -93,7 +82,7 @@ test.describe("SAC member top-up", () => {
   });
 });
 
-test.describe("SAC exec top-up", () => {
+test.describe("J3 · SAC exec cap override", () => {
   test.use({ storageState: SAC_EXEC_STATE });
 
   test("an exec overrides the cap with a required reason", async ({ page }) => {

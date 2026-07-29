@@ -19,7 +19,7 @@ export function auth(): Auth {
   return getAuth(adminApp());
 }
 
-export async function mintSessionCookie(uid: string): Promise<string> {
+export async function emulatorIdToken(uid: string): Promise<string> {
   const customToken = await auth().createCustomToken(uid);
   const host = process.env.FIREBASE_AUTH_EMULATOR_HOST;
   if (!host) throw new Error("FIREBASE_AUTH_EMULATOR_HOST is unset — run e2e under the emulators.");
@@ -33,5 +33,26 @@ export async function mintSessionCookie(uid: string): Promise<string> {
   );
   const body = (await res.json()) as { idToken?: string };
   if (!body.idToken) throw new Error(`emulator did not return an idToken: ${JSON.stringify(body)}`);
-  return auth().createSessionCookie(body.idToken, { expiresIn: SESSION_TTL_MS });
+  return body.idToken;
+}
+
+export async function mintSessionCookie(uid: string): Promise<string> {
+  const idToken = await emulatorIdToken(uid);
+  return auth().createSessionCookie(idToken, { expiresIn: SESSION_TTL_MS });
+}
+
+export async function createEmulatorUser(input: {
+  uid: string;
+  email: string;
+  displayName: string;
+}): Promise<void> {
+  await auth()
+    .deleteUser(input.uid)
+    .catch(() => {});
+  await auth().createUser({
+    uid: input.uid,
+    email: input.email,
+    emailVerified: true,
+    displayName: input.displayName,
+  });
 }

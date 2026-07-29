@@ -1,6 +1,6 @@
 import { gzipSync } from "node:zlib";
 import { type Response, expect, test } from "@playwright/test";
-import { APPROVED_BOOTH_ID } from "./fixtures";
+import { APPROVED_BOOTH_ID } from "../fixtures";
 
 const BUDGET_BYTES = 170 * 1024;
 
