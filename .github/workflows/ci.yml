@@ -10,63 +10,115 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  FIREBASE_TOOLS_VERSION: 15.24.0
+
 jobs:
-  verify:
-    name: Typecheck, lint, test & build
+  static:
+    name: Static (typecheck, lint, format)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Lint
+        run: pnpm lint
+      - name: Format check
+        run: pnpm format:check
 
-      - name: Enable corepack
-        run: corepack enable
+  unit:
+    name: Unit tests & coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - name: Unit tests with coverage
+        run: pnpm test:coverage
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: pnpm
-
+  integration:
+    name: Integration & rules (emulators)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
       - name: Setup Java (Firestore emulator)
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 21
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
       - name: Install Firebase CLI
-        run: npm install -g firebase-tools@15.24.0
-
+        run: npm install -g firebase-tools@${{ env.FIREBASE_TOOLS_VERSION }}
       - name: Cache Firebase emulators
         uses: actions/cache@v4
         with:
           path: ~/.cache/firebase/emulators
           key: firebase-emulators-${{ runner.os }}
-
-      - name: Typecheck
-        run: pnpm typecheck
-
-      - name: Lint
-        run: pnpm lint
-
-      - name: Format check
-        run: pnpm format:check
-
-      - name: Server-only pragma check
-        run: pnpm scan:server-only
-
-      - name: Test
-        run: pnpm test:coverage
-
-      - name: Integration tests (rules + emulator)
+      - name: Integration tests with coverage
         run: firebase emulators:exec --only auth,firestore --project demo-fraserpay "pnpm test:integration:coverage"
 
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
       - name: Build
         run: pnpm build
+      - name: Upload client bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: next-static
+          path: .next/static
+          retention-days: 1
 
+  e2e:
+    name: E2E (built app + emulators)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - name: Setup Java (Firestore emulator)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Install Firebase CLI
+        run: npm install -g firebase-tools@${{ env.FIREBASE_TOOLS_VERSION }}
+      - name: Cache Firebase emulators
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/firebase/emulators
+          key: firebase-emulators-${{ runner.os }}
+      - name: Install Playwright browser
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Run E2E suite
+        run: pnpm test:e2e
+      - name: Upload failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-artifacts
+          path: |
+            playwright-report
+            test-results
+          retention-days: 7
+
+  security:
+    name: Security (secret scan, audit)
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - name: Server-only pragma scan
+        run: pnpm scan:server-only
+      - name: Download client bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: next-static
+          path: .next/static
       - name: Client bundle secret scan
         run: pnpm scan:secrets
-
       - name: Dependency audit (fail on high/critical)
         run: pnpm audit --prod --audit-level high
