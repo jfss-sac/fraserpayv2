@@ -386,17 +386,26 @@ describe("POST /api/booth/charge", () => {
     expect(await ledgerFor(buyer.uid)).toHaveLength(1);
   });
 
-  it("returns a response body under 2 KB (NFR-3)", async () => {
+  it("keeps request and response bodies each under 2 KB (NFR-3)", async () => {
     const buyer = await freshBuyer(2000);
-    const res = await chargeRoute(
-      post(OPERATOR.uid, {
-        boothId: BOOTH_ID,
-        buyer: { studentNumber: buyer.studentNumber },
-        items: [{ itemId: "coffee", qty: 1 }],
-      }),
-    );
+    const requestBody = {
+      boothId: BOOTH_ID,
+      buyer: { studentNumber: buyer.studentNumber },
+      items: [
+        { itemId: "coffee", qty: 2 },
+        { itemId: "cookie", qty: 2 },
+        { itemId: "custom", qty: 3 },
+      ],
+    };
+    const requestBytes = Buffer.byteLength(JSON.stringify(requestBody), "utf8");
+    const res = await chargeRoute(post(OPERATOR.uid, requestBody));
     const text = await res.text();
-    expect(Buffer.byteLength(text, "utf8")).toBeLessThan(2048);
+    const responseBytes = Buffer.byteLength(text, "utf8");
+    console.info(
+      `[nfr-3] charge request ${requestBytes} B, response ${responseBytes} B (limit 2048)`,
+    );
+    expect(requestBytes).toBeLessThan(2048);
+    expect(responseBytes).toBeLessThan(2048);
     expect(text).not.toContain("balance");
   });
 });

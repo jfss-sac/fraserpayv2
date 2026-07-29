@@ -268,6 +268,24 @@ describe("POST /api/booth/lookup", () => {
     expect(await errorCode(res)).toBe("VALIDATION");
   });
 
+  it("keeps request and response bodies each under 2 KB (NFR-3)", async () => {
+    const buyer = await freshBuyer(2000);
+    const requestBody = {
+      boothId: BOOTH_ID,
+      buyer: { studentNumber: buyer.studentNumber },
+      cartTotalCents: 1250,
+    };
+    const requestBytes = Buffer.byteLength(JSON.stringify(requestBody), "utf8");
+    const res = await lookupRoute(post(OPERATOR.uid, requestBody));
+    const text = await res.text();
+    const responseBytes = Buffer.byteLength(text, "utf8");
+    console.info(
+      `[nfr-3] lookup request ${requestBytes} B, response ${responseBytes} B (limit 2048)`,
+    );
+    expect(requestBytes).toBeLessThan(2048);
+    expect(responseBytes).toBeLessThan(2048);
+  });
+
   it("rate-limits an operator past 30 lookups per minute", async () => {
     const buyer = await freshBuyer(2000);
     const body = {
