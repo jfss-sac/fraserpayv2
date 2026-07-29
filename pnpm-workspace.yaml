@@ -4,3 +4,12 @@ allowBuilds:
   protobufjs: true
   sharp: true
   unrs-resolver: true
+
+overrides:
+  "sharp@<0.35.0": ">=0.35.0"
+  "postcss@<8.5.18": ">=8.5.18"
+  "uuid@<11.1.1": "^11.1.1"
+
+auditConfig:
+  ignoreGhsas:
+    - "GHSA-mh99-v99m-4gvg"

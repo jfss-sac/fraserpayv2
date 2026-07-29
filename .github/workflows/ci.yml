@@ -67,3 +67,6 @@ jobs:
 
       - name: Client bundle secret scan
         run: pnpm scan:secrets
+
+      - name: Dependency audit (fail on high/critical)
+        run: pnpm audit --prod --audit-level high
