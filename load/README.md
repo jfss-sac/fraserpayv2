@@ -1,13 +1,13 @@
 # Load testing (NFR-5)
 
-k6 scripts that prove the lunch-rush target — **1,500 students / 40 booths / ~10 charges per second sustained, p95 API latency < 500 ms** ([PRD NFR-5](../.docs/PRD.md#51-performance-the-school-wifi-problem), [arch A12 / §17](../.docs/architecture.md#3-decision-log)) — plus a correctness storm the ledger verifier must survive.
+k6 scripts that prove the lunch-rush target — **1,500 students / 40 booths / ~10 charges per second sustained, p95 API latency < 500 ms** (NFR-5) — plus a correctness storm the ledger verifier must survive.
 
 Two things are being measured, and they are **not** the same environment:
 
 | Goal                                                     | Where                                        | Why                                                                                                                              |
 | -------------------------------------------------------- | -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
 | Correctness + contention + idempotency under concurrency | **Local** (`next start` + Firebase emulator) | Emulator gives a real transactional Firestore; latency numbers here are meaningless.                                             |
-| Real p95 latency vs the 500 ms threshold                 | **Staging** (deployer's manual step)         | Only production infra + real network give trustworthy latency. See [production handoff](../.docs/roadmap.md#production-handoff). |
+| Real p95 latency vs the 500 ms threshold                 | **Staging**                                  | Only production infra + real network give trustworthy latency.                                                                   |
 
 ## Prerequisites
 
@@ -74,9 +74,9 @@ k6: `BASE_URL` (`http://127.0.0.1:3000`), `LOAD_FIXTURES` (`./fixtures/load-fixt
 
 Rate limits are per-seller-uid (charge 20/min); the seed provisions enough sellers that a round-robin 10/s stays well under the limit. If you push `CHARGE_RATE` much higher, add sellers (`LOAD_SELLERS_PER_BOOTH`) or you'll measure the rate limiter, not the app.
 
-## Staging run (real latency — deployer's step)
+## Staging run (real latency)
 
-Only the deployer runs this, against the staging deployment, per the [production handoff](../.docs/roadmap.md#production-handoff). Staging has **no dev-login and no emulator**, so fixtures/cookies must be provisioned by whoever owns that environment; do **not** point the emulator seed at a cloud project (it refuses to run without `FIRESTORE_EMULATOR_HOST`). Then:
+Run this against the staging deployment. Staging has **no dev-login and no emulator**, so fixtures/cookies must be provisioned by whoever owns that environment; do **not** point the emulator seed at a cloud project (it refuses to run without `FIRESTORE_EMULATOR_HOST`). Then:
 
 ```sh
 BASE_URL=https://<staging-host> k6 run load/lunch-rush.js
@@ -85,7 +85,7 @@ pnpm verify:ledger --project <staging-project-id>
 node --import tsx scripts/check-load-integrity.ts --project <staging-project-id>
 ```
 
-Record the staging p95 — that is the number NFR-5 is judged on. The local summary goes in [`.docs/perf-baseline.md`](../.docs/perf-baseline.md) with the caveat that emulator latency is not production latency.
+Record the staging p95 — that is the number NFR-5 is judged on, with the caveat that emulator latency is not production latency.
 
 ## Capturing the summary
 
@@ -95,4 +95,4 @@ k6 prints its end-of-test summary to stdout. Capture it for the baseline doc wit
 k6 run --summary-export load/last-summary.json load/lunch-rush.js | tee load/last-run.txt
 ```
 
-Neither output file is committed; paste the relevant numbers into `.docs/perf-baseline.md`.
+Neither output file is committed.

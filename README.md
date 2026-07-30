@@ -118,11 +118,28 @@ pnpm test:e2e               # Playwright journeys (emulator-backed)
 # ops & load
 pnpm build                  # service worker + production build
 pnpm verify:ledger          # audit ledger vs balance consistency
+pnpm wipe:balances          # post-event balance wipe (see below)
 pnpm seed:load / pnpm check:load   # k6 load fixtures + post-run integrity check
 pnpm scan:security          # server-only / secret leak scans
 ```
 
 **One-shot variants:** any script that needs emulators has an `…:emulate` twin (e.g. `seed:dev:emulate`, `verify:ledger:emulate`) that boots emulators, runs, and tears them down; handy in CI. Full list in [`package.json`](./package.json).
+
+---
+
+## Post-event balance wipe
+
+Once the event is over and booth payouts are settled, the deployer zeroes every student balance. **Points and the append-only ledger are preserved**, so the wipe is auditable and fully reconstructable. It moves no money anywhere — it only sets each `balanceCents` to `0`.
+
+```bash
+# 1. back up first — this export is the only rollback path
+gcloud firestore export gs://<bucket>/pre-wipe-$(date +%F) --project <project-id>
+
+# 2. run the wipe (admin creds from .env.local); type the project id twice + the export gate
+pnpm wipe:balances --project <project-id> --confirm <project-id> --i-have-exported
+```
+
+The script **refuses to run** unless `--project` and `--confirm` match and `--i-have-exported` is set, prompts once more for the id on a cloud run, and won't touch a cloud project while emulator host vars are set. Afterward, `pnpm verify:ledger` will report balances trailing the ledger — the expected post-wipe state.
 
 ---
 
