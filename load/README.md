@@ -4,10 +4,10 @@ k6 scripts that prove the lunch-rush target — **1,500 students / 40 booths / ~
 
 Two things are being measured, and they are **not** the same environment:
 
-| Goal                                                     | Where                                        | Why                                                                                                                              |
-| -------------------------------------------------------- | -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| Correctness + contention + idempotency under concurrency | **Local** (`next start` + Firebase emulator) | Emulator gives a real transactional Firestore; latency numbers here are meaningless.                                             |
-| Real p95 latency vs the 500 ms threshold                 | **Staging**                                  | Only production infra + real network give trustworthy latency.                                                                   |
+| Goal                                                     | Where                                        | Why                                                                                  |
+| -------------------------------------------------------- | -------------------------------------------- | ------------------------------------------------------------------------------------ |
+| Correctness + contention + idempotency under concurrency | **Local** (`next start` + Firebase emulator) | Emulator gives a real transactional Firestore; latency numbers here are meaningless. |
+| Real p95 latency vs the 500 ms threshold                 | **Staging**                                  | Only production infra + real network give trustworthy latency.                       |
 
 ## Prerequisites
 

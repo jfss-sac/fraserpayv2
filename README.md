@@ -161,8 +161,8 @@ The full local gate: `pnpm typecheck && pnpm lint && pnpm format:check && pnpm t
 ```
 src/
   app/              # App Router: routes + the only DB-writing /api handlers
-    (public)/       # login, booth registration
-    (student)/      # wallet PWA
+    (public)/       # login
+    (student)/      # wallet PWA, leaderboard, booth register/join
     (booth)/        # booth POS
     (sac)/          # SAC dashboard & admin
     api/            # Route Handlers
