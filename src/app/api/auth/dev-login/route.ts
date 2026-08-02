@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getAdminAuth } from "@/lib/server/firebase-admin";
 import { SESSION_COOKIE_NAME, SESSION_TTL_MS } from "@/lib/shared/constants";
+import { safeRedirectPath } from "@/lib/shared/safe-redirect";
 
 function devLoginEnabled(): boolean {
   return (
@@ -32,15 +33,11 @@ async function mintSessionCookie(uid: string): Promise<string> {
   return auth.createSessionCookie(body.idToken, { expiresIn: SESSION_TTL_MS });
 }
 
-function safeNext(next: string | null): string {
-  return next && next.startsWith("/") && !next.startsWith("//") ? next : "/sell";
-}
-
 export async function GET(request: NextRequest): Promise<Response> {
   if (!devLoginEnabled()) notFound();
 
   const uid = request.nextUrl.searchParams.get("uid") ?? "seed-student-ava";
-  const next = safeNext(request.nextUrl.searchParams.get("next"));
+  const next = safeRedirectPath(request.nextUrl.searchParams.get("next"), "/sell");
 
   const cookie = await mintSessionCookie(uid);
   const response = NextResponse.redirect(new URL(next, request.nextUrl));

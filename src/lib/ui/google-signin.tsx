@@ -3,13 +3,9 @@
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { SCHOOL_DOMAIN } from "@/lib/shared/constants";
+import { safeRedirectPath } from "@/lib/shared/safe-redirect";
 
 const WRONG_DOMAIN_MESSAGE = `Use your @${SCHOOL_DOMAIN} school Google account — personal accounts can't sign in.`;
-
-function safeNext(next: string | null): string {
-  if (next && next.startsWith("/") && !next.startsWith("//")) return next;
-  return "/";
-}
 
 async function messageForResponse(res: Response): Promise<string> {
   try {
@@ -52,7 +48,7 @@ export function GoogleSignIn() {
         setPending(false);
         return;
       }
-      router.replace(safeNext(searchParams.get("next")));
+      router.replace(safeRedirectPath(searchParams.get("next"), "/"));
     } catch {
       setError("Sign-in didn't complete. Please try again.");
       setPending(false);
