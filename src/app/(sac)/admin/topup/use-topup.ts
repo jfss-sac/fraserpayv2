@@ -3,6 +3,7 @@
 import { useCallback, useRef, useState } from "react";
 import type { PaymentMethod, SacLookupResult, TopUpResult } from "@/lib/shared/types";
 import type { BuyerId } from "@/lib/ui/scanner";
+import { useIdempotencyKey } from "@/lib/ui/use-idempotency-key";
 
 export const TOPUP_TIMEOUT_MS = 15000;
 export const TOPUP_MAX_ATTEMPTS = 3;
@@ -64,19 +65,23 @@ export interface TopUpSubmission {
   overrideReason?: string;
 }
 
+function topUpBody({ buyer, amountCents, method, overrideReason }: TopUpSubmission) {
+  return {
+    buyer,
+    amountCents,
+    method,
+    ...(overrideReason ? { overrideReason } : {}),
+  };
+}
+
 async function requestTopUp(
   submission: TopUpSubmission & { idempotencyKey: string; signal: AbortSignal },
 ): Promise<TopUpResult> {
-  const { idempotencyKey, signal, buyer, amountCents, method, overrideReason } = submission;
+  const { idempotencyKey, signal } = submission;
   const res = await fetch("/api/sac/topup", {
     method: "POST",
     headers: { "content-type": "application/json", "idempotency-key": idempotencyKey },
-    body: JSON.stringify({
-      buyer,
-      amountCents,
-      method,
-      ...(overrideReason ? { overrideReason } : {}),
-    }),
+    body: JSON.stringify(topUpBody(submission)),
     signal,
   });
   if (!res.ok) throw new ApiError(await errorCodeOf(res));
@@ -116,15 +121,18 @@ export function useTopUp(args: {
   const { onSuccess, onError } = args;
   const [state, setState] = useState<TopUpState>({ status: "idle" });
   const inFlight = useRef(false);
+  const { keyFor, release, releaseAll } = useIdempotencyKey();
 
   const submit = useCallback(
     async (submission: TopUpSubmission) => {
       if (inFlight.current) return;
       inFlight.current = true;
       setState({ status: "pending" });
-      const idempotencyKey = crypto.randomUUID();
+      const body = topUpBody(submission);
+      const idempotencyKey = keyFor("/api/sac/topup", body);
       try {
         const result = await topUpWithRetry({ ...submission, idempotencyKey });
+        release("/api/sac/topup", body);
         setState({ status: "success", result });
         onSuccess?.(result);
       } catch (err) {
@@ -135,10 +143,13 @@ export function useTopUp(args: {
         inFlight.current = false;
       }
     },
-    [onSuccess, onError],
+    [onSuccess, onError, keyFor, release],
   );
 
-  const reset = useCallback(() => setState({ status: "idle" }), []);
+  const reset = useCallback(() => {
+    releaseAll();
+    setState({ status: "idle" });
+  }, [releaseAll]);
 
   return { state, submit, reset };
 }

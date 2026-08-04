@@ -85,6 +85,42 @@ test("generates a fresh idempotency key for each charge gesture", async () => {
   expect(keyOf(fetchMock.mock.calls[0]!)).not.toBe(keyOf(fetchMock.mock.calls[1]!));
 });
 
+test("reuses the idempotency key when the same charge is retried after a network failure", async () => {
+  const fetchMock = vi.fn().mockRejectedValue(new TypeError("network"));
+  vi.stubGlobal("fetch", fetchMock);
+
+  const { result } = renderHook(() => useCharge({ boothId: "b1" }));
+  await act(async () => {
+    await result.current.submit({ buyer: BUYER, buyerName: "Ada", items: ITEMS });
+  });
+  expect(result.current.state).toEqual({ status: "error", code: "NETWORK" });
+  await act(async () => {
+    await result.current.submit({ buyer: BUYER, buyerName: "Ada", items: ITEMS });
+  });
+
+  expect(fetchMock).toHaveBeenCalledTimes(6);
+  expect(new Set(fetchMock.mock.calls.map(keyOf)).size).toBe(1);
+});
+
+test("mints a fresh idempotency key when the cart changes after a failure", async () => {
+  const fetchMock = vi.fn().mockRejectedValue(new TypeError("network"));
+  vi.stubGlobal("fetch", fetchMock);
+
+  const { result } = renderHook(() => useCharge({ boothId: "b1" }));
+  await act(async () => {
+    await result.current.submit({ buyer: BUYER, buyerName: "Ada", items: ITEMS });
+  });
+  await act(async () => {
+    await result.current.submit({
+      buyer: BUYER,
+      buyerName: "Ada",
+      items: [{ itemId: "taco", qty: 3 }],
+    });
+  });
+
+  expect(keyOf(fetchMock.mock.calls[0]!)).not.toBe(keyOf(fetchMock.mock.calls[3]!));
+});
+
 test("surfaces a business error without retrying", async () => {
   const fetchMock = vi.fn().mockResolvedValue(errorResponse("INSUFFICIENT_FUNDS"));
   vi.stubGlobal("fetch", fetchMock);

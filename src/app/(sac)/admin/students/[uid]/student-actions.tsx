@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { TIMEZONE } from "@/lib/shared/constants";
 import { formatCents } from "@/lib/shared/money";
 import type { SacLedgerEntry, SacRoles, StudentDetail } from "@/lib/shared/types";
+import { useIdempotencyKey } from "@/lib/ui/use-idempotency-key";
 import { Button } from "@/lib/ui/vendor/button";
 import {
   adjustErrorMessage,
@@ -95,6 +96,7 @@ export function StudentActions({
   const [dialog, setDialog] = useState<Dialog | null>(null);
   const [busy, setBusy] = useState(false);
   const inFlight = useRef(false);
+  const { keyFor, release } = useIdempotencyKey();
 
   const perform = useCallback(
     async <T,>(
@@ -111,7 +113,6 @@ export function StudentActions({
         push(success, "success");
         router.refresh();
       } catch (err) {
-        setDialog(null);
         push(errorMessage(err), "error");
       } finally {
         inFlight.current = false;
@@ -176,13 +177,18 @@ export function StudentActions({
           topups={linkableTopUps(initialEntries)}
           busy={busy}
           onCancel={() => setDialog(null)}
-          onSubmit={(input) =>
-            perform(
-              () => execAdjust({ studentUid: student.uid, ...input }),
+          onSubmit={(input) => {
+            const body = { studentUid: student.uid, ...input };
+            return perform(
+              async () => {
+                const result = await execAdjust(body, keyFor("/api/exec/adjust", body));
+                release("/api/exec/adjust", body);
+                return result;
+              },
               "Balance adjusted.",
               adjustErrorMessage,
-            )
-          }
+            );
+          }}
         />
       ) : null}
 
@@ -192,7 +198,15 @@ export function StudentActions({
           busy={busy}
           onCancel={() => setDialog(null)}
           onSubmit={(input) =>
-            perform(() => execRefund(input), "Refund issued.", refundErrorMessage)
+            perform(
+              async () => {
+                const result = await execRefund(input, keyFor("/api/exec/refund", input));
+                release("/api/exec/refund", input);
+                return result;
+              },
+              "Refund issued.",
+              refundErrorMessage,
+            )
           }
         />
       ) : null}

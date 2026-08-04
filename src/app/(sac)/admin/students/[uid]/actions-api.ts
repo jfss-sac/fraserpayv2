@@ -82,21 +82,27 @@ export function adminActionErrorMessage(err: unknown): string {
   }
 }
 
-export function execAdjust(input: {
-  studentUid: string;
-  amountCents: number;
-  reason: string;
-  originalEntryId?: string;
-}): Promise<AdjustResult> {
-  return postJson<AdjustResult>("/api/exec/adjust", input, crypto.randomUUID());
+export function execAdjust(
+  input: {
+    studentUid: string;
+    amountCents: number;
+    reason: string;
+    originalEntryId?: string;
+  },
+  idempotencyKey: string,
+): Promise<AdjustResult> {
+  return postJson<AdjustResult>("/api/exec/adjust", input, idempotencyKey);
 }
 
-export function execRefund(input: {
-  originalEntryId: string;
-  reason: string;
-  lineItems?: { itemId: string; qty: number }[];
-}): Promise<RefundResult> {
-  return postJson<RefundResult>("/api/exec/refund", input, crypto.randomUUID());
+export function execRefund(
+  input: {
+    originalEntryId: string;
+    reason: string;
+    lineItems?: { itemId: string; qty: number }[];
+  },
+  idempotencyKey: string,
+): Promise<RefundResult> {
+  return postJson<RefundResult>("/api/exec/refund", input, idempotencyKey);
 }
 
 export function execRegenPaymentCode(studentUid: string): Promise<{ studentUid: string }> {

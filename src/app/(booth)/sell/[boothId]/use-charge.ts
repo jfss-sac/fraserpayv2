@@ -3,6 +3,7 @@
 import { useCallback, useRef, useState } from "react";
 import type { ChargeResult } from "@/lib/shared/types";
 import type { BuyerId } from "@/lib/ui/scanner";
+import { useIdempotencyKey } from "@/lib/ui/use-idempotency-key";
 
 export const CHARGE_TIMEOUT_MS = 15000;
 export const CHARGE_MAX_ATTEMPTS = 3;
@@ -40,6 +41,18 @@ export class ChargeError extends Error {
   }
 }
 
+function chargeBody({
+  boothId,
+  buyer,
+  items,
+}: {
+  boothId: string;
+  buyer: BuyerId;
+  items: ChargeItem[];
+}) {
+  return { boothId, buyer, items };
+}
+
 async function requestCharge(args: {
   boothId: string;
   buyer: BuyerId;
@@ -53,7 +66,7 @@ async function requestCharge(args: {
       "content-type": "application/json",
       "idempotency-key": args.idempotencyKey,
     },
-    body: JSON.stringify({ boothId: args.boothId, buyer: args.buyer, items: args.items }),
+    body: JSON.stringify(chargeBody(args)),
     signal: args.signal,
   });
   if (!res.ok) {
@@ -108,15 +121,18 @@ export function useCharge(args: {
   const { boothId, onSuccess, onError } = args;
   const [state, setState] = useState<ChargeState>({ status: "idle" });
   const inFlight = useRef(false);
+  const { keyFor, release, releaseAll } = useIdempotencyKey();
 
   const submit = useCallback(
     async ({ buyer, buyerName, items }: ChargeSubmission) => {
       if (inFlight.current || items.length === 0) return;
       inFlight.current = true;
       setState({ status: "pending" });
-      const idempotencyKey = crypto.randomUUID();
+      const body = chargeBody({ boothId, buyer, items });
+      const idempotencyKey = keyFor("/api/booth/charge", body);
       try {
         const result = await chargeWithRetry({ boothId, buyer, items, idempotencyKey });
+        release("/api/booth/charge", body);
         setState({ status: "success", amountCents: result.amountCents, buyerName });
         onSuccess?.({ ...result, buyerName });
       } catch (err) {
@@ -127,10 +143,13 @@ export function useCharge(args: {
         inFlight.current = false;
       }
     },
-    [boothId, onSuccess, onError],
+    [boothId, onSuccess, onError, keyFor, release],
   );
 
-  const reset = useCallback(() => setState({ status: "idle" }), []);
+  const reset = useCallback(() => {
+    releaseAll();
+    setState({ status: "idle" });
+  }, [releaseAll]);
 
   return { state, submit, reset };
 }
