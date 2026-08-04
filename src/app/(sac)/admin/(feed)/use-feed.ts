@@ -82,7 +82,8 @@ export function useFeed({
 
   const entriesRef = useRef(entries);
   const filterRef = useRef(filter);
-  const headSeq = useRef(0);
+  const filterSeq = useRef(0);
+  const refreshSeq = useRef(0);
 
   useEffect(() => {
     entriesRef.current = entries;
@@ -93,8 +94,8 @@ export function useFeed({
 
   const setFilter = useCallback((next: FeedFilter) => {
     if (filtersEqual(filterRef.current, next)) return;
-    const id = headSeq.current + 1;
-    headSeq.current = id;
+    const id = filterSeq.current + 1;
+    filterSeq.current = id;
     filterRef.current = next;
     setFilterState(next);
     setPending([]);
@@ -102,36 +103,38 @@ export function useFeed({
     setLoading(true);
     requestFeed(filterToQuery(next))
       .then((dto) => {
-        if (headSeq.current !== id) return;
+        if (filterSeq.current !== id) return;
         setEntries(dto.entries);
         setCursor(dto.nextCursor);
         setLoading(false);
       })
       .catch((err) => {
-        if (headSeq.current !== id) return;
+        if (filterSeq.current !== id) return;
         setError(feedErrorMessage(codeOf(err)));
         setLoading(false);
       });
   }, []);
 
   const refresh = useCallback(() => {
-    const id = headSeq.current + 1;
-    headSeq.current = id;
+    const id = refreshSeq.current + 1;
+    refreshSeq.current = id;
     const target = filterRef.current;
     setError(null);
     setRefreshing(true);
     requestFeed(filterToQuery(target))
       .then((dto) => {
-        if (headSeq.current !== id || !filtersEqual(filterRef.current, target)) return;
+        if (refreshSeq.current !== id) return;
+        setRefreshing(false);
+        if (!filtersEqual(filterRef.current, target)) return;
         const fresh = newSince(entriesRef.current, dto.entries);
         if (fresh.length > 0) setEntries((prev) => [...fresh, ...prev]);
         setPending([]);
-        setRefreshing(false);
       })
       .catch((err) => {
-        if (headSeq.current !== id) return;
-        setError(feedErrorMessage(codeOf(err)));
+        if (refreshSeq.current !== id) return;
         setRefreshing(false);
+        if (!filtersEqual(filterRef.current, target)) return;
+        setError(feedErrorMessage(codeOf(err)));
       });
   }, []);
 
@@ -149,14 +152,15 @@ export function useFeed({
     const target = filterRef.current;
     requestFeed({ ...filterToQuery(target), cursor })
       .then((dto) => {
+        setLoadingOlder(false);
         if (!filtersEqual(filterRef.current, target)) return;
         setEntries((prev) => [...prev, ...newSince(prev, dto.entries)]);
         setCursor(dto.nextCursor);
-        setLoadingOlder(false);
       })
       .catch((err) => {
-        setError(feedErrorMessage(codeOf(err)));
         setLoadingOlder(false);
+        if (!filtersEqual(filterRef.current, target)) return;
+        setError(feedErrorMessage(codeOf(err)));
       });
   }, [loadingOlder, cursor]);
 

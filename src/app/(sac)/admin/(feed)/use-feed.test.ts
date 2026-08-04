@@ -1,6 +1,6 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import type { FeedLedgerEntry } from "@/lib/shared/types";
+import type { FeedDTO, FeedLedgerEntry } from "@/lib/shared/types";
 import { FeedApiError, requestFeed } from "./api";
 import { FEED_POLL_MS, useFeed } from "./use-feed";
 
@@ -116,6 +116,92 @@ describe("filters and pagination", () => {
     await flush();
 
     expect(result.current.entries.map((e) => e.id)).toEqual(["b", "a"]);
+  });
+});
+
+describe("interleaved requests", () => {
+  function deferred(): { promise: Promise<FeedDTO>; resolve: (dto: FeedDTO) => void } {
+    let resolve!: (dto: FeedDTO) => void;
+    const promise = new Promise<FeedDTO>((res) => {
+      resolve = res;
+    });
+    return { promise, resolve };
+  }
+
+  test("a refresh clicked during a filter load does not strand loading", async () => {
+    const filterReq = deferred();
+    const refreshReq = deferred();
+    mockRequestFeed.mockReturnValueOnce(filterReq.promise).mockReturnValueOnce(refreshReq.promise);
+    const { result } = renderHook(() =>
+      useFeed({ initialEntries: [ledger("a")], initialCursor: null }),
+    );
+
+    act(() => {
+      result.current.setFilter({ kind: "type", type: "topup" });
+    });
+    act(() => {
+      result.current.refresh();
+    });
+
+    refreshReq.resolve({ entries: [ledger("t2"), ledger("t1")], nextCursor: null });
+    await flush();
+    expect(result.current.refreshing).toBe(false);
+
+    filterReq.resolve({ entries: [ledger("t1")], nextCursor: null });
+    await flush();
+
+    expect(result.current.loading).toBe(false);
+    expect(result.current.entries.map((e) => e.id)).toEqual(["t1"]);
+  });
+
+  test("a filter change during a refresh does not strand refreshing", async () => {
+    const refreshReq = deferred();
+    mockRequestFeed
+      .mockReturnValueOnce(refreshReq.promise)
+      .mockResolvedValueOnce({ entries: [ledger("t1")], nextCursor: null });
+    const { result } = renderHook(() =>
+      useFeed({ initialEntries: [ledger("a")], initialCursor: null }),
+    );
+
+    act(() => {
+      result.current.refresh();
+    });
+    act(() => {
+      result.current.setFilter({ kind: "type", type: "topup" });
+    });
+    await flush();
+    expect(result.current.loading).toBe(false);
+
+    refreshReq.resolve({ entries: [ledger("stale")], nextCursor: null });
+    await flush();
+
+    expect(result.current.refreshing).toBe(false);
+    expect(result.current.entries.map((e) => e.id)).toEqual(["t1"]);
+  });
+
+  test("a filter change during loadOlder does not strand loadingOlder", async () => {
+    const olderReq = deferred();
+    mockRequestFeed
+      .mockReturnValueOnce(olderReq.promise)
+      .mockResolvedValueOnce({ entries: [ledger("t1")], nextCursor: null });
+    const { result } = renderHook(() =>
+      useFeed({ initialEntries: [ledger("a")], initialCursor: "c1" }),
+    );
+
+    act(() => {
+      result.current.loadOlder();
+    });
+    act(() => {
+      result.current.setFilter({ kind: "type", type: "topup" });
+    });
+    await flush();
+
+    olderReq.resolve({ entries: [ledger("old")], nextCursor: "c2" });
+    await flush();
+
+    expect(result.current.loadingOlder).toBe(false);
+    expect(result.current.entries.map((e) => e.id)).toEqual(["t1"]);
+    expect(result.current.cursor).toBe(null);
   });
 });
 
