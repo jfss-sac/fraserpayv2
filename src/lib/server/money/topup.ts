@@ -4,7 +4,7 @@ import { z } from "zod";
 import { type LedgerEntryDoc, ledgerCol } from "../db";
 import { CapExceededError } from "../errors";
 import { type IdempotencyContext, runIdempotent } from "../idempotency";
-import { assertNonNegative } from "./invariants";
+import { assertNonNegative, assertNotSelf } from "./invariants";
 import { CENT_STEP } from "@/lib/shared/constants";
 import { exceedsBalanceCap, exceedsTopupCap, pointsFor } from "@/lib/shared/money";
 import type { TopUpResult } from "@/lib/shared/types";
@@ -34,6 +34,11 @@ export async function topUp(args: {
 }): Promise<TopUpResult> {
   const { input, actor, idempotency } = args;
   const buyerUid = await resolveBuyerUid(input.buyer);
+  assertNotSelf(
+    actor.uid,
+    buyerUid,
+    "You can't top up your own account, another SAC member must do it.",
+  );
   const createdDate = torontoDate(new Date());
 
   const { response } = await runIdempotent<TopUpResult>(idempotency, async (t) => {

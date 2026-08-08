@@ -14,7 +14,6 @@ export interface RateLimitRule {
 const MINUTE = 60_000;
 
 export const RATE_LIMITS = {
-  "auth-session": { key: "ip", limit: 10, windowMs: 5 * MINUTE, failOpen: false },
   register: { key: "uid", limit: 10, windowMs: 10 * MINUTE, failOpen: false },
   join: { key: "uid", limit: 10, windowMs: 10 * MINUTE, failOpen: false },
   lookup: { key: "uid", limit: 30, windowMs: MINUTE, failOpen: true },

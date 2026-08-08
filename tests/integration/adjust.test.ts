@@ -120,6 +120,8 @@ beforeAll(async () => {
     uid: EXEC.uid,
     displayName: EXEC.name,
     paymentCode: "fp1-ADJEXC",
+    balanceCents: 1000,
+    points: 50,
     roles: { sacMember: true, sacExec: true },
   });
   await makeUser({
@@ -332,6 +334,36 @@ describe("POST /api/exec/adjust", () => {
     expect(user?.points).toBe(0);
     const entry = (await ledgerFor(student.uid)).find((e) => e.type === "adjustment");
     expect(entry?.pointsDelta).toBe(-20);
+  });
+
+  it("forbids an exec crediting their own balance", async () => {
+    const res = await adjustRoute(
+      post(EXEC.uid, { studentUid: EXEC.uid, amountCents: 500, reason: "cash box correction" }),
+    );
+    expect(res.status).toBe(403);
+    expect(await errorCode(res)).toBe("FORBIDDEN");
+    expect((await usersCol().doc(EXEC.uid).get()).data()?.balanceCents).toBe(1000);
+    expect(await ledgerFor(EXEC.uid)).toHaveLength(0);
+  });
+
+  it("forbids an exec deducting from their own balance", async () => {
+    const res = await adjustRoute(
+      post(EXEC.uid, { studentUid: EXEC.uid, amountCents: -500, reason: "covering my tracks" }),
+    );
+    expect(res.status).toBe(403);
+    expect(await errorCode(res)).toBe("FORBIDDEN");
+    expect((await usersCol().doc(EXEC.uid).get()).data()?.balanceCents).toBe(1000);
+    expect(await ledgerFor(EXEC.uid)).toHaveLength(0);
+  });
+
+  it("still lets an exec adjust another exec's balance", async () => {
+    const other = await freshStudent({ balanceCents: 500 });
+    await usersCol().doc(other.uid).update({ roles: { sacMember: true, sacExec: true } });
+    const res = await adjustRoute(
+      post(EXEC.uid, { studentUid: other.uid, amountCents: 500, reason: "peer correction" }),
+    );
+    expect(res.status).toBe(200);
+    expect((await usersCol().doc(other.uid).get()).data()?.balanceCents).toBe(1000);
   });
 
   it("forbids a non-exec member", async () => {

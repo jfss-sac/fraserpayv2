@@ -296,6 +296,44 @@ describe("POST /api/sac/topup", () => {
     expect(await ledgerFor(buyer.uid)).toHaveLength(0);
   });
 
+  it("forbids a SAC member topping up their own account by student number", async () => {
+    const res = await topupRoute(
+      post(MEMBER.uid, { buyer: { studentNumber: "900010" }, amountCents: 500, method: "cash" }),
+    );
+    expect(res.status).toBe(403);
+    expect(await errorCode(res)).toBe("FORBIDDEN");
+    expect((await usersCol().doc(MEMBER.uid).get()).data()?.balanceCents).toBe(0);
+    expect(await ledgerFor(MEMBER.uid)).toHaveLength(0);
+  });
+
+  it("forbids an exec topping up their own account by payment code", async () => {
+    const res = await topupRoute(
+      post(EXEC.uid, {
+        buyer: { paymentCode: "fp1-EXEC00" },
+        amountCents: 500,
+        method: "cash",
+        overrideReason: "trying to self-deal",
+      }),
+    );
+    expect(res.status).toBe(403);
+    expect(await errorCode(res)).toBe("FORBIDDEN");
+    expect((await usersCol().doc(EXEC.uid).get()).data()?.balanceCents).toBe(0);
+    expect(await ledgerFor(EXEC.uid)).toHaveLength(0);
+  });
+
+  it("still lets a SAC member top up a different SAC member", async () => {
+    const buyer = await freshBuyer({ roles: { sacMember: true, sacExec: false } });
+    const res = await topupRoute(
+      post(MEMBER.uid, {
+        buyer: { studentNumber: buyer.studentNumber },
+        amountCents: 500,
+        method: "cash",
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect((await usersCol().doc(buyer.uid).get()).data()?.balanceCents).toBe(500);
+  });
+
   it("forbids a non-SAC student caller", async () => {
     const buyer = await freshBuyer();
     const res = await topupRoute(

@@ -91,7 +91,21 @@ describe("identify → confirm", () => {
 });
 
 describe("re-confirm dialog (FR-10a)", () => {
-  test("does not re-confirm at exactly $50", async () => {
+  test("does not re-confirm below $50", async () => {
+    const fetchMock = stubFetch({
+      lookup: STUDENT,
+      topup: { entryId: "e1", amountCents: 4950, balanceAfterCents: 6950, points: 347.5 },
+    });
+    await gotoAmountStage(false);
+    await setAmount("49.50");
+
+    await userEvent.click(screen.getByRole("button", { name: "Top up $49.50" }));
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(fetchMock.mock.calls.some((c) => c[0] === "/api/sac/topup")).toBe(true);
+  });
+
+  test("re-confirms at exactly $50", async () => {
     const fetchMock = stubFetch({
       lookup: STUDENT,
       topup: { entryId: "e1", amountCents: 5000, balanceAfterCents: 7000, points: 350 },
@@ -101,8 +115,12 @@ describe("re-confirm dialog (FR-10a)", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Top up $50.00" }));
 
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    expect(fetchMock.mock.calls.some((c) => c[0] === "/api/sac/topup")).toBe(true);
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByText(/fifty dollars/)).toBeInTheDocument();
+    expect(fetchMock.mock.calls.some((c) => c[0] === "/api/sac/topup")).toBe(false);
+
+    await userEvent.click(within(dialog).getByRole("button", { name: "Confirm $50.00" }));
+    expect(await screen.findByText("Topped up Ben Carter")).toBeInTheDocument();
   });
 
   test("re-confirms just above $50 with the amount spelled out", async () => {

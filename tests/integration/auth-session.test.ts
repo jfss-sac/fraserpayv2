@@ -42,19 +42,27 @@ async function mintIdToken(uid: string): Promise<string> {
 }
 
 const raceUids: string[] = [];
+const crowdUids: string[] = [];
 
-let ipCounter = 0;
-function post(idToken: string): Request {
-  ipCounter += 1;
+const CROWD_SIZE = 12;
+const SHARED_NAT_IP = "203.0.113.42";
+
+function postFrom(idToken: string, ip: string): Request {
   return new Request(`${ORIGIN}/api/auth/session`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
       origin: ORIGIN,
-      "x-forwarded-for": `198.51.100.${ipCounter}`,
+      "x-forwarded-for": ip,
     },
     body: JSON.stringify({ idToken }),
   });
+}
+
+let ipCounter = 0;
+function post(idToken: string): Request {
+  ipCounter += 1;
+  return postFrom(idToken, `198.51.100.${ipCounter}`);
 }
 
 function sessionCookie(res: Response): string | null {
@@ -87,7 +95,7 @@ afterAll(async () => {
   const db = getAdminFirestore();
   await db.recursiveDelete(db.collection("users"));
   await db.recursiveDelete(db.collection("rateLimits"));
-  await getAdminAuth().deleteUsers([...ACCOUNTS.map((a) => a.uid), ...raceUids]);
+  await getAdminAuth().deleteUsers([...ACCOUNTS.map((a) => a.uid), ...raceUids, ...crowdUids]);
   vi.restoreAllMocks();
 });
 
@@ -194,6 +202,30 @@ describe("POST /api/auth/session", () => {
       expect(doc!.paymentCode).toMatch(PAYMENT_CODE);
     }
   }, 30000);
+
+  it("signs in a whole shared-NAT crowd without rate limiting (arch §11)", async () => {
+    const tokens: string[] = [];
+    for (let i = 0; i < CROWD_SIZE; i++) {
+      const uid = `auth-crowd-${i}`;
+      crowdUids.push(uid);
+      await getAdminAuth()
+        .deleteUser(uid)
+        .catch(() => undefined);
+      await getAdminAuth().createUser({
+        uid,
+        email: `72${String(i).padStart(4, "0")}@pdsb.net`,
+        emailVerified: true,
+      });
+      tokens.push(await mintIdToken(uid));
+    }
+
+    const statuses: number[] = [];
+    for (const token of tokens) {
+      statuses.push((await POST(postFrom(token, SHARED_NAT_IP))).status);
+    }
+
+    expect(statuses).toEqual(Array<number>(CROWD_SIZE).fill(200));
+  }, 60000);
 
   it("rejects a garbage token with 401 UNAUTHORIZED", async () => {
     const res = await POST(post("not-a-real-token"));

@@ -1,9 +1,13 @@
 import "server-only";
-import { ConflictError, InternalError, NotFoundError } from "../errors";
+import { ConflictError, ForbiddenError, InternalError, NotFoundError } from "../errors";
 import type { UserDoc } from "../db";
 
 export function assertNonNegative(value: number): void {
   if (value < 0) throw new InternalError();
+}
+
+export function assertNotSelf(actorUid: string, targetUid: string, message: string): void {
+  if (actorUid === targetUid) throw new ForbiddenError(message);
 }
 
 export function requireUser(data: UserDoc | undefined, message: string): UserDoc {

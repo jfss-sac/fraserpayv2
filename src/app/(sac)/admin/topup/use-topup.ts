@@ -18,6 +18,7 @@ export const LOOKUP_ERROR_MESSAGE: Record<string, string> = {
 export const TOPUP_ERROR_MESSAGE: Record<string, string> = {
   CAP_EXCEEDED: "Over the $100 top-up / $200 balance cap — an exec can override with a reason.",
   SUSPENDED: "This account is suspended — it can't be topped up.",
+  FORBIDDEN: "You can't top up your own account — another SAC member must do it.",
   NOT_FOUND: "No student matches that code or number.",
   RATE_LIMITED: "Too many top-ups — wait a moment and try again.",
   IDEMPOTENCY_CONFLICT: "That top-up is still going through — check the wallet before retrying.",

@@ -15,7 +15,7 @@ export default defineConfig({
     environment: "jsdom",
     globals: true,
     setupFiles: ["./vitest.setup.ts"],
-    // Keep Playwright E2E specs (added in Phase 6) out of the Vitest run.
+    env: { TZ: "UTC" },
     include: ["src/**/*.{test,spec}.{ts,tsx}", "sw/**/*.{test,spec}.{ts,tsx}"],
     exclude: [
       ...configDefaults.exclude,

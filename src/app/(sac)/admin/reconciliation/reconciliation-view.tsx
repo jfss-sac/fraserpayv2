@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { TIMEZONE } from "@/lib/shared/constants";
 import { formatCents } from "@/lib/shared/money";
 import type {
   ReconCorrectionEntry,
@@ -17,9 +18,15 @@ type ViewState =
   | { status: "loaded"; data: ReconciliationDTO }
   | { status: "error"; message: string };
 
+const TIME_FORMAT = new Intl.DateTimeFormat("en-CA", {
+  timeZone: TIMEZONE,
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false,
+});
+
 function timeOf(iso: string): string {
-  const d = new Date(iso);
-  return d.toLocaleTimeString("en-CA", { hour: "2-digit", minute: "2-digit", hour12: false });
+  return TIME_FORMAT.format(new Date(iso));
 }
 
 function studentLabel(name: string, number: string | null): string {

@@ -1,20 +1,57 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { RateLimitedError } from "../../src/lib/server/errors";
-import { getAdminFirestore } from "../../src/lib/server/firebase-admin";
+import { getAdminAuth, getAdminFirestore } from "../../src/lib/server/firebase-admin";
 import { defineHandler } from "../../src/lib/server/http";
 import { RATE_LIMITS, checkRateLimit } from "../../src/lib/server/ratelimit";
+import { SESSION_COOKIE_NAME, SESSION_TTL_MS } from "../../src/lib/shared/constants";
 
 const ORIGIN = "http://127.0.0.1";
+const UID = "ratelimit-student";
 
-beforeAll(() => {
-  if (!process.env.FIRESTORE_EMULATOR_HOST) {
-    throw new Error("Integration test requires FIRESTORE_EMULATOR_HOST (run via emulators:exec).");
+let sessionCookie: string;
+
+async function mintSessionCookie(uid: string): Promise<string> {
+  const customToken = await getAdminAuth().createCustomToken(uid);
+  const host = process.env.FIREBASE_AUTH_EMULATOR_HOST;
+  const res = await fetch(
+    `http://${host}/identitytoolkit.googleapis.com/v1/accounts:signInWithCustomToken?key=fake-api-key`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ token: customToken, returnSecureToken: true }),
+    },
+  );
+  const body = (await res.json()) as { idToken?: string };
+  if (!body.idToken) throw new Error(`emulator did not return an idToken: ${JSON.stringify(body)}`);
+  return getAdminAuth().createSessionCookie(body.idToken, { expiresIn: SESSION_TTL_MS });
+}
+
+beforeAll(async () => {
+  if (!process.env.FIRESTORE_EMULATOR_HOST || !process.env.FIREBASE_AUTH_EMULATOR_HOST) {
+    throw new Error(
+      "Integration test requires the auth + firestore emulators (run via emulators:exec).",
+    );
   }
   vi.spyOn(console, "log").mockImplementation(() => {});
+
+  await getAdminAuth()
+    .deleteUser(UID)
+    .catch(() => undefined);
+  await getAdminAuth().createUser({ uid: UID, email: "810001@pdsb.net", emailVerified: true });
+  await getAdminFirestore()
+    .collection("users")
+    .doc(UID)
+    .set({ email: "810001@pdsb.net", displayName: "RL", suspended: false, roles: {} });
+  sessionCookie = await mintSessionCookie(UID);
 });
 
 afterAll(async () => {
-  await getAdminFirestore().recursiveDelete(getAdminFirestore().collection("rateLimits"));
+  const db = getAdminFirestore();
+  await db.recursiveDelete(db.collection("rateLimits"));
+  await db.recursiveDelete(db.collection("users"));
+  await getAdminAuth()
+    .deleteUser(UID)
+    .catch(() => undefined);
   vi.restoreAllMocks();
 });
 
@@ -50,20 +87,20 @@ describe("checkRateLimit against the Firestore emulator", () => {
   });
 });
 
-const limited = defineHandler({ role: "public", rateLimit: "auth-session" }, async () => ({
+const limited = defineHandler({ role: "session", rateLimit: "join" }, async () => ({
   ok: true,
 }));
 
 describe("rate limiting through the handler wrapper", () => {
   it("returns 200 under the limit, then a 429 RATE_LIMITED envelope with Retry-After", async () => {
-    const { limit } = RATE_LIMITS["auth-session"];
+    const { limit } = RATE_LIMITS.join;
     const make = () =>
       new Request(`${ORIGIN}/api/limited`, {
         method: "POST",
         headers: {
           "content-type": "application/json",
           origin: ORIGIN,
-          "x-forwarded-for": "203.0.113.7",
+          cookie: `${SESSION_COOKIE_NAME}=${sessionCookie}`,
         },
       });
 

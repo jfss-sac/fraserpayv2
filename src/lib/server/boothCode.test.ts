@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { JOIN_CODE_ALPHABET, generateJoinCode } from "./boothCode";
+import { JOIN_CODE_ALPHABET, SUFFIX_LEN, generateJoinCode } from "./boothCode";
 
-const FORMAT = new RegExp(`^[A-Z]{4}-[${JOIN_CODE_ALPHABET}]{3}$`);
-const SUFFIX_FORMAT = new RegExp(`^[${JOIN_CODE_ALPHABET}]{3}$`);
+const FORMAT = new RegExp(`^[A-Z]{4}-[${JOIN_CODE_ALPHABET}]{${SUFFIX_LEN}}$`);
+const SUFFIX_FORMAT = new RegExp(`^[${JOIN_CODE_ALPHABET}]{${SUFFIX_LEN}}$`);
 
 describe("generateJoinCode", () => {
-  it("emits a NAME4-XYZ shape with a random suffix from the unambiguous alphabet", () => {
+  it("emits a NAME4-SUFFIX shape with a random suffix from the unambiguous alphabet", () => {
     for (let i = 0; i < 200; i++) {
       const code = generateJoinCode("Taco Stand");
       expect(code).toMatch(FORMAT);

@@ -74,36 +74,33 @@ async function provisionUser(token: DecodedIdToken, email: string): Promise<void
   });
 }
 
-export const POST = defineHandler(
-  { role: "public", schema, rateLimit: "auth-session" },
-  async ({ input }) => {
-    const auth = getAdminAuth();
+export const POST = defineHandler({ role: "public", schema }, async ({ input }) => {
+  const auth = getAdminAuth();
 
-    let token: DecodedIdToken;
-    try {
-      token = await auth.verifyIdToken(input.idToken);
-    } catch {
-      throw new UnauthorizedError("Could not verify your Google sign-in.");
-    }
+  let token: DecodedIdToken;
+  try {
+    token = await auth.verifyIdToken(input.idToken);
+  } catch {
+    throw new UnauthorizedError("Could not verify your Google sign-in.");
+  }
 
-    const email = token.email?.toLowerCase() ?? "";
-    if (!token.email_verified || !email.endsWith(`@${SCHOOL_DOMAIN}`)) {
-      throw new ForbiddenError(
-        `Use your @${SCHOOL_DOMAIN} school Google account — personal accounts can't sign in.`,
-      );
-    }
+  const email = token.email?.toLowerCase() ?? "";
+  if (!token.email_verified || !email.endsWith(`@${SCHOOL_DOMAIN}`)) {
+    throw new ForbiddenError(
+      `Use your @${SCHOOL_DOMAIN} school Google account — personal accounts can't sign in.`,
+    );
+  }
 
-    await provisionUser(token, email);
+  await provisionUser(token, email);
 
-    let cookie: string;
-    try {
-      cookie = await auth.createSessionCookie(input.idToken, { expiresIn: SESSION_TTL_MS });
-    } catch {
-      throw new InternalError();
-    }
+  let cookie: string;
+  try {
+    cookie = await auth.createSessionCookie(input.idToken, { expiresIn: SESSION_TTL_MS });
+  } catch {
+    throw new InternalError();
+  }
 
-    const response = Response.json({ ok: true });
-    response.headers.append("set-cookie", serializeSessionCookie(cookie));
-    return response;
-  },
-);
+  const response = Response.json({ ok: true });
+  response.headers.append("set-cookie", serializeSessionCookie(cookie));
+  return response;
+});

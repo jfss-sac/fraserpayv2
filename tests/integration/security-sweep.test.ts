@@ -65,7 +65,6 @@ const ENDPOINTS: Endpoint[] = [
     method: "POST",
     handler: authSession as AnyHandler,
     role: "public",
-    rateLimit: "auth-session",
     body: { idToken: "not-a-real-token" },
   },
   {
@@ -459,6 +458,10 @@ describe("rate-limit coverage (arch §11)", () => {
   it("leaves no rate-limit scope unused", () => {
     const wired = new Set(ENDPOINTS.map((e) => e.rateLimit).filter(Boolean));
     expect([...Object.keys(RATE_LIMITS)].sort()).toEqual([...wired].sort());
+  });
+
+  it("keys every scope by authenticated uid, never by client IP", () => {
+    expect([...new Set(Object.values(RATE_LIMITS).map((rule) => rule.key))]).toEqual(["uid"]);
   });
 });
 

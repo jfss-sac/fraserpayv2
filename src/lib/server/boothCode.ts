@@ -5,7 +5,9 @@ export const JOIN_CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 const PREFIX_LETTERS = "ABCDEFGHJKMNPQRSTUVWXYZ";
 
 const PREFIX_LEN = 4;
-const SUFFIX_LEN = 3;
+// The prefix is derived from the booth name and so is public; the suffix is the
+// entire secret. 5 chars over a 31-char alphabet is ~24.8 bits (28.6M).
+export const SUFFIX_LEN = 5;
 
 function randomChars(n: number, alphabet: string): string {
   const limit = Math.floor(256 / alphabet.length) * alphabet.length;

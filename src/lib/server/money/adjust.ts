@@ -7,7 +7,7 @@ import { type IdempotencyContext, runIdempotent } from "../idempotency";
 import { CENT_STEP } from "@/lib/shared/constants";
 import { pointsFor } from "@/lib/shared/money";
 import type { AdjustResult } from "@/lib/shared/types";
-import { assertNonNegative } from "./invariants";
+import { assertNonNegative, assertNotSelf } from "./invariants";
 import { readUser, torontoDate } from "./shared";
 
 export const adjustSchema = z
@@ -36,6 +36,11 @@ export async function adjustBalance(args: {
   idempotency: IdempotencyContext;
 }): Promise<AdjustResult> {
   const { input, actor, idempotency } = args;
+  assertNotSelf(
+    actor.uid,
+    input.studentUid,
+    "You can't adjust your own balance — another exec must do it.",
+  );
   const createdDate = torontoDate(new Date());
 
   const { response } = await runIdempotent<AdjustResult>(idempotency, async (t) => {

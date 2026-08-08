@@ -39,6 +39,8 @@ export function adjustErrorMessage(err: unknown): string {
   switch (err.code) {
     case "INSUFFICIENT_FUNDS":
       return "That would drop the balance below zero.";
+    case "FORBIDDEN":
+      return err.serverMessage || "You aren't allowed to make that adjustment.";
     case "VALIDATION":
       return err.serverMessage || "Check the amount and reason and try again.";
     case "NOT_FOUND":
@@ -57,6 +59,8 @@ export function refundErrorMessage(err: unknown): string {
   switch (err.code) {
     case "CONFLICT":
       return err.serverMessage || "That refund conflicts with the current state.";
+    case "FORBIDDEN":
+      return err.serverMessage || "You aren't allowed to make that refund.";
     case "VALIDATION":
       return err.serverMessage || "Check the items and reason and try again.";
     case "NOT_FOUND":

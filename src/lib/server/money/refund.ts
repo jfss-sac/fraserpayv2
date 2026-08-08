@@ -5,7 +5,7 @@ import { type LedgerEntryDoc, ledgerCol } from "../db";
 import { ConflictError, ValidationError } from "../errors";
 import { type IdempotencyContext, runIdempotent } from "../idempotency";
 import type { LedgerLineItem, RefundResult } from "@/lib/shared/types";
-import { assertNonNegative, assertRefundable } from "./invariants";
+import { assertNonNegative, assertNotSelf, assertRefundable } from "./invariants";
 import { readUser, torontoDate } from "./shared";
 
 export const refundSchema = z
@@ -47,6 +47,11 @@ export async function refundPurchase(args: {
     if (!original || original.type !== "purchase") {
       throw new ValidationError("Only a purchase can be refunded.");
     }
+    assertNotSelf(
+      actor.uid,
+      original.studentUid,
+      "You can't refund your own purchase, another exec must do it.",
+    );
 
     const prior = await t.get(ledgerCol().where("originalEntryId", "==", input.originalEntryId));
 

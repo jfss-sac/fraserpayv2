@@ -49,6 +49,33 @@ const EMPTY: ReconciliationDTO = {
   totals: { cashCents: 0, cardCents: 0, topupCount: 0, correctionCount: 0 },
 };
 
+const LATE_EVENING: ReconciliationDTO = {
+  date: "2024-01-14",
+  members: [
+    {
+      actorUid: "me",
+      actorName: "Ava Member",
+      cashCents: 1000,
+      cashCount: 1,
+      cardCents: 0,
+      cardCount: 0,
+      topups: [
+        {
+          id: "t2",
+          createdAt: "2024-01-15T02:30:00.000Z",
+          amountCents: 1000,
+          method: "cash",
+          studentName: "Sam Student",
+          studentNumber: "700001",
+          tags: [],
+        },
+      ],
+      corrections: [],
+    },
+  ],
+  totals: { cashCents: 1000, cardCents: 0, topupCount: 1, correctionCount: 0 },
+};
+
 function stubFetch(byDate: Record<string, ReconciliationDTO>) {
   const fetchMock = vi.fn(async (url: string) => {
     const date = new URL(url, "http://localhost").searchParams.get("date") ?? "";
@@ -100,6 +127,17 @@ describe("ReconciliationView", () => {
     await waitFor(() =>
       expect(fetchMock.mock.calls.some(([u]) => String(u).includes("date=2024-01-14"))).toBe(true),
     );
+  });
+
+  test("stamps top-up times in America/Toronto, not the viewer's timezone", async () => {
+    expect(Intl.DateTimeFormat().resolvedOptions().timeZone).not.toBe("America/Toronto");
+    stubFetch({ "2024-01-14": LATE_EVENING });
+    render(<ReconciliationView initialDate="2024-01-14" currentUid="me" />);
+
+    await userEvent.click(await screen.findByRole("button", { name: /Ava Member/ }));
+
+    expect(screen.getByText("21:30 · cash")).toBeInTheDocument();
+    expect(screen.queryByText("02:30 · cash")).toBeNull();
   });
 
   test("does not mark other members as You", async () => {

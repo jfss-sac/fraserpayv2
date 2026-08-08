@@ -95,9 +95,12 @@ describe("exceedsBalanceCap", () => {
 });
 
 describe("requiresReconfirm", () => {
-  it("does not require re-confirm at or below $50", () => {
-    expect(requiresReconfirm(RECONFIRM_CENTS)).toBe(false);
+  it("does not require re-confirm below $50", () => {
     expect(requiresReconfirm(RECONFIRM_CENTS - 50)).toBe(false);
+  });
+
+  it("requires re-confirm at exactly $50", () => {
+    expect(requiresReconfirm(RECONFIRM_CENTS)).toBe(true);
   });
 
   it("requires re-confirm above $50", () => {

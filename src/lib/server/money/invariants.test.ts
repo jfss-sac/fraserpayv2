@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { UserDoc } from "../db";
-import { ConflictError, InternalError, NotFoundError } from "../errors";
-import { assertNonNegative, assertRefundable, requireUser } from "./invariants";
+import { ConflictError, ForbiddenError, InternalError, NotFoundError } from "../errors";
+import { assertNonNegative, assertNotSelf, assertRefundable, requireUser } from "./invariants";
 
 describe("money invariants", () => {
   it("assertNonNegative accepts zero and positive, rejects negative", () => {
@@ -20,5 +20,11 @@ describe("money invariants", () => {
     expect(() => assertRefundable(50)).not.toThrow();
     expect(() => assertRefundable(0)).toThrow(ConflictError);
     expect(() => assertRefundable(-50)).toThrow(ConflictError);
+  });
+
+  it("assertNotSelf rejects only an actor targeting their own uid", () => {
+    expect(() => assertNotSelf("exec-1", "student-1", "nope")).not.toThrow();
+    expect(() => assertNotSelf("exec-1", "exec-1", "nope")).toThrow(ForbiddenError);
+    expect(() => assertNotSelf("exec-1", "exec-1", "nope")).toThrow("nope");
   });
 });

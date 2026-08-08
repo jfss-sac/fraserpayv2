@@ -15,6 +15,7 @@ const BOOTH_ID = "refund-booth";
 const BOOTH_NAME = "Booth refund-booth";
 
 const EXEC = { uid: "refund-exec", name: "Xavi Exec" };
+const EXEC2 = { uid: "refund-exec-2", name: "Yara Exec" };
 const MEMBER = { uid: "refund-member", name: "Mimi Member" };
 
 const COFFEE: LedgerLineItem = { itemId: "coffee", name: "Coffee", qty: 2, unitPriceCents: 250 };
@@ -131,12 +132,19 @@ beforeAll(async () => {
     roles: { sacMember: true, sacExec: true },
   });
   await makeUser({
+    uid: EXEC2.uid,
+    displayName: EXEC2.name,
+    paymentCode: "fp1-REFEX2",
+    roles: { sacMember: true, sacExec: true },
+  });
+  await makeUser({
     uid: MEMBER.uid,
     displayName: MEMBER.name,
     paymentCode: "fp1-REFMEM",
     roles: { sacMember: true, sacExec: false },
   });
   cookies[EXEC.uid] = await mintSessionCookie(EXEC.uid);
+  cookies[EXEC2.uid] = await mintSessionCookie(EXEC2.uid);
   cookies[MEMBER.uid] = await mintSessionCookie(MEMBER.uid);
 });
 
@@ -283,6 +291,32 @@ describe("POST /api/exec/refund", () => {
     );
     expect(res.status).toBe(200);
     expect((await usersCol().doc(student.uid).get()).data()?.balanceCents).toBe(20_400);
+  });
+
+  it("forbids an exec refunding their own purchase", async () => {
+    const purchaseId = await makePurchase(EXEC.uid, [COFFEE]);
+    const res = await refundRoute(
+      post(EXEC.uid, { originalEntryId: purchaseId, reason: "refunding myself" }),
+    );
+    expect(res.status).toBe(403);
+    expect(await errorCode(res)).toBe("FORBIDDEN");
+    expect((await refundsFor(purchaseId)).filter((e) => e.type === "refund")).toHaveLength(0);
+    expect((await usersCol().doc(EXEC.uid).get()).data()?.balanceCents).toBe(0);
+  });
+
+  it("still lets a second exec refund the first exec's own purchase", async () => {
+    const purchaseId = await makePurchase(EXEC2.uid, [COOKIE]);
+    const res = await refundRoute(
+      post(EXEC2.uid, { originalEntryId: purchaseId, reason: "self refund attempt" }),
+    );
+    expect(res.status).toBe(403);
+
+    const ok = await refundRoute(
+      post(EXEC.uid, { originalEntryId: purchaseId, reason: "peer-approved refund" }),
+    );
+    expect(ok.status).toBe(200);
+    expect((await ok.json()) as RefundResult).toMatchObject({ amountCents: 150 });
+    expect((await usersCol().doc(EXEC2.uid).get()).data()?.balanceCents).toBe(150);
   });
 
   it("forbids a non-exec member", async () => {

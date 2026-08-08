@@ -32,7 +32,7 @@ export function exceedsBalanceCap(resultingBalanceCents: number): boolean {
 }
 
 export function requiresReconfirm(amountCents: number): boolean {
-  return amountCents > RECONFIRM_CENTS;
+  return amountCents >= RECONFIRM_CENTS;
 }
 
 export function isHighAmount(amountCents: number): boolean {

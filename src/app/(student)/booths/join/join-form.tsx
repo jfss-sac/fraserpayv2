@@ -72,7 +72,7 @@ export function BoothJoinForm() {
           onChange={(e) => setCode(e.target.value)}
           autoCapitalize="characters"
           autoComplete="off"
-          placeholder="TACO-4F2"
+          placeholder="TACO-4F2K9"
           className="rounded-md border border-border px-3 py-2 uppercase"
         />
       </div>
