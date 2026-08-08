@@ -11,12 +11,12 @@ import {
   usersCol,
 } from "../../src/lib/server/db";
 import { getAdminAuth, getAdminFirestore } from "../../src/lib/server/firebase-admin";
-import { JOIN_CODE_ALPHABET } from "../../src/lib/server/boothCode";
+import { JOIN_CODE_ALPHABET, SUFFIX_LEN } from "../../src/lib/server/boothCode";
 import { SESSION_COOKIE_NAME, SESSION_TTL_MS } from "../../src/lib/shared/constants";
 import type { BoothItem, ChargeResult } from "../../src/lib/shared/types";
 
 const ORIGIN = "http://127.0.0.1";
-const JOIN_CODE_FORMAT = new RegExp(`^[A-Z]{4}-[${JOIN_CODE_ALPHABET}]{3}$`);
+const JOIN_CODE_FORMAT = new RegExp(`^[A-Z]{4}-[${JOIN_CODE_ALPHABET}]{${SUFFIX_LEN}}$`);
 
 const EXEC = { uid: "approve-exec", name: "Erin Exec" };
 const MEMBER = { uid: "approve-member", name: "Morgan Member" };

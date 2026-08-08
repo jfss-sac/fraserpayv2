@@ -29,7 +29,7 @@ async function makeBooth(
       description: "test booth",
       status,
       items: items.map((i) => ({ ...i })),
-      joinCode: status === "pending" ? null : "TEST-001",
+      joinCode: status === "pending" ? null : "BOOT-4H8N5",
       submitterUid: "lb-exec",
       submitterEmail: "lb-exec@pdsb.net",
       createdAt: Timestamp.now(),

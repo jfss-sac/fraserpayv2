@@ -30,23 +30,33 @@ export function lookupErrorMessage(code: string): string {
   return LOOKUP_ERROR_MESSAGE[code] ?? "Couldn't look that student up. Try again.";
 }
 
-export function topUpErrorMessage(code: string): string {
+export function topUpErrorMessage(code: string, serverMessage = ""): string {
+  if (code === "FORBIDDEN") return serverMessage || TOPUP_ERROR_MESSAGE.FORBIDDEN!;
   return TOPUP_ERROR_MESSAGE[code] ?? "Top-up failed. Try again.";
 }
 
-async function errorCodeOf(res: Response): Promise<string> {
+async function envelopeOf(res: Response): Promise<{ code: string; message: string }> {
   try {
-    return ((await res.json()) as { error?: { code?: string } }).error?.code ?? "INTERNAL";
+    const body = (await res.json()) as { error?: { code?: string; message?: string } };
+    return { code: body.error?.code ?? "INTERNAL", message: body.error?.message ?? "" };
   } catch {
-    return "INTERNAL";
+    return { code: "INTERNAL", message: "" };
   }
 }
 
 export class ApiError extends Error {
-  constructor(readonly code: string) {
+  constructor(
+    readonly code: string,
+    readonly serverMessage = "",
+  ) {
     super(code);
     this.name = "ApiError";
   }
+}
+
+async function apiErrorOf(res: Response): Promise<ApiError> {
+  const { code, message } = await envelopeOf(res);
+  return new ApiError(code, message);
 }
 
 export async function requestSacLookup(buyer: BuyerId): Promise<SacLookupResult> {
@@ -55,7 +65,7 @@ export async function requestSacLookup(buyer: BuyerId): Promise<SacLookupResult>
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ buyer }),
   });
-  if (!res.ok) throw new ApiError(await errorCodeOf(res));
+  if (!res.ok) throw await apiErrorOf(res);
   return (await res.json()) as SacLookupResult;
 }
 
@@ -85,7 +95,7 @@ async function requestTopUp(
     body: JSON.stringify(topUpBody(submission)),
     signal,
   });
-  if (!res.ok) throw new ApiError(await errorCodeOf(res));
+  if (!res.ok) throw await apiErrorOf(res);
   return (await res.json()) as TopUpResult;
 }
 
@@ -117,7 +127,7 @@ export type TopUpState =
 
 export function useTopUp(args: {
   onSuccess?: (result: TopUpResult) => void;
-  onError?: (code: string) => void;
+  onError?: (code: string, serverMessage: string) => void;
 }) {
   const { onSuccess, onError } = args;
   const [state, setState] = useState<TopUpState>({ status: "idle" });
@@ -137,9 +147,10 @@ export function useTopUp(args: {
         setState({ status: "success", result });
         onSuccess?.(result);
       } catch (err) {
-        const code = err instanceof ApiError ? err.code : "NETWORK";
+        const apiError = err instanceof ApiError ? err : null;
+        const code = apiError?.code ?? "NETWORK";
         setState({ status: "error", code });
-        onError?.(code);
+        onError?.(code, apiError?.serverMessage ?? "");
       } finally {
         inFlight.current = false;
       }

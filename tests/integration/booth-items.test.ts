@@ -80,7 +80,7 @@ async function makeApprovedBooth(): Promise<string> {
       description: "test booth",
       status: "approved",
       items: ITEMS.map((i) => ({ ...i })),
-      joinCode: "TACO-XYZ",
+      joinCode: "TACO-3M7K9",
       submitterUid: EXEC.uid,
       submitterEmail: `${EXEC.uid}@pdsb.net`,
       createdAt: Timestamp.now(),

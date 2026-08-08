@@ -75,7 +75,7 @@ beforeAll(async () => {
     id: `${PREFIX}deact`,
     name: "Candy Corner",
     status: "deactivated",
-    joinCode: "CANDY-2X8",
+    joinCode: "CAND-2X8R6",
   });
   await makeBooth({
     id: `${PREFIX}pending`,
@@ -87,7 +87,7 @@ beforeAll(async () => {
     id: `${PREFIX}approved`,
     name: "Pizza Palace",
     status: "approved",
-    joinCode: "PIZZA-9K1",
+    joinCode: "PIZZ-9K4M7",
   });
 
   await addMember(`${PREFIX}approved`, `${PREFIX}m2`, "Sam Lee");
@@ -114,7 +114,7 @@ describe("listBooths", () => {
     const pending = mine.find((b) => b.id === `${PREFIX}pending`)!;
     expect(pending.submitterEmail).toBe(SUBMITTER);
     expect(pending.joinCode).toBeNull();
-    expect(mine.find((b) => b.id === `${PREFIX}approved`)!.joinCode).toBe("PIZZA-9K1");
+    expect(mine.find((b) => b.id === `${PREFIX}approved`)!.joinCode).toBe("PIZZ-9K4M7");
   });
 });
 
@@ -130,7 +130,7 @@ describe("getBoothDetail", () => {
 
   it("returns members sorted by name and a reconciled sales summary for an approved booth", async () => {
     const detail = (await getBoothDetail(`${PREFIX}approved`))!;
-    expect(detail.joinCode).toBe("PIZZA-9K1");
+    expect(detail.joinCode).toBe("PIZZ-9K4M7");
     expect(detail.members.map((m) => m.displayName)).toEqual(["Ava Nguyen", "Sam Lee"]);
     expect(detail.summary).not.toBeNull();
     expect(detail.summary!.grossCents).toBe(600);

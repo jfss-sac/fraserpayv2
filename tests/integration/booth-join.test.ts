@@ -117,10 +117,10 @@ describe("POST /api/booths/join", () => {
     const boothId = await makeBooth({
       name: "Taco Stand",
       status: "approved",
-      joinCode: "TACO-4F2",
+      joinCode: "TACO-4F2K9",
     });
 
-    const res = await joinRoute(joinRequest("join-ok", { code: "TACO-4F2" }));
+    const res = await joinRoute(joinRequest("join-ok", { code: "TACO-4F2K9" }));
     expect(res.status).toBe(200);
     expect((await res.json()) as { name: string }).toMatchObject({ boothId, name: "Taco Stand" });
 
@@ -128,7 +128,7 @@ describe("POST /api/booths/join", () => {
     expect(member.exists).toBe(true);
     expect(member.data()!.displayName).toBe("Jo Ok");
 
-    const authed = joinRequest("join-ok", { code: "TACO-4F2" });
+    const authed = joinRequest("join-ok", { code: "TACO-4F2K9" });
     await expect(authorizeRequest("boothMember", authed, boothId)).resolves.toMatchObject({
       uid: "join-ok",
     });
@@ -136,21 +136,21 @@ describe("POST /api/booths/join", () => {
 
   it("normalizes lowercase/whitespace input to the stored code", async () => {
     await makeUser({ uid: "join-norm", displayName: "Nora Norm" });
-    const boothId = await makeBooth({ name: "Fries", status: "approved", joinCode: "FRIE-2K7" });
+    const boothId = await makeBooth({ name: "Fries", status: "approved", joinCode: "FRIE-2K7M4" });
 
-    const res = await joinRoute(joinRequest("join-norm", { code: "  frie-2k7 " }));
+    const res = await joinRoute(joinRequest("join-norm", { code: "  frie-2k7m4 " }));
     expect(res.status).toBe(200);
     expect((await membersCol(boothId).doc("join-norm").get()).exists).toBe(true);
   });
 
   it("is idempotent by nature: re-joining preserves the original membership", async () => {
     await makeUser({ uid: "join-rejoin", displayName: "Ray Rejoin" });
-    const boothId = await makeBooth({ name: "Nachos", status: "approved", joinCode: "NACH-9P3" });
+    const boothId = await makeBooth({ name: "Nachos", status: "approved", joinCode: "NACH-9P3T6" });
 
-    expect((await joinRoute(joinRequest("join-rejoin", { code: "NACH-9P3" }))).status).toBe(200);
+    expect((await joinRoute(joinRequest("join-rejoin", { code: "NACH-9P3T6" }))).status).toBe(200);
     const first = (await membersCol(boothId).doc("join-rejoin").get()).data()!.joinedAt;
 
-    expect((await joinRoute(joinRequest("join-rejoin", { code: "NACH-9P3" }))).status).toBe(200);
+    expect((await joinRoute(joinRequest("join-rejoin", { code: "NACH-9P3T6" }))).status).toBe(200);
     const second = (await membersCol(boothId).doc("join-rejoin").get()).data()!.joinedAt;
 
     expect(second.toMillis()).toBe(first.toMillis());
@@ -158,11 +158,11 @@ describe("POST /api/booths/join", () => {
 
   it("lets a student belong to multiple booths (A4) and lists them for the sell picker", async () => {
     await makeUser({ uid: "join-multi", displayName: "Mel Multi" });
-    const a = await makeBooth({ name: "Zeta Booth", status: "approved", joinCode: "ZETA-111" });
-    const b = await makeBooth({ name: "Alpha Booth", status: "approved", joinCode: "ALPH-222" });
+    const a = await makeBooth({ name: "Zeta Booth", status: "approved", joinCode: "ZETA-8B5N2" });
+    const b = await makeBooth({ name: "Alpha Booth", status: "approved", joinCode: "ALPH-6C4W7" });
 
-    expect((await joinRoute(joinRequest("join-multi", { code: "ZETA-111" }))).status).toBe(200);
-    expect((await joinRoute(joinRequest("join-multi", { code: "ALPH-222" }))).status).toBe(200);
+    expect((await joinRoute(joinRequest("join-multi", { code: "ZETA-8B5N2" }))).status).toBe(200);
+    expect((await joinRoute(joinRequest("join-multi", { code: "ALPH-6C4W7" }))).status).toBe(200);
 
     const booths = await listMemberBooths("join-multi");
     expect(booths.map((x) => x.id)).toEqual([b, a]);
@@ -171,9 +171,9 @@ describe("POST /api/booths/join", () => {
 
   it("returns a generic NOT_FOUND for a wrong code (no oracle)", async () => {
     await makeUser({ uid: "join-wrong", displayName: "Wes Wrong" });
-    await makeBooth({ name: "Real Booth", status: "approved", joinCode: "REAL-777" });
+    await makeBooth({ name: "Real Booth", status: "approved", joinCode: "REAL-7D3X5" });
 
-    const res = await joinRoute(joinRequest("join-wrong", { code: "ZZZZ-999" }));
+    const res = await joinRoute(joinRequest("join-wrong", { code: "ZZZZ-9F2Y8" }));
     expect(res.status).toBe(404);
     expect(await errorCode(res)).toBe("NOT_FOUND");
   });
@@ -183,10 +183,10 @@ describe("POST /api/booths/join", () => {
     const boothId = await makeBooth({
       name: "Soon Booth",
       status: "pending",
-      joinCode: "SOON-333",
+      joinCode: "SOON-3G7Z4",
     });
 
-    const res = await joinRoute(joinRequest("join-pending", { code: "SOON-333" }));
+    const res = await joinRoute(joinRequest("join-pending", { code: "SOON-3G7Z4" }));
     expect(res.status).toBe(404);
     expect(await errorCode(res)).toBe("NOT_FOUND");
     expect((await membersCol(boothId).doc("join-pending").get()).exists).toBe(false);
@@ -197,31 +197,31 @@ describe("POST /api/booths/join", () => {
     const boothId = await makeBooth({
       name: "Gate Booth",
       status: "approved",
-      joinCode: "GATE-444",
+      joinCode: "GATE-4H6B9",
     });
 
-    const res = await joinRoute(joinRequest("join-susp", { code: "GATE-444" }));
+    const res = await joinRoute(joinRequest("join-susp", { code: "GATE-4H6B9" }));
     expect(res.status).toBe(403);
     expect(await errorCode(res)).toBe("SUSPENDED");
     expect((await membersCol(boothId).doc("join-susp").get()).exists).toBe(false);
   });
 
   it("requires authentication", async () => {
-    await makeBooth({ name: "Auth Booth", status: "approved", joinCode: "AUTH-555" });
-    const res = await joinRoute(joinRequest(null, { code: "AUTH-555" }));
+    await makeBooth({ name: "Auth Booth", status: "approved", joinCode: "AUTH-5J2C3" });
+    const res = await joinRoute(joinRequest(null, { code: "AUTH-5J2C3" }));
     expect(res.status).toBe(401);
     expect(await errorCode(res)).toBe("UNAUTHORIZED");
   });
 
   it("trips the strict join rate limit at the threshold", async () => {
     await makeUser({ uid: "join-rl", displayName: "Rae Limit" });
-    await makeBooth({ name: "Limit Booth", status: "approved", joinCode: "LIMI-666" });
+    await makeBooth({ name: "Limit Booth", status: "approved", joinCode: "LIMI-6K8D5" });
 
     const limit = 10;
     for (let i = 0; i < limit; i += 1) {
-      expect((await joinRoute(joinRequest("join-rl", { code: "LIMI-666" }))).status).toBe(200);
+      expect((await joinRoute(joinRequest("join-rl", { code: "LIMI-6K8D5" }))).status).toBe(200);
     }
-    const overflow = await joinRoute(joinRequest("join-rl", { code: "LIMI-666" }));
+    const overflow = await joinRoute(joinRequest("join-rl", { code: "LIMI-6K8D5" }));
     expect(overflow.status).toBe(429);
     expect(await errorCode(overflow)).toBe("RATE_LIMITED");
   });

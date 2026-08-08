@@ -123,7 +123,7 @@ beforeAll(async () => {
       description: "test booth",
       status: "approved",
       items: ITEMS,
-      joinCode: "CON-001",
+      joinCode: "CONT-5R7J3",
       submitterUid: OPERATOR.uid,
       submitterEmail: `${OPERATOR.uid}@pdsb.net`,
       createdAt: Timestamp.now(),

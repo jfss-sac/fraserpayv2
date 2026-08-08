@@ -4,7 +4,7 @@ import { type Role, type Session, authorizeRequest } from "./dal";
 import { AppError, ForbiddenError, InternalError, toAppError, ValidationError } from "./errors";
 import { type IdempotencyContext, buildIdempotencyContext } from "./idempotency";
 import { logger } from "./logger";
-import { RATE_LIMITS, type RateLimitScope, checkRateLimit } from "./ratelimit";
+import { type RateLimitScope, checkRateLimit } from "./ratelimit";
 
 export type { Role, Session };
 export type HandlerSession = Session;
@@ -90,19 +90,12 @@ async function parseInput(request: Request, schema: z.ZodType | undefined): Prom
   return parsed.data;
 }
 
-function clientIp(request: Request): string {
-  const forwarded = request.headers.get("x-forwarded-for");
-  if (forwarded) return forwarded.split(",")[0]!.trim();
-  return request.headers.get("x-real-ip")?.trim() || "unknown";
-}
-
 async function enforceRateLimit(
   scope: RateLimitScope | undefined,
   session: Session | null,
-  request: Request,
 ): Promise<void> {
   if (!scope) return;
-  const key = RATE_LIMITS[scope].key === "uid" ? session?.uid : clientIp(request);
+  const key = session?.uid;
   if (!key) throw new InternalError();
   await checkRateLimit(scope, key);
 }
@@ -151,7 +144,7 @@ export function defineHandler<
       );
       actorUid = session?.uid;
 
-      await enforceRateLimit(config.rateLimit, session, request);
+      await enforceRateLimit(config.rateLimit, session);
 
       const input = (await parseInput(request, config.schema)) as HandlerInput<S>;
 

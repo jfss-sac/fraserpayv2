@@ -104,7 +104,7 @@ describe("Firestore converters round-trip through the emulator", () => {
         { id: "custom", name: "Custom", priceCents: 50, isCustom: true },
         { id: "slice", name: "Slice", priceCents: 300, isCustom: false },
       ],
-      joinCode: "PIZZA-9K1",
+      joinCode: "PIZZ-9K4M7",
       submitterUid: "u2",
       submitterEmail: "jmurray@pdsb.net",
       createdAt: now,
@@ -182,7 +182,7 @@ describe("Firestore converters round-trip through the emulator", () => {
       targetType: "booth",
       targetId: "b2",
       targetLabel: "Pizza Palace",
-      details: { joinCode: "PIZZA-9K1" },
+      details: { joinCode: "PIZZ-9K4M7" },
       createdAt: now,
     };
     await auditCol().doc("a1").set(model);

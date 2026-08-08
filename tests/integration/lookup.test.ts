@@ -72,7 +72,7 @@ async function makeBooth(id: string): Promise<void> {
       description: "test booth",
       status: "approved",
       items: ITEMS,
-      joinCode: "TEST-001",
+      joinCode: "BOOT-3F7K2",
       submitterUid: OPERATOR.uid,
       submitterEmail: `${OPERATOR.uid}@pdsb.net`,
       createdAt: Timestamp.now(),

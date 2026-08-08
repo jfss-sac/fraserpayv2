@@ -14,9 +14,10 @@ import { addItem, enterStudentNumber } from "../helpers/numpad";
 import { warmShell } from "../helpers/sw";
 import { makeUser } from "../helpers/users";
 
-const CODE = /^[A-Z]{3,6}-[A-Z0-9]{3}$/;
+const SUFFIX = "[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{5}";
+const CODE = new RegExp(`^[A-Z]{4}-${SUFFIX}$`);
 const RELAY_NAME = "Relay Stand";
-const RELAY_CODE = /^RELA-[A-Z0-9]{3}$/;
+const RELAY_CODE = new RegExp(`^RELA-${SUFFIX}$`);
 
 const J2_BUYER = { uid: "e2e-j2-buyer", studentNumber: "849101", name: "Bianca Buyer" };
 
@@ -216,13 +217,13 @@ test.describe("J2 · exec booth management", () => {
 
   test("rotating a join code replaces the displayed code", async ({ page }) => {
     await page.goto(`/admin/booths/${APPROVED_BOOTH_ID}`);
-    await expect(page.getByText("PIZZA-9K1")).toBeVisible();
+    await expect(page.getByText("PIZZ-9K4M7")).toBeVisible();
 
     await page.getByRole("button", { name: "Rotate code" }).click();
     await page.getByRole("dialog").getByRole("button", { name: "Rotate code" }).click();
 
     await expect(page.getByText("Join code rotated.")).toBeVisible();
-    await expect(page.getByText("PIZZA-9K1")).toHaveCount(0);
+    await expect(page.getByText("PIZZ-9K4M7")).toHaveCount(0);
     await expect(page.getByText(CODE)).toBeVisible();
   });
 });

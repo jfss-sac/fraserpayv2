@@ -5,7 +5,7 @@ import { getAdminFirestore } from "./firebase-admin";
 import { logger } from "./logger";
 
 export interface RateLimitRule {
-  key: "ip" | "uid";
+  key: "uid";
   limit: number;
   windowMs: number;
   failOpen: boolean;

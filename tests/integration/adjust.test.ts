@@ -358,7 +358,9 @@ describe("POST /api/exec/adjust", () => {
 
   it("still lets an exec adjust another exec's balance", async () => {
     const other = await freshStudent({ balanceCents: 500 });
-    await usersCol().doc(other.uid).update({ roles: { sacMember: true, sacExec: true } });
+    await usersCol()
+      .doc(other.uid)
+      .update({ roles: { sacMember: true, sacExec: true } });
     const res = await adjustRoute(
       post(EXEC.uid, { studentUid: other.uid, amountCents: 500, reason: "peer correction" }),
     );

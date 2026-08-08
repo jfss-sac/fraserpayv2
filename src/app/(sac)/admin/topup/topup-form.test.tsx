@@ -11,6 +11,7 @@ interface FetchStub {
   lookupError?: string;
   topup?: TopUpResult;
   topupError?: string;
+  topupErrorMessage?: string;
 }
 
 function stubFetch(opts: FetchStub) {
@@ -22,7 +23,12 @@ function stubFetch(opts: FetchStub) {
     }
     if (url === "/api/sac/topup") {
       return opts.topupError
-        ? ({ ok: false, json: async () => ({ error: { code: opts.topupError } }) } as Response)
+        ? ({
+            ok: false,
+            json: async () => ({
+              error: { code: opts.topupError, message: opts.topupErrorMessage },
+            }),
+          } as Response)
         : ({ ok: true, json: async () => opts.topup } as Response);
     }
     throw new Error(`unexpected fetch to ${url}`);
@@ -201,5 +207,31 @@ describe("submit outcomes", () => {
       "Over the $100 top-up / $200 balance cap",
     );
     expect(screen.getByRole("button", { name: "Top up $10.00" })).toBeInTheDocument();
+  });
+
+  test("a FORBIDDEN that is not self-dealing toasts the server's reason", async () => {
+    stubFetch({
+      lookup: STUDENT,
+      topupError: "FORBIDDEN",
+      topupErrorMessage: "You do not have permission to do that.",
+    });
+    await gotoAmountStage(false);
+    await userEvent.click(screen.getByRole("button", { name: "$10.00" }));
+
+    await userEvent.click(screen.getByRole("button", { name: "Top up $10.00" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("You do not have permission to do that.");
+    expect(alert).not.toHaveTextContent("your own account");
+  });
+
+  test("a FORBIDDEN with no server reason falls back to the self-dealing copy", async () => {
+    stubFetch({ lookup: STUDENT, topupError: "FORBIDDEN" });
+    await gotoAmountStage(false);
+    await userEvent.click(screen.getByRole("button", { name: "$10.00" }));
+
+    await userEvent.click(screen.getByRole("button", { name: "Top up $10.00" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("You can't top up your own account");
   });
 });

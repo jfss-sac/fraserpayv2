@@ -85,7 +85,7 @@ async function makeBooth(
       description: "test booth",
       status,
       items: ITEMS,
-      joinCode: status === "approved" ? "TEST-001" : null,
+      joinCode: status === "approved" ? "BOOT-8S5T2" : null,
       submitterUid: OPERATOR.uid,
       submitterEmail: `${OPERATOR.uid}@pdsb.net`,
       createdAt: Timestamp.now(),

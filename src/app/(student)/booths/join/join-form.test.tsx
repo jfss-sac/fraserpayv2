@@ -45,7 +45,7 @@ test("normalizes the code and shows the joined state on success", async () => {
   vi.stubGlobal("fetch", fetchMock);
 
   render(<BoothJoinForm />);
-  await userEvent.type(screen.getByLabelText("Join code"), " taco-4f2 ");
+  await userEvent.type(screen.getByLabelText("Join code"), " taco-4f2k9 ");
   await userEvent.click(screen.getByRole("button", { name: "Join booth" }));
 
   await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent(/Taco Stand/));
@@ -55,7 +55,7 @@ test("normalizes the code and shows the joined state on success", async () => {
     expect.objectContaining({
       method: "POST",
       credentials: "same-origin",
-      body: JSON.stringify({ code: "TACO-4F2" }),
+      body: JSON.stringify({ code: "TACO-4F2K9" }),
     }),
   );
 });
@@ -67,7 +67,7 @@ test("surfaces a generic server error and stays on the form", async () => {
   );
 
   render(<BoothJoinForm />);
-  await userEvent.type(screen.getByLabelText("Join code"), "ZZZZ-999");
+  await userEvent.type(screen.getByLabelText("Join code"), "ZZZZ-9F2Y8");
   await userEvent.click(screen.getByRole("button", { name: "Join booth" }));
 
   await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent(/isn't valid/));

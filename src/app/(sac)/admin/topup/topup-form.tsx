@@ -108,9 +108,9 @@ export function TopUpForm({ isExec }: { isExec: boolean }) {
     reset: resetTopUp,
   } = useTopUp({
     onSuccess: () => setDialogOpen(false),
-    onError: (code) => {
+    onError: (code, serverMessage) => {
       setDialogOpen(false);
-      push(topUpErrorMessage(code), "error");
+      push(topUpErrorMessage(code, serverMessage), "error");
     },
   });
 

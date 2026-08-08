@@ -213,17 +213,17 @@ describe("POST /api/exec/booths/[id]/rotate-code", () => {
   const path = (id: string) => `/api/exec/booths/${id}/rotate-code`;
 
   it("rotates the join code, killing the old one and activating the new", async () => {
-    const id = await makeBooth({ status: "approved", joinCode: "TACO-AAA" });
+    const id = await makeBooth({ status: "approved", joinCode: "TACO-AAAAA" });
 
-    expect((await joinRoute(joinReq(JOINER.uid, "TACO-AAA"))).status).toBe(200);
+    expect((await joinRoute(joinReq(JOINER.uid, "TACO-AAAAA"))).status).toBe(200);
 
     const res = await withParams(rotateRoute, id, execPost(path(id), EXEC.uid));
     expect(res.status).toBe(200);
     const { joinCode } = (await res.json()) as { joinCode: string };
-    expect(joinCode).not.toBe("TACO-AAA");
+    expect(joinCode).not.toBe("TACO-AAAAA");
     expect((await boothDoc(id)).joinCode).toBe(joinCode);
 
-    const stale = await joinRoute(joinReq(SELLER.uid, "TACO-AAA"));
+    const stale = await joinRoute(joinReq(SELLER.uid, "TACO-AAAAA"));
     expect(stale.status).toBe(404);
     expect(await errorCode(stale)).toBe("NOT_FOUND");
 
@@ -232,7 +232,7 @@ describe("POST /api/exec/booths/[id]/rotate-code", () => {
     const audits = await auditsFor(id);
     expect(audits).toHaveLength(1);
     expect(audits[0]!.action).toBe("booth.codeRotate");
-    expect(audits[0]!.details.previousJoinCode).toBe("TACO-AAA");
+    expect(audits[0]!.details.previousJoinCode).toBe("TACO-AAAAA");
     expect(audits[0]!.details.joinCode).toBe(joinCode);
   });
 
@@ -244,15 +244,15 @@ describe("POST /api/exec/booths/[id]/rotate-code", () => {
   });
 
   it("forbids a non-exec", async () => {
-    const id = await makeBooth({ status: "approved", joinCode: "TACO-BBB" });
+    const id = await makeBooth({ status: "approved", joinCode: "TACO-BBBBB" });
     const res = await withParams(rotateRoute, id, execPost(path(id), MEMBER.uid));
     expect(res.status).toBe(403);
     expect(await errorCode(res)).toBe("FORBIDDEN");
-    expect((await boothDoc(id)).joinCode).toBe("TACO-BBB");
+    expect((await boothDoc(id)).joinCode).toBe("TACO-BBBBB");
   });
 
   it("requires authentication", async () => {
-    const id = await makeBooth({ status: "approved", joinCode: "TACO-CCC" });
+    const id = await makeBooth({ status: "approved", joinCode: "TACO-CCCCC" });
     const res = await withParams(rotateRoute, id, execPost(path(id), null));
     expect(res.status).toBe(401);
     expect(await errorCode(res)).toBe("UNAUTHORIZED");
@@ -263,7 +263,7 @@ describe("POST /api/exec/booths/[id]/members/remove", () => {
   const path = (id: string) => `/api/exec/booths/${id}/members/remove`;
 
   it("removes a member, who then instantly fails to charge", async () => {
-    const id = await makeBooth({ status: "approved", joinCode: "TACO-DDD" });
+    const id = await makeBooth({ status: "approved", joinCode: "TACO-DDDDD" });
     await addMember(id, SELLER);
     await resetBuyerBalance();
 
@@ -288,7 +288,7 @@ describe("POST /api/exec/booths/[id]/members/remove", () => {
   });
 
   it("forbids a non-exec", async () => {
-    const id = await makeBooth({ status: "approved", joinCode: "TACO-EEE" });
+    const id = await makeBooth({ status: "approved", joinCode: "TACO-EEEEE" });
     await addMember(id, SELLER);
     const res = await withParams(
       removeRoute,
@@ -301,7 +301,7 @@ describe("POST /api/exec/booths/[id]/members/remove", () => {
   });
 
   it("requires a uid", async () => {
-    const id = await makeBooth({ status: "approved", joinCode: "TACO-FFF" });
+    const id = await makeBooth({ status: "approved", joinCode: "TACO-FFFFF" });
     const res = await withParams(removeRoute, id, execPost(path(id), EXEC.uid, {}));
     expect(res.status).toBe(400);
     expect(await errorCode(res)).toBe("VALIDATION");
@@ -312,7 +312,7 @@ describe("POST /api/exec/booths/[id]/status", () => {
   const path = (id: string) => `/api/exec/booths/${id}/status`;
 
   it("deactivates a booth, blocking charge and join, then reactivates it", async () => {
-    const id = await makeBooth({ status: "approved", joinCode: "TACO-GGG" });
+    const id = await makeBooth({ status: "approved", joinCode: "TACO-GGGGG" });
     await addMember(id, SELLER);
     await resetBuyerBalance();
 
@@ -328,7 +328,7 @@ describe("POST /api/exec/booths/[id]/status", () => {
     expect(charge.status).toBe(409);
     expect(await errorCode(charge)).toBe("BOOTH_NOT_SELLABLE");
 
-    const join = await joinRoute(joinReq(JOINER.uid, "TACO-GGG"));
+    const join = await joinRoute(joinReq(JOINER.uid, "TACO-GGGGG"));
     expect(join.status).toBe(404);
     expect(await errorCode(join)).toBe("NOT_FOUND");
 
@@ -350,14 +350,14 @@ describe("POST /api/exec/booths/[id]/status", () => {
   });
 
   it("returns CONFLICT when reactivating an already-approved booth", async () => {
-    const id = await makeBooth({ status: "approved", joinCode: "TACO-HHH" });
+    const id = await makeBooth({ status: "approved", joinCode: "TACO-HHHHH" });
     const res = await withParams(statusRoute, id, execPost(path(id), EXEC.uid, { active: true }));
     expect(res.status).toBe(409);
     expect(await errorCode(res)).toBe("CONFLICT");
   });
 
   it("forbids a non-exec", async () => {
-    const id = await makeBooth({ status: "approved", joinCode: "TACO-III" });
+    const id = await makeBooth({ status: "approved", joinCode: "TACO-JJJJJ" });
     const res = await withParams(
       statusRoute,
       id,

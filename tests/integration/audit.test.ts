@@ -25,7 +25,7 @@ describe("writeAudit", () => {
     const before = Timestamp.now();
     let id = "";
     await db.runTransaction(async (t) => {
-      id = writeAudit(t, "booth.approve", actor, boothTarget, { joinCode: "PIZZA-9K1" }).id;
+      id = writeAudit(t, "booth.approve", actor, boothTarget, { joinCode: "PIZZ-9K4M7" }).id;
     });
 
     const read = (await auditCol().doc(id).get()).data();
@@ -36,7 +36,7 @@ describe("writeAudit", () => {
       targetType: "booth",
       targetId: "b2",
       targetLabel: "Pizza Palace",
-      details: { joinCode: "PIZZA-9K1" },
+      details: { joinCode: "PIZZ-9K4M7" },
     });
     expect(read?.createdAt).toBeInstanceOf(Timestamp);
     expect(read!.createdAt.toMillis()).toBeGreaterThanOrEqual(before.toMillis());

@@ -32,7 +32,7 @@ const APPROVED: BoothDetail = {
     { id: "custom", name: "Custom", priceCents: 50, isCustom: true },
     { id: "slice", name: "Slice", priceCents: 300, isCustom: false },
   ],
-  joinCode: "PIZZA-9K1",
+  joinCode: "PIZZ-9K4M7",
   submitterUid: "teacher-uid",
   submitterEmail: "jmurray@pdsb.net",
   createdAt: "2026-07-20T12:00:00.000Z",
@@ -72,7 +72,7 @@ describe("BoothManage — pending", () => {
 describe("BoothManage — approved", () => {
   test("shows the join code and sales to everyone", () => {
     render(<BoothManage detail={APPROVED} isExec={false} />);
-    expect(screen.getByText("PIZZA-9K1")).toBeInTheDocument();
+    expect(screen.getByText("PIZZ-9K4M7")).toBeInTheDocument();
     const gross = screen.getByText("Gross").parentElement!;
     expect(gross).toHaveTextContent("$12.00");
     expect(screen.getByText("Ava Nguyen")).toBeInTheDocument();

@@ -105,7 +105,7 @@ describe("seed-dev-data against the emulators", () => {
 
     const approved = (await db.collection("booths").doc("seed-booth-approved").get()).data();
     expect(approved!.status).toBe("approved");
-    expect(approved!.joinCode).toBe("PIZZA-9K1");
+    expect(approved!.joinCode).toBe("PIZZ-9K4M7");
     expect(approved!.approvedByUid).toBe("seed-sac-exec");
     expect(approved!.approvedAt).toBeDefined();
 
