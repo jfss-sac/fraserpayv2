@@ -1,16 +1,22 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
-import { parsePendingCharge, readPendingChargeRaw } from "@/lib/ui/pending-charge";
+import { parsePendingCharges, readPendingChargesRaw } from "@/lib/ui/pending-charge";
 import type { BuyerId } from "@/lib/ui/scanner";
 import { cartToItems, chargeErrorMessage, useCharge } from "./use-charge";
 
 const BUYER: BuyerId = { studentNumber: "123456" };
+const OTHER_BUYER: BuyerId = { studentNumber: "654321" };
 const ITEMS = [{ itemId: "taco", qty: 2 }];
+const OTHER_ITEMS = [{ itemId: "water", qty: 1 }];
 const ACTOR = "operator-1";
 const SCOPE = { actorUid: ACTOR, boothId: "b1" };
 
+function allPersisted() {
+  return parsePendingCharges(readPendingChargesRaw(SCOPE));
+}
+
 function persisted() {
-  return parsePendingCharge(readPendingChargeRaw(SCOPE));
+  return allPersisted()[0] ?? null;
 }
 
 function neverResolves(): Promise<Response> {
@@ -608,6 +614,131 @@ test("dismissing a recovered charge releases its held key so the next identical 
     });
   });
   expect(keyOf(fetchMock.mock.calls.at(-1)!)).not.toBe(sentKey);
+});
+
+test("ringing the next customer leaves an earlier stranded charge recoverable", async () => {
+  const fetchMock = vi.fn().mockImplementation(neverResolves);
+  vi.stubGlobal("fetch", fetchMock);
+
+  const crashed = renderHook(() => useCharge({ boothId: "b1", actorUid: ACTOR }));
+  await act(async () => {
+    void crashed.result.current.submit({
+      buyer: BUYER,
+      buyerName: "Ada",
+      items: ITEMS,
+      amountCents: 500,
+    });
+  });
+  const strandedKey = keyOf(fetchMock.mock.calls[0]!);
+  crashed.unmount();
+
+  fetchMock.mockResolvedValue(okResponse({ entryId: "e2", amountCents: 250 }));
+  const reopened = renderHook(() => useCharge({ boothId: "b1", actorUid: ACTOR }));
+  expect(reopened.result.current.recovered).toMatchObject({ key: strandedKey });
+
+  await act(async () => {
+    await reopened.result.current.submit({
+      buyer: OTHER_BUYER,
+      buyerName: "Grace",
+      items: OTHER_ITEMS,
+      amountCents: 250,
+    });
+  });
+
+  expect(reopened.result.current.recovered).toMatchObject({ key: strandedKey });
+  expect(allPersisted().map((record) => record.key)).toEqual([strandedKey]);
+
+  await act(async () => {
+    await reopened.result.current.retryRecovered(reopened.result.current.recovered!);
+  });
+  expect(keyOf(fetchMock.mock.calls.at(-1)!)).toBe(strandedKey);
+  expect(allPersisted()).toEqual([]);
+});
+
+test("surfaces stranded charges oldest first, resolving them one at a time", async () => {
+  const fetchMock = vi.fn().mockImplementation(neverResolves);
+  vi.stubGlobal("fetch", fetchMock);
+  const nowSpy = vi.spyOn(Date, "now").mockReturnValue(1_000_000);
+
+  const first = renderHook(() => useCharge({ boothId: "b1", actorUid: ACTOR }));
+  await act(async () => {
+    void first.result.current.submit({
+      buyer: BUYER,
+      buyerName: "Ada",
+      items: ITEMS,
+      amountCents: 500,
+    });
+  });
+  const firstKey = keyOf(fetchMock.mock.calls[0]!);
+  first.unmount();
+
+  nowSpy.mockReturnValue(1_060_000);
+  const second = renderHook(() => useCharge({ boothId: "b1", actorUid: ACTOR }));
+  await act(async () => {
+    void second.result.current.submit({
+      buyer: OTHER_BUYER,
+      buyerName: "Grace",
+      items: OTHER_ITEMS,
+      amountCents: 250,
+    });
+  });
+  const secondKey = keyOf(fetchMock.mock.calls[1]!);
+  second.unmount();
+
+  const reopened = renderHook(() => useCharge({ boothId: "b1", actorUid: ACTOR }));
+  expect(reopened.result.current.recovered).toMatchObject({ key: firstKey, buyerName: "Ada" });
+
+  fetchMock.mockResolvedValue(okResponse({ entryId: "e1", amountCents: 500 }));
+  await act(async () => {
+    await reopened.result.current.retryRecovered(reopened.result.current.recovered!);
+  });
+  expect(reopened.result.current.recovered).toMatchObject({ key: secondKey, buyerName: "Grace" });
+
+  await act(async () => {
+    await reopened.result.current.retryRecovered(reopened.result.current.recovered!);
+  });
+  expect(reopened.result.current.recovered).toBeNull();
+});
+
+test("dismissing one stranded charge surfaces the next instead of dropping it", async () => {
+  const fetchMock = vi.fn().mockImplementation(neverResolves);
+  vi.stubGlobal("fetch", fetchMock);
+  const nowSpy = vi.spyOn(Date, "now").mockReturnValue(1_000_000);
+
+  const first = renderHook(() => useCharge({ boothId: "b1", actorUid: ACTOR }));
+  await act(async () => {
+    void first.result.current.submit({
+      buyer: BUYER,
+      buyerName: "Ada",
+      items: ITEMS,
+      amountCents: 500,
+    });
+  });
+  const firstKey = keyOf(fetchMock.mock.calls[0]!);
+  first.unmount();
+
+  nowSpy.mockReturnValue(1_060_000);
+  const second = renderHook(() => useCharge({ boothId: "b1", actorUid: ACTOR }));
+  await act(async () => {
+    void second.result.current.submit({
+      buyer: OTHER_BUYER,
+      buyerName: "Grace",
+      items: OTHER_ITEMS,
+      amountCents: 250,
+    });
+  });
+  const secondKey = keyOf(fetchMock.mock.calls[1]!);
+  second.unmount();
+
+  const reopened = renderHook(() => useCharge({ boothId: "b1", actorUid: ACTOR }));
+  expect(reopened.result.current.recovered).toMatchObject({ key: firstKey });
+
+  act(() => {
+    reopened.result.current.dismissRecovered();
+  });
+
+  expect(reopened.result.current.recovered).toMatchObject({ key: secondKey });
+  expect(allPersisted().map((record) => record.key)).toEqual([secondKey]);
 });
 
 test("reports a replay when the recovery card's retry finds the original already committed", async () => {

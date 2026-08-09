@@ -5,7 +5,7 @@ import type { ChargeResult } from "@/lib/shared/types";
 import {
   type PendingCharge,
   clearPendingCharge,
-  usePendingCharge,
+  usePendingCharges,
   writePendingCharge,
 } from "@/lib/ui/pending-charge";
 import type { BuyerId } from "@/lib/ui/scanner";
@@ -143,10 +143,11 @@ export function useCharge(args: {
   const [state, setState] = useState<ChargeState>({ status: "idle" });
   const [sessionId] = useState(() => crypto.randomUUID());
   const inFlight = useRef(false);
+  const lastKey = useRef<string | null>(null);
   const { keyFor, hold, isHeld, release, releaseAll } = useIdempotencyKey();
   const scope = useMemo(() => ({ actorUid, boothId }), [actorUid, boothId]);
-  const persisted = usePendingCharge(scope);
-  const recovered = persisted && persisted.sessionId !== sessionId ? persisted : null;
+  const persisted = usePendingCharges(scope);
+  const recovered = persisted.find((record) => record.sessionId !== sessionId) ?? null;
 
   const run = useCallback(
     async (
@@ -160,6 +161,7 @@ export function useCharge(args: {
       if (replay) hold("/api/booth/charge", body, replay.key);
       const reusedKey = isHeld("/api/booth/charge", body);
       const idempotencyKey = keyFor("/api/booth/charge", body);
+      lastKey.current = idempotencyKey;
       writePendingCharge(scope, {
         key: idempotencyKey,
         sessionId: replay?.sessionId ?? sessionId,
@@ -177,7 +179,7 @@ export function useCharge(args: {
           idempotencyKey,
         });
         release("/api/booth/charge", body);
-        clearPendingCharge(scope);
+        clearPendingCharge(scope, idempotencyKey);
         setState({ status: "success", amountCents: result.amountCents, buyerName });
         onSuccess?.({
           ...result,
@@ -187,7 +189,7 @@ export function useCharge(args: {
         });
       } catch (err) {
         const code = err instanceof ChargeError ? err.code : "NETWORK";
-        if (SETTLED_CHARGE_CODES.has(code)) clearPendingCharge(scope);
+        if (SETTLED_CHARGE_CODES.has(code)) clearPendingCharge(scope, idempotencyKey);
         setState({ status: "error", code });
         onError?.(code);
       } finally {
@@ -214,18 +216,18 @@ export function useCharge(args: {
   );
 
   const dismissRecovered = useCallback(() => {
-    if (recovered) {
-      release(
-        "/api/booth/charge",
-        chargeBody({ boothId, buyer: recovered.buyer, items: recovered.items }),
-      );
-    }
-    clearPendingCharge(scope);
+    if (!recovered) return;
+    release(
+      "/api/booth/charge",
+      chargeBody({ boothId, buyer: recovered.buyer, items: recovered.items }),
+    );
+    clearPendingCharge(scope, recovered.key);
   }, [recovered, boothId, release, scope]);
 
   const reset = useCallback(() => {
     releaseAll();
-    clearPendingCharge(scope);
+    if (lastKey.current !== null) clearPendingCharge(scope, lastKey.current);
+    lastKey.current = null;
     setState({ status: "idle" });
   }, [releaseAll, scope]);
 
