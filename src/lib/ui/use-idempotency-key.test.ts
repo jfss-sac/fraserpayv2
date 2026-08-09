@@ -47,3 +47,26 @@ test("scope ignores key order and dropped undefined fields like JSON serializati
     idempotencyScope("/api/x", { a: 1 }),
   );
 });
+
+test("hold seeds a scope so a later gesture reuses a key minted elsewhere", () => {
+  const { result } = renderHook(() => useIdempotencyKey());
+  result.current.hold("/api/x", { a: 1 }, "recovered-key");
+
+  expect(result.current.keyFor("/api/x", { a: 1 })).toBe("recovered-key");
+  expect(result.current.keyFor("/api/x", { a: 2 })).not.toBe("recovered-key");
+
+  result.current.release("/api/x", { a: 1 });
+  expect(result.current.keyFor("/api/x", { a: 1 })).not.toBe("recovered-key");
+});
+
+test("isHeld distinguishes a reused key from one about to be minted", () => {
+  const { result } = renderHook(() => useIdempotencyKey());
+
+  expect(result.current.isHeld("/api/x", { a: 1 })).toBe(false);
+  result.current.keyFor("/api/x", { a: 1 });
+  expect(result.current.isHeld("/api/x", { a: 1 })).toBe(true);
+  expect(result.current.isHeld("/api/x", { a: 2 })).toBe(false);
+
+  result.current.release("/api/x", { a: 1 });
+  expect(result.current.isHeld("/api/x", { a: 1 })).toBe(false);
+});

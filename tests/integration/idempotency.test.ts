@@ -101,11 +101,15 @@ function nextKey(): string {
 describe("runIdempotent transaction helpers", () => {
   it("replays the stored response and writes no second ledger entry", async () => {
     const key = nextKey();
-    const first = await chargeOnce(ctxFor(key, { amountCents: 5000 }), 5000);
+    const firstCtx = ctxFor(key, { amountCents: 5000 });
+    const first = await chargeOnce(firstCtx, 5000);
     expect(first.replayed).toBe(false);
+    expect(firstCtx.replayed).toBe(false);
 
-    const second = await chargeOnce(ctxFor(key, { amountCents: 5000 }), 5000);
+    const secondCtx = ctxFor(key, { amountCents: 5000 });
+    const second = await chargeOnce(secondCtx, 5000);
     expect(second.replayed).toBe(true);
+    expect(secondCtx.replayed).toBe(true);
     expect(second.response).toEqual(first.response);
     expect(await countEntriesForKey(key)).toBe(1);
   });
@@ -207,6 +211,24 @@ describe("defineHandler idempotent slot wiring", () => {
     ).json()) as ChargeResponse;
     expect(second).toEqual(first);
     expect(await countEntriesForKey(key)).toBe(1);
+  });
+
+  it("sets Idempotent-Replay only on the replay, never on the fresh commit (§9.2)", async () => {
+    const key = nextKey();
+    const first = await chargeHandler(post(key, { amountCents: 5000 }));
+    const second = await chargeHandler(post(key, { amountCents: 5000 }));
+
+    expect(first.headers.get("idempotent-replay")).toBeNull();
+    expect(second.headers.get("idempotent-replay")).toBe("true");
+  });
+
+  it("does not leak one request's replay flag into the next fresh request", async () => {
+    const key = nextKey();
+    await chargeHandler(post(key, { amountCents: 5000 }));
+    await chargeHandler(post(key, { amountCents: 5000 }));
+    const fresh = await chargeHandler(post(nextKey(), { amountCents: 5000 }));
+
+    expect(fresh.headers.get("idempotent-replay")).toBeNull();
   });
 
   it("rejects a missing key with VALIDATION", async () => {

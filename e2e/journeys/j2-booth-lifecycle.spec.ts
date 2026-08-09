@@ -184,6 +184,44 @@ test.describe("J2 · POS terminal", () => {
     expect(entries.size).toBe(1);
   });
 
+  test("a re-rung identical cart reuses the held key and reports the replay, not a second sale", async ({
+    page,
+  }) => {
+    const idempotencyKeys: string[] = [];
+    let swallowResponses = true;
+
+    await page.route("**/api/booth/charge", async (route) => {
+      idempotencyKeys.push(route.request().headers()["idempotency-key"] ?? "");
+      if (!swallowResponses) {
+        await route.continue();
+        return;
+      }
+      if (idempotencyKeys.length === 1) await route.fetch();
+      await route.abort("failed");
+    });
+
+    await page.goto(`/sell/${APPROVED_BOOTH_ID}`);
+    await addItem(page, "Slice");
+    await enterStudentNumber(page, BUYER_STUDENT_NUMBER);
+    await expect(page.getByText("Funds available")).toBeVisible();
+
+    await page.getByRole("button", { name: "Charge" }).click();
+    await expect(page.getByText(/Couldn't reach the server/)).toBeVisible();
+    expect(idempotencyKeys.length).toBe(3);
+
+    swallowResponses = false;
+    await page.getByRole("button", { name: "Charge" }).click();
+    await expect(page.getByText(/Already processed — no new charge/)).toBeVisible();
+    await expect(page.getByText(`Charged $3.00 to ${BUYER_NAME}`)).toHaveCount(0);
+
+    expect(new Set(idempotencyKeys).size).toBe(1);
+    const entries = await db()
+      .collection("ledger")
+      .where("idempotencyKey", "==", idempotencyKeys[0])
+      .get();
+    expect(entries.size).toBe(1);
+  });
+
   test("offline banner blocks charging and the cart survives reconnect", async ({ page }) => {
     await page.goto(`/sell/${APPROVED_BOOTH_ID}`);
     await expect(page.getByRole("heading", { name: "Pizza Palace" })).toBeVisible();

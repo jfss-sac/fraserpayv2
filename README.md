@@ -9,6 +9,8 @@ Closed-loop digital credit system for a school event(s) at John Fraser SS. Stude
 ![Tailwind CSS v4](https://img.shields.io/badge/Tailwind-v4-06B6D4?style=flat-square&logo=tailwindcss&logoColor=white)
 ![pnpm](https://img.shields.io/badge/pnpm-11-F69220?style=flat-square&logo=pnpm&logoColor=white)
 
+**Docs:** [Architecture](./ARCHITECTURE.md) · [Roadmap & features](./ROADMAP.md)
+
 ---
 
 ## Architecture
@@ -28,9 +30,7 @@ flowchart LR
   Server -.->|"verify token"| Auth
 ```
 
-- **Clients are locked out of Firestore.** Security Rules deny all client access, so the server is the only reader and writer.
-- **Every cent is explainable.** Balances are derived from an append-only ledger, and the money module enforces invariants `I1`–`I11`.
-- **Built for bad WiFi.** The wallet renders from device cache with near-zero network, and a booth charge is one small server request.
+Clients are locked out of Firestore (Security Rules deny everything), every cent is explainable from an append-only ledger, and the wallet is built to open from device cache on terrible WiFi. The full design — money invariants, idempotency and crash recovery, data model, rate limits, offline strategy — lives in [ARCHITECTURE.md](./ARCHITECTURE.md).
 
 ---
 

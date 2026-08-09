@@ -32,6 +32,16 @@ export function useIdempotencyKey() {
     return key;
   }, []);
 
+  const hold = useCallback((endpoint: string, body: unknown, key: string) => {
+    (held.current ??= new Map()).set(idempotencyScope(endpoint, body), key);
+  }, []);
+
+  const isHeld = useCallback(
+    (endpoint: string, body: unknown): boolean =>
+      held.current?.has(idempotencyScope(endpoint, body)) ?? false,
+    [],
+  );
+
   const release = useCallback((endpoint: string, body: unknown) => {
     held.current?.delete(idempotencyScope(endpoint, body));
   }, []);
@@ -40,5 +50,5 @@ export function useIdempotencyKey() {
     held.current?.clear();
   }, []);
 
-  return { keyFor, release, releaseAll };
+  return { keyFor, hold, isHeld, release, releaseAll };
 }

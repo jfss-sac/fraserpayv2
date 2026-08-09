@@ -2,7 +2,11 @@ import "server-only";
 import { z } from "zod";
 import { type Role, type Session, authorizeRequest } from "./dal";
 import { AppError, ForbiddenError, InternalError, toAppError, ValidationError } from "./errors";
-import { type IdempotencyContext, buildIdempotencyContext } from "./idempotency";
+import {
+  type IdempotencyContext,
+  IDEMPOTENT_REPLAY_HEADER,
+  buildIdempotencyContext,
+} from "./idempotency";
 import { logger } from "./logger";
 import { type RateLimitScope, checkRateLimit } from "./ratelimit";
 
@@ -162,6 +166,7 @@ export function defineHandler<
       const result = await fn({ input, params, session, requestId, request, idempotency });
       const response = toResponse(result);
       response.headers.set("x-request-id", requestId);
+      if (idempotency?.replayed) response.headers.set(IDEMPOTENT_REPLAY_HEADER, "true");
 
       logger.info({
         event: "request",

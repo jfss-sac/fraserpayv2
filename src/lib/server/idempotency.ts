@@ -4,12 +4,13 @@ import { type DocumentReference, type Transaction, Timestamp } from "firebase-ad
 import { type IdempotencyDoc, idempotencyCol } from "./db";
 import { IdempotencyConflictError, ValidationError } from "./errors";
 import { getAdminFirestore } from "./firebase-admin";
+import { UUID_V4_RE } from "@/lib/shared/uuid";
 
 export const IDEMPOTENCY_HEADER = "idempotency-key";
 
-export const IDEMPOTENCY_TTL_MS = 72 * 60 * 60 * 1000;
+export const IDEMPOTENT_REPLAY_HEADER = "idempotent-replay";
 
-const UUID_V4_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+export const IDEMPOTENCY_TTL_MS = 72 * 60 * 60 * 1000;
 
 export interface IdempotencyContext {
   key: string;
@@ -17,6 +18,7 @@ export interface IdempotencyContext {
   endpoint: string;
   docId: string;
   requestHash: string;
+  replayed: boolean;
 }
 
 export interface IdempotentOutcome<R> {
@@ -63,6 +65,7 @@ export function buildIdempotencyContext(args: {
     endpoint: args.endpoint,
     docId: `${args.actorUid}_${key}`,
     requestHash: requestHash(args.body),
+    replayed: false,
   };
 }
 
@@ -100,11 +103,13 @@ export async function runIdempotent<R>(
   ctx: IdempotencyContext,
   execute: (t: Transaction) => Promise<{ response: R; ledgerEntryId?: string }>,
 ): Promise<IdempotentOutcome<R>> {
-  return getAdminFirestore().runTransaction(async (t) => {
+  const outcome = await getAdminFirestore().runTransaction(async (t) => {
     const replay = await readReplay<R>(t, ctx);
     if (replay !== null) return { response: replay, replayed: true };
     const { response, ledgerEntryId } = await execute(t);
     recordResult(t, ctx, response, ledgerEntryId);
     return { response, replayed: false };
   });
+  ctx.replayed = outcome.replayed;
+  return outcome;
 }

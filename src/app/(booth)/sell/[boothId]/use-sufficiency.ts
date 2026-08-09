@@ -1,15 +1,19 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { LookupResult } from "@/lib/shared/types";
+import type { LookupResult, RecentPurchase } from "@/lib/shared/types";
 import type { BuyerId } from "@/lib/ui/scanner";
 
 export const LOOKUP_DEBOUNCE_MS = 300;
 
+export interface ObservedPurchase extends RecentPurchase {
+  observedAt: number;
+}
+
 export type SufficiencyState =
   | { status: "idle" }
   | { status: "checking"; name: string | null }
-  | { status: "ready"; name: string; sufficient: boolean }
+  | { status: "ready"; name: string; sufficient: boolean; lastPurchase: ObservedPurchase | null }
   | { status: "error"; code: string };
 
 export class LookupError extends Error {
@@ -74,7 +78,15 @@ export function useSufficiency(args: {
             key,
             buyer,
             name: result.name,
-            state: { status: "ready", name: result.name, sufficient: result.sufficient },
+            state: {
+              status: "ready",
+              name: result.name,
+              sufficient: result.sufficient,
+              lastPurchase: result.lastPurchase && {
+                ...result.lastPurchase,
+                observedAt: Date.now(),
+              },
+            },
           });
         })
         .catch((err) => {
@@ -94,6 +106,6 @@ export function useSufficiency(args: {
   }, [boothId, buyer, cartTotalCents, debounceMs, key]);
 
   if (!buyer) return { status: "idle" };
-  if (resolved && resolved.key === key) return resolved.state;
+  if (resolved && resolved.key === key && resolved.buyer === buyer) return resolved.state;
   return { status: "checking", name: resolved && resolved.buyer === buyer ? resolved.name : null };
 }

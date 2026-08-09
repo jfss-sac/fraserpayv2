@@ -28,7 +28,14 @@ let keySeq = 0;
 function idempotency(actorUid: string, endpoint: string, body: unknown): IdempotencyContext {
   keySeq += 1;
   const key = `con-key-${keySeq}`;
-  return { key, actorUid, endpoint, docId: `${actorUid}_${key}`, requestHash: requestHash(body) };
+  return {
+    key,
+    actorUid,
+    endpoint,
+    docId: `${actorUid}_${key}`,
+    requestHash: requestHash(body),
+    replayed: false,
+  };
 }
 
 async function makeUser(args: {

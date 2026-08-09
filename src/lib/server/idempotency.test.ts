@@ -77,6 +77,7 @@ describe("buildIdempotencyContext", () => {
       endpoint: "/api/sac/topup",
       docId: `actor-1_${KEY}`,
       requestHash: requestHash({ amountCents: 5000 }),
+      replayed: false,
     });
   });
 

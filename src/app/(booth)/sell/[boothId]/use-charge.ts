@@ -1,7 +1,13 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import type { ChargeResult } from "@/lib/shared/types";
+import {
+  type PendingCharge,
+  clearPendingCharge,
+  usePendingCharge,
+  writePendingCharge,
+} from "@/lib/ui/pending-charge";
 import type { BuyerId } from "@/lib/ui/scanner";
 import { useIdempotencyKey } from "@/lib/ui/use-idempotency-key";
 
@@ -53,13 +59,17 @@ function chargeBody({
   return { boothId, buyer, items };
 }
 
+export interface ChargeOutcome extends ChargeResult {
+  replayed: boolean;
+}
+
 async function requestCharge(args: {
   boothId: string;
   buyer: BuyerId;
   items: ChargeItem[];
   idempotencyKey: string;
   signal: AbortSignal;
-}): Promise<ChargeResult> {
+}): Promise<ChargeOutcome> {
   const res = await fetch("/api/booth/charge", {
     method: "POST",
     headers: {
@@ -78,13 +88,14 @@ async function requestCharge(args: {
     }
     throw new ChargeError(code);
   }
-  return (await res.json()) as ChargeResult;
+  const replayed = res.headers.get("idempotent-replay") === "true";
+  return { ...((await res.json()) as ChargeResult), replayed };
 }
 
 export async function chargeWithRetry(
   args: { boothId: string; buyer: BuyerId; items: ChargeItem[]; idempotencyKey: string },
   opts: { attempts?: number; timeoutMs?: number } = {},
-): Promise<ChargeResult> {
+): Promise<ChargeOutcome> {
   const attempts = opts.attempts ?? CHARGE_MAX_ATTEMPTS;
   const timeoutMs = opts.timeoutMs ?? CHARGE_TIMEOUT_MS;
   for (let i = 0; i < attempts; i++) {
@@ -111,45 +122,112 @@ export interface ChargeSubmission {
   buyer: BuyerId;
   buyerName: string;
   items: ChargeItem[];
+  amountCents: number;
 }
+
+const SETTLED_CHARGE_CODES = new Set(["INSUFFICIENT_FUNDS", "BOOTH_NOT_SELLABLE"]);
 
 export function useCharge(args: {
   boothId: string;
-  onSuccess?: (result: { amountCents: number; entryId: string; buyerName: string }) => void;
+  actorUid: string;
+  onSuccess?: (result: {
+    amountCents: number;
+    entryId: string;
+    buyerName: string;
+    recovered: boolean;
+    replayed: boolean;
+  }) => void;
   onError?: (code: string) => void;
 }) {
-  const { boothId, onSuccess, onError } = args;
+  const { boothId, actorUid, onSuccess, onError } = args;
   const [state, setState] = useState<ChargeState>({ status: "idle" });
+  const [sessionId] = useState(() => crypto.randomUUID());
   const inFlight = useRef(false);
-  const { keyFor, release, releaseAll } = useIdempotencyKey();
+  const { keyFor, hold, isHeld, release, releaseAll } = useIdempotencyKey();
+  const scope = useMemo(() => ({ actorUid, boothId }), [actorUid, boothId]);
+  const persisted = usePendingCharge(scope);
+  const recovered = persisted && persisted.sessionId !== sessionId ? persisted : null;
 
-  const submit = useCallback(
-    async ({ buyer, buyerName, items }: ChargeSubmission) => {
+  const run = useCallback(
+    async (
+      { buyer, buyerName, items, amountCents }: ChargeSubmission,
+      replay: PendingCharge | null,
+    ) => {
       if (inFlight.current || items.length === 0) return;
       inFlight.current = true;
       setState({ status: "pending" });
       const body = chargeBody({ boothId, buyer, items });
+      if (replay) hold("/api/booth/charge", body, replay.key);
+      const reusedKey = isHeld("/api/booth/charge", body);
       const idempotencyKey = keyFor("/api/booth/charge", body);
+      writePendingCharge(scope, {
+        key: idempotencyKey,
+        sessionId: replay?.sessionId ?? sessionId,
+        buyer,
+        buyerName,
+        items,
+        amountCents,
+        startedAt: replay?.startedAt ?? Date.now(),
+      });
       try {
-        const result = await chargeWithRetry({ boothId, buyer, items, idempotencyKey });
+        const { replayed, ...result } = await chargeWithRetry({
+          boothId,
+          buyer,
+          items,
+          idempotencyKey,
+        });
         release("/api/booth/charge", body);
+        clearPendingCharge(scope);
         setState({ status: "success", amountCents: result.amountCents, buyerName });
-        onSuccess?.({ ...result, buyerName });
+        onSuccess?.({
+          ...result,
+          buyerName,
+          recovered: replay !== null,
+          replayed: replayed && reusedKey,
+        });
       } catch (err) {
         const code = err instanceof ChargeError ? err.code : "NETWORK";
+        if (SETTLED_CHARGE_CODES.has(code)) clearPendingCharge(scope);
         setState({ status: "error", code });
         onError?.(code);
       } finally {
         inFlight.current = false;
       }
     },
-    [boothId, onSuccess, onError, keyFor, release],
+    [boothId, scope, sessionId, onSuccess, onError, keyFor, hold, isHeld, release],
   );
+
+  const submit = useCallback((submission: ChargeSubmission) => run(submission, null), [run]);
+
+  const retryRecovered = useCallback(
+    (pending: PendingCharge) =>
+      run(
+        {
+          buyer: pending.buyer,
+          buyerName: pending.buyerName,
+          items: pending.items,
+          amountCents: pending.amountCents,
+        },
+        pending,
+      ),
+    [run],
+  );
+
+  const dismissRecovered = useCallback(() => {
+    if (recovered) {
+      release(
+        "/api/booth/charge",
+        chargeBody({ boothId, buyer: recovered.buyer, items: recovered.items }),
+      );
+    }
+    clearPendingCharge(scope);
+  }, [recovered, boothId, release, scope]);
 
   const reset = useCallback(() => {
     releaseAll();
+    clearPendingCharge(scope);
     setState({ status: "idle" });
-  }, [releaseAll]);
+  }, [releaseAll, scope]);
 
-  return { state, submit, reset };
+  return { state, submit, reset, recovered, retryRecovered, dismissRecovered };
 }

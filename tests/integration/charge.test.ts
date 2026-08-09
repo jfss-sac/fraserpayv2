@@ -375,15 +375,29 @@ describe("POST /api/booth/charge", () => {
       buyer: { studentNumber: buyer.studentNumber },
       items: [{ itemId: "coffee", qty: 2 }],
     };
-    const first = (await (
-      await chargeRoute(post(OPERATOR.uid, body, { key }))
-    ).json()) as ChargeResult;
-    const second = (await (
-      await chargeRoute(post(OPERATOR.uid, body, { key }))
-    ).json()) as ChargeResult;
+    const firstRes = await chargeRoute(post(OPERATOR.uid, body, { key }));
+    const secondRes = await chargeRoute(post(OPERATOR.uid, body, { key }));
+    const first = (await firstRes.json()) as ChargeResult;
+    const second = (await secondRes.json()) as ChargeResult;
     expect(second).toEqual(first);
     expect((await usersCol().doc(buyer.uid).get()).data()?.balanceCents).toBe(1500);
     expect(await ledgerFor(buyer.uid)).toHaveLength(1);
+  });
+
+  it("flags the replay with Idempotent-Replay and leaves the body identical (§9.2)", async () => {
+    const buyer = await freshBuyer(2000);
+    const key = nextKey();
+    const body = {
+      boothId: BOOTH_ID,
+      buyer: { studentNumber: buyer.studentNumber },
+      items: [{ itemId: "coffee", qty: 2 }],
+    };
+    const firstRes = await chargeRoute(post(OPERATOR.uid, body, { key }));
+    const secondRes = await chargeRoute(post(OPERATOR.uid, body, { key }));
+
+    expect(firstRes.headers.get("idempotent-replay")).toBeNull();
+    expect(secondRes.headers.get("idempotent-replay")).toBe("true");
+    expect(await secondRes.text()).toBe(await firstRes.text());
   });
 
   it("keeps request and response bodies each under 2 KB (NFR-3)", async () => {

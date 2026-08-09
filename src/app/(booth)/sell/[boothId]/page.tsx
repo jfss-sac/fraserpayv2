@@ -28,7 +28,7 @@ export default async function PosPage({ params }: { params: Promise<{ boothId: s
       </div>
 
       {booth.status === "approved" ? (
-        <PosTerminal boothId={booth.id} items={booth.items} />
+        <PosTerminal boothId={booth.id} actorUid={session.uid} items={booth.items} />
       ) : (
         <p role="status" className="text-sm text-muted">
           This booth can&apos;t sell yet. It&apos;s{" "}

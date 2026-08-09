@@ -1,10 +1,17 @@
-import { Timestamp } from "firebase-admin/firestore";
+import { type DocumentReference, Timestamp } from "firebase-admin/firestore";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { POST as lookupRoute } from "../../src/app/api/booth/lookup/route";
-import { boothsCol, membersCol, usersCol } from "../../src/lib/server/db";
+import { RECENT_PURCHASE_WINDOW_MS } from "../../src/lib/server/booth-lookup";
+import {
+  type LedgerEntryDoc,
+  boothsCol,
+  ledgerCol,
+  membersCol,
+  usersCol,
+} from "../../src/lib/server/db";
 import { getAdminAuth, getAdminFirestore } from "../../src/lib/server/firebase-admin";
 import { SESSION_COOKIE_NAME, SESSION_TTL_MS } from "../../src/lib/shared/constants";
-import type { BoothItem, LookupResult } from "../../src/lib/shared/types";
+import type { BoothItem, LedgerType, LookupResult } from "../../src/lib/shared/types";
 
 const ORIGIN = "http://127.0.0.1";
 const ENDPOINT = "/api/booth/lookup";
@@ -95,6 +102,43 @@ async function errorCode(res: Response): Promise<string> {
   return ((await res.json()) as { error: { code: string } }).error.code;
 }
 
+const seededLedger: DocumentReference<LedgerEntryDoc>[] = [];
+
+let ledgerSeq = 0;
+async function seedLedgerEntry(args: {
+  studentUid: string;
+  studentName: string;
+  type: LedgerType;
+  amountCents: number;
+  ageMs: number;
+  boothId?: string;
+  originalEntryId?: string;
+}): Promise<string> {
+  ledgerSeq += 1;
+  const ref = ledgerCol().doc();
+  await ref.set({
+    type: args.type,
+    amountCents: args.amountCents,
+    direction: args.type === "purchase" ? "debit" : "credit",
+    balanceAfterCents: 0,
+    studentUid: args.studentUid,
+    studentNumber: null,
+    studentName: args.studentName,
+    actorUid: OPERATOR.uid,
+    actorName: OPERATOR.name,
+    tags: [],
+    idempotencyKey: `lookup-seed-${ledgerSeq}`,
+    createdAt: Timestamp.fromMillis(Date.now() - args.ageMs),
+    createdDate: "2026-08-08",
+    ...(args.boothId !== undefined
+      ? { boothId: args.boothId, boothName: `Booth ${args.boothId}` }
+      : {}),
+    ...(args.originalEntryId !== undefined ? { originalEntryId: args.originalEntryId } : {}),
+  });
+  seededLedger.push(ref);
+  return ref.id;
+}
+
 let buyerSeq = 0;
 async function freshBuyer(
   balanceCents: number,
@@ -134,13 +178,14 @@ beforeAll(async () => {
 
 afterAll(async () => {
   const db = getAdminFirestore();
+  await Promise.all(seededLedger.map((ref) => ref.delete()));
   await Promise.all(["users", "rateLimits"].map((name) => db.recursiveDelete(db.collection(name))));
   await db.recursiveDelete(db.collection("booths"));
   vi.restoreAllMocks();
 });
 
 describe("POST /api/booth/lookup", () => {
-  it("returns exactly name + sufficient — no balance or other field leaks (I10)", async () => {
+  it("returns exactly name + sufficient + lastPurchase — no balance or other field leaks (I10)", async () => {
     const buyer = await freshBuyer(2000);
     const res = await lookupRoute(
       post(OPERATOR.uid, {
@@ -152,8 +197,8 @@ describe("POST /api/booth/lookup", () => {
     expect(res.status).toBe(200);
     const text = await res.text();
     const body = JSON.parse(text) as LookupResult;
-    expect(body).toEqual({ name: buyer.displayName, sufficient: true });
-    expect(Object.keys(body).sort()).toEqual(["name", "sufficient"]);
+    expect(body).toEqual({ name: buyer.displayName, sufficient: true, lastPurchase: null });
+    expect(Object.keys(body).sort()).toEqual(["lastPurchase", "name", "sufficient"]);
     expect(text).not.toContain("balance");
     expect(text).not.toContain("studentNumber");
     expect(text).not.toContain("paymentCode");
@@ -172,6 +217,7 @@ describe("POST /api/booth/lookup", () => {
     expect((await res.json()) as LookupResult).toEqual({
       name: buyer.displayName,
       sufficient: true,
+      lastPurchase: null,
     });
   });
 
@@ -213,6 +259,7 @@ describe("POST /api/booth/lookup", () => {
     expect((await res.json()) as LookupResult).toEqual({
       name: buyer.displayName,
       sufficient: true,
+      lastPurchase: null,
     });
   });
 
@@ -284,6 +331,243 @@ describe("POST /api/booth/lookup", () => {
     );
     expect(requestBytes).toBeLessThan(2048);
     expect(responseBytes).toBeLessThan(2048);
+  });
+
+  it("surfaces a purchase this booth already rang for the buyer", async () => {
+    const buyer = await freshBuyer(2000);
+    await seedLedgerEntry({
+      studentUid: buyer.uid,
+      studentName: buyer.displayName,
+      type: "purchase",
+      amountCents: 450,
+      ageMs: 8_000,
+      boothId: BOOTH_ID,
+    });
+
+    const res = await lookupRoute(
+      post(OPERATOR.uid, {
+        boothId: BOOTH_ID,
+        buyer: { studentNumber: buyer.studentNumber },
+        cartTotalCents: 100,
+      }),
+    );
+    const body = (await res.json()) as LookupResult;
+    expect(body.lastPurchase?.amountCents).toBe(450);
+    expect(body.lastPurchase?.ageMs).toBeGreaterThanOrEqual(8_000);
+    expect(body.lastPurchase?.ageMs).toBeLessThan(60_000);
+  });
+
+  it("reports the sale's age from the server clock, not an absolute timestamp", async () => {
+    const buyer = await freshBuyer(2000);
+    await seedLedgerEntry({
+      studentUid: buyer.uid,
+      studentName: buyer.displayName,
+      type: "purchase",
+      amountCents: 450,
+      ageMs: 4 * 60_000,
+      boothId: BOOTH_ID,
+    });
+
+    const res = await lookupRoute(
+      post(OPERATOR.uid, {
+        boothId: BOOTH_ID,
+        buyer: { studentNumber: buyer.studentNumber },
+        cartTotalCents: 100,
+      }),
+    );
+    const lastPurchase = ((await res.json()) as LookupResult).lastPurchase;
+    expect(Object.keys(lastPurchase ?? {}).sort()).toEqual(["ageMs", "amountCents"]);
+    expect(lastPurchase!.ageMs).toBeGreaterThanOrEqual(4 * 60_000);
+    expect(lastPurchase!.ageMs).toBeLessThan(5 * 60_000);
+  });
+
+  it("never reveals the buyer's purchases at other booths (I10)", async () => {
+    const buyer = await freshBuyer(2000);
+    await seedLedgerEntry({
+      studentUid: buyer.uid,
+      studentName: buyer.displayName,
+      type: "purchase",
+      amountCents: 450,
+      ageMs: 8_000,
+      boothId: "some-other-booth",
+    });
+
+    const res = await lookupRoute(
+      post(OPERATOR.uid, {
+        boothId: BOOTH_ID,
+        buyer: { studentNumber: buyer.studentNumber },
+        cartTotalCents: 100,
+      }),
+    );
+    expect(((await res.json()) as LookupResult).lastPurchase).toBeNull();
+  });
+
+  it("ignores a purchase older than the duplicate-sale window", async () => {
+    const buyer = await freshBuyer(2000);
+    await seedLedgerEntry({
+      studentUid: buyer.uid,
+      studentName: buyer.displayName,
+      type: "purchase",
+      amountCents: 450,
+      ageMs: RECENT_PURCHASE_WINDOW_MS + 60_000,
+      boothId: BOOTH_ID,
+    });
+
+    const res = await lookupRoute(
+      post(OPERATOR.uid, {
+        boothId: BOOTH_ID,
+        buyer: { studentNumber: buyer.studentNumber },
+        cartTotalCents: 100,
+      }),
+    );
+    expect(((await res.json()) as LookupResult).lastPurchase).toBeNull();
+  });
+
+  it("counts only purchases — a refund at this booth is not a last purchase", async () => {
+    const buyer = await freshBuyer(2000);
+    await seedLedgerEntry({
+      studentUid: buyer.uid,
+      studentName: buyer.displayName,
+      type: "refund",
+      amountCents: 450,
+      ageMs: 5_000,
+      boothId: BOOTH_ID,
+    });
+
+    const res = await lookupRoute(
+      post(OPERATOR.uid, {
+        boothId: BOOTH_ID,
+        buyer: { studentNumber: buyer.studentNumber },
+        cartTotalCents: 100,
+      }),
+    );
+    expect(((await res.json()) as LookupResult).lastPurchase).toBeNull();
+  });
+
+  it("stops warning about a purchase that was already refunded", async () => {
+    const buyer = await freshBuyer(2000);
+    const purchaseId = await seedLedgerEntry({
+      studentUid: buyer.uid,
+      studentName: buyer.displayName,
+      type: "purchase",
+      amountCents: 450,
+      ageMs: 120_000,
+      boothId: BOOTH_ID,
+    });
+    await seedLedgerEntry({
+      studentUid: buyer.uid,
+      studentName: buyer.displayName,
+      type: "refund",
+      amountCents: 450,
+      ageMs: 60_000,
+      boothId: BOOTH_ID,
+      originalEntryId: purchaseId,
+    });
+
+    const res = await lookupRoute(
+      post(OPERATOR.uid, {
+        boothId: BOOTH_ID,
+        buyer: { studentNumber: buyer.studentNumber },
+        cartTotalCents: 100,
+      }),
+    );
+    expect(((await res.json()) as LookupResult).lastPurchase).toBeNull();
+  });
+
+  it("keeps warning when only part of the purchase was refunded", async () => {
+    const buyer = await freshBuyer(2000);
+    const purchaseId = await seedLedgerEntry({
+      studentUid: buyer.uid,
+      studentName: buyer.displayName,
+      type: "purchase",
+      amountCents: 450,
+      ageMs: 120_000,
+      boothId: BOOTH_ID,
+    });
+    await seedLedgerEntry({
+      studentUid: buyer.uid,
+      studentName: buyer.displayName,
+      type: "refund",
+      amountCents: 200,
+      ageMs: 60_000,
+      boothId: BOOTH_ID,
+      originalEntryId: purchaseId,
+    });
+
+    const res = await lookupRoute(
+      post(OPERATOR.uid, {
+        boothId: BOOTH_ID,
+        buyer: { studentNumber: buyer.studentNumber },
+        cartTotalCents: 100,
+      }),
+    );
+    expect(((await res.json()) as LookupResult).lastPurchase?.amountCents).toBe(450);
+  });
+
+  it("still finds this booth's sale behind 20 newer purchases elsewhere", async () => {
+    const buyer = await freshBuyer(2000);
+    await seedLedgerEntry({
+      studentUid: buyer.uid,
+      studentName: buyer.displayName,
+      type: "purchase",
+      amountCents: 450,
+      ageMs: 120_000,
+      boothId: BOOTH_ID,
+    });
+    await Promise.all(
+      Array.from({ length: 20 }, (_, i) =>
+        seedLedgerEntry({
+          studentUid: buyer.uid,
+          studentName: buyer.displayName,
+          type: "purchase",
+          amountCents: 100,
+          ageMs: 60_000 - i * 1000,
+          boothId: `elsewhere-${i}`,
+        }),
+      ),
+    );
+
+    const res = await lookupRoute(
+      post(OPERATOR.uid, {
+        boothId: BOOTH_ID,
+        buyer: { studentNumber: buyer.studentNumber },
+        cartTotalCents: 100,
+      }),
+    );
+    expect(((await res.json()) as LookupResult).lastPurchase?.amountCents).toBe(450);
+  });
+
+  it("still finds this booth's sale behind 30 newer purchases elsewhere (beyond the scan limit)", async () => {
+    const buyer = await freshBuyer(2000);
+    await seedLedgerEntry({
+      studentUid: buyer.uid,
+      studentName: buyer.displayName,
+      type: "purchase",
+      amountCents: 450,
+      ageMs: 120_000,
+      boothId: BOOTH_ID,
+    });
+    await Promise.all(
+      Array.from({ length: 30 }, (_, i) =>
+        seedLedgerEntry({
+          studentUid: buyer.uid,
+          studentName: buyer.displayName,
+          type: "purchase",
+          amountCents: 100,
+          ageMs: 90_000 - i * 1000,
+          boothId: `elsewhere-${i}`,
+        }),
+      ),
+    );
+
+    const res = await lookupRoute(
+      post(OPERATOR.uid, {
+        boothId: BOOTH_ID,
+        buyer: { studentNumber: buyer.studentNumber },
+        cartTotalCents: 100,
+      }),
+    );
+    expect(((await res.json()) as LookupResult).lastPurchase?.amountCents).toBe(450);
   });
 
   it("rate-limits an operator past 30 lookups per minute", async () => {

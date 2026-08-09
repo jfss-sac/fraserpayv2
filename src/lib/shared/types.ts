@@ -144,9 +144,15 @@ export interface RefundResult {
   balanceAfterCents: number;
 }
 
+export interface RecentPurchase {
+  amountCents: number;
+  ageMs: number;
+}
+
 export interface LookupResult {
   name: string;
   sufficient: boolean;
+  lastPurchase: RecentPurchase | null;
 }
 
 export interface SacLookupResult {
