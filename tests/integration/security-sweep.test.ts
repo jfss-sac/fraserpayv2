@@ -20,6 +20,7 @@ import { POST as execPaymentCode } from "../../src/app/api/exec/payment-code/rou
 import { POST as execRefund } from "../../src/app/api/exec/refund/route";
 import { POST as execRoles } from "../../src/app/api/exec/roles/route";
 import { POST as execSuspend } from "../../src/app/api/exec/suspend/route";
+import { GET as sacBoothSummary } from "../../src/app/api/sac/booths/[id]/summary/route";
 import { GET as sacFeed } from "../../src/app/api/sac/feed/route";
 import { POST as sacLookup } from "../../src/app/api/sac/lookup/route";
 import { GET as sacReconciliation } from "../../src/app/api/sac/reconciliation/route";
@@ -122,6 +123,14 @@ const ENDPOINTS: Endpoint[] = [
     method: "GET",
     handler: boothSummary as AnyHandler,
     role: "active",
+    rateLimit: "reads",
+    params: { id: BOOTH_ID },
+  },
+  {
+    path: "/api/sac/booths/[id]/summary",
+    method: "GET",
+    handler: sacBoothSummary as AnyHandler,
+    role: "sacMember",
     rateLimit: "reads",
     params: { id: BOOTH_ID },
   },

@@ -94,13 +94,16 @@ export interface BoothItemSummary {
   revenueCents: number;
 }
 
-export interface BoothSummary {
+export interface BoothReportRow {
   boothId: string;
   boothName: string;
   status: BoothStatus;
   grossCents: number;
   purchaseCount: number;
   refundCount: number;
+}
+
+export interface BoothSummary extends BoothReportRow {
   items: BoothItemSummary[];
 }
 
@@ -313,7 +316,7 @@ export interface ReportTopupTotals {
 }
 
 export interface ReportsDTO {
-  booths: BoothSummary[];
+  booths: BoothReportRow[];
   grossTotalCents: number;
   topups: ReportTopupTotals;
   outstandingLiabilityCents: number;

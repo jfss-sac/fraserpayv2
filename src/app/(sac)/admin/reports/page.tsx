@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getSession } from "@/lib/server/dal";
-import { getEventReports } from "@/lib/server/sac-reports";
+import { getCachedEventReports } from "@/lib/server/sac-reports";
 import { ReportsView } from "./reports-view";
 
 export const metadata: Metadata = {
@@ -14,6 +14,6 @@ export default async function ReportsPage() {
     notFound();
   }
 
-  const data = await getEventReports();
+  const data = await getCachedEventReports();
   return <ReportsView data={data} />;
 }

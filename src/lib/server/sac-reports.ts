@@ -1,8 +1,11 @@
 import "server-only";
 import { AggregateField } from "firebase-admin/firestore";
-import { getBoothSummary } from "./dal";
+import { unstable_cache } from "next/cache";
+import { getBoothLedgerTotals } from "./dal";
 import { boothsCol, ledgerCol, usersCol } from "./db";
-import type { BoothSummary, ReportsDTO } from "@/lib/shared/types";
+import type { BoothReportRow, ReportsDTO } from "@/lib/shared/types";
+
+export const REPORTS_CACHE_TAG = "event-reports";
 
 export interface TopupAggregate {
   totalCents: number;
@@ -11,7 +14,7 @@ export interface TopupAggregate {
 }
 
 export interface EventReportsInput {
-  booths: BoothSummary[];
+  booths: BoothReportRow[];
   topups: TopupAggregate;
   balanceTotalCents: number;
 }
@@ -64,13 +67,26 @@ export async function getEventReports(): Promise<ReportsDTO> {
   const boothSnap = await boothsCol().get();
   const reportable = boothSnap.docs.filter((d) => d.data().status !== "pending");
 
-  const [summaries, topups, balanceTotalCents] = await Promise.all([
-    Promise.all(reportable.map((d) => getBoothSummary(d.id))),
+  const [booths, topups, balanceTotalCents] = await Promise.all([
+    Promise.all(
+      reportable.map(async (doc) => {
+        const booth = doc.data();
+        return {
+          boothId: doc.id,
+          boothName: booth.name,
+          status: booth.status,
+          ...(await getBoothLedgerTotals(doc.id)),
+        };
+      }),
+    ),
     getTopupAggregate(),
     getOutstandingLiabilityCents(),
   ]);
 
-  const booths = summaries.filter((s): s is BoothSummary => s !== null);
-
   return buildEventReports({ booths, topups, balanceTotalCents });
 }
+
+export const getCachedEventReports = unstable_cache(getEventReports, [REPORTS_CACHE_TAG], {
+  revalidate: 60,
+  tags: [REPORTS_CACHE_TAG],
+});

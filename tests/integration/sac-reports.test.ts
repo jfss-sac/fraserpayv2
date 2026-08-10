@@ -1,5 +1,6 @@
 import { Timestamp } from "firebase-admin/firestore";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { GET as boothSummaryRoute } from "../../src/app/api/sac/booths/[id]/summary/route";
 import { GET as reportsRoute } from "../../src/app/api/sac/reports/route";
 import {
   type BoothDoc,
@@ -10,7 +11,7 @@ import {
 } from "../../src/lib/server/db";
 import { getAdminAuth, getAdminFirestore } from "../../src/lib/server/firebase-admin";
 import { SESSION_COOKIE_NAME, SESSION_TTL_MS } from "../../src/lib/shared/constants";
-import type { BoothItem, ReportsDTO } from "../../src/lib/shared/types";
+import type { BoothItem, BoothSummary, ReportsDTO } from "../../src/lib/shared/types";
 
 const ORIGIN = "http://127.0.0.1";
 
@@ -119,6 +120,13 @@ function reportsReq(actor: string | null): Request {
   const headers: Record<string, string> = {};
   if (actor) headers.cookie = `${SESSION_COOKIE_NAME}=${cookies[actor]}`;
   return new Request(`${ORIGIN}/api/sac/reports`, { method: "GET", headers });
+}
+
+function boothSummaryReq(actor: string, boothId: string): Request {
+  return new Request(`${ORIGIN}/api/sac/booths/${boothId}/summary`, {
+    method: "GET",
+    headers: { cookie: `${SESSION_COOKIE_NAME}=${cookies[actor]}` },
+  });
 }
 
 async function getBody(actor: string): Promise<ReportsDTO> {
@@ -239,10 +247,6 @@ describe("GET /api/sac/reports — booth gross (A6)", () => {
     expect(ring.grossCents).toBe(1300);
     expect(ring.purchaseCount).toBe(2);
     expect(ring.refundCount).toBe(1);
-    expect(ring.items).toEqual([
-      { itemId: "play", name: "Play", qty: 4, revenueCents: 800 },
-      { itemId: "prize", name: "Prize", qty: 1, revenueCents: 500 },
-    ]);
 
     const bake = body.booths.find((b) => b.boothId === BAKE)!;
     expect(bake.status).toBe("deactivated");
@@ -256,12 +260,56 @@ describe("GET /api/sac/reports — booth gross (A6)", () => {
     expect(body.booths.some((b) => b.boothId === PENDING)).toBe(false);
   });
 
-  it("reconciles per-item revenue with the booth gross", async () => {
+  it("ships no per-item breakdown, so the payload never scales with the ledger", async () => {
     const body = await getBody(MEMBER.uid);
     for (const booth of body.booths) {
-      const itemTotal = booth.items.reduce((sum, i) => sum + i.revenueCents, 0);
-      expect(itemTotal).toBe(booth.grossCents);
+      expect(booth).not.toHaveProperty("items");
     }
+  });
+});
+
+describe("GET /api/sac/booths/[id]/summary — drill-down breakdown", () => {
+  it("returns the item breakdown for a SAC member", async () => {
+    const res = await boothSummaryRoute(boothSummaryReq(MEMBER.uid, RING), {
+      params: Promise.resolve({ id: RING }),
+    });
+    expect(res.status).toBe(200);
+
+    const summary = (await res.json()) as BoothSummary;
+    expect(summary.items).toEqual([
+      { itemId: "play", name: "Play", qty: 4, revenueCents: 800 },
+      { itemId: "prize", name: "Prize", qty: 1, revenueCents: 500 },
+    ]);
+  });
+
+  it("reconciles per-item revenue with the booth gross reported by the aggregation (A6)", async () => {
+    const body = await getBody(MEMBER.uid);
+
+    for (const booth of body.booths) {
+      const res = await boothSummaryRoute(boothSummaryReq(MEMBER.uid, booth.boothId), {
+        params: Promise.resolve({ id: booth.boothId }),
+      });
+      const summary = (await res.json()) as BoothSummary;
+      const itemTotal = summary.items.reduce((sum, i) => sum + i.revenueCents, 0);
+
+      expect(itemTotal).toBe(booth.grossCents);
+      expect(summary.grossCents).toBe(booth.grossCents);
+    }
+  });
+
+  it("forbids a non-SAC student", async () => {
+    const res = await boothSummaryRoute(boothSummaryReq(STUDENT.uid, RING), {
+      params: Promise.resolve({ id: RING }),
+    });
+    expect(res.status).toBe(403);
+    expect(await errorCode(res)).toBe("FORBIDDEN");
+  });
+
+  it("404s an unknown booth", async () => {
+    const res = await boothSummaryRoute(boothSummaryReq(MEMBER.uid, "no-such-booth"), {
+      params: Promise.resolve({ id: "no-such-booth" }),
+    });
+    expect(res.status).toBe(404);
   });
 });
 

@@ -18,6 +18,12 @@ import type {
 
 export type Role = "public" | "session" | "active" | "sacMember" | "sacExec" | "boothMember";
 
+export interface BoothLedgerTotals {
+  grossCents: number;
+  purchaseCount: number;
+  refundCount: number;
+}
+
 export interface Session {
   uid: string;
   email: string;
@@ -125,21 +131,32 @@ export const getBoothForSale = cache(async (boothId: string): Promise<BoothDTO |
   };
 });
 
-async function sumAmountCents(type: LedgerEntryDoc["type"], boothId: string): Promise<number> {
+async function aggregateByType(
+  type: LedgerEntryDoc["type"],
+  boothId: string,
+): Promise<{ cents: number; count: number }> {
   const snap = await ledgerCol()
     .where("type", "==", type)
     .where("boothId", "==", boothId)
-    .aggregate({ total: AggregateField.sum("amountCents") })
+    .aggregate({ cents: AggregateField.sum("amountCents"), count: AggregateField.count() })
     .get();
-  return snap.data().total;
+  return { cents: snap.data().cents, count: snap.data().count };
+}
+
+export async function getBoothLedgerTotals(boothId: string): Promise<BoothLedgerTotals> {
+  const [purchases, refunds] = await Promise.all([
+    aggregateByType("purchase", boothId),
+    aggregateByType("refund", boothId),
+  ]);
+  return {
+    grossCents: purchases.cents - refunds.cents,
+    purchaseCount: purchases.count,
+    refundCount: refunds.count,
+  };
 }
 
 export async function getBoothGrossCents(boothId: string): Promise<number> {
-  const [purchases, refunds] = await Promise.all([
-    sumAmountCents("purchase", boothId),
-    sumAmountCents("refund", boothId),
-  ]);
-  return purchases - refunds;
+  return (await getBoothLedgerTotals(boothId)).grossCents;
 }
 
 export async function getBoothSummary(boothId: string): Promise<BoothSummary | null> {

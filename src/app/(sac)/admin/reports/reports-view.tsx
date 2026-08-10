@@ -2,8 +2,15 @@
 
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
+import { refreshEventReports } from "./actions";
 import { formatCents } from "@/lib/shared/money";
-import type { BoothStatus, BoothSummary, ReportsDTO } from "@/lib/shared/types";
+import type {
+  BoothItemSummary,
+  BoothReportRow,
+  BoothStatus,
+  BoothSummary,
+  ReportsDTO,
+} from "@/lib/shared/types";
 
 const STATUS_LABEL: Record<BoothStatus, string> = {
   pending: "Pending",
@@ -11,9 +18,32 @@ const STATUS_LABEL: Record<BoothStatus, string> = {
   deactivated: "Deactivated",
 };
 
-function BoothRow({ booth }: { booth: BoothSummary }) {
+function BoothRow({ booth }: { booth: BoothReportRow }) {
   const [open, setOpen] = useState(false);
+  const [items, setItems] = useState<BoothItemSummary[] | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [loading, setLoading] = useState(false);
   const detailId = `report-booth-${booth.boothId}`;
+
+  async function loadItems(): Promise<void> {
+    setLoading(true);
+    setFailed(false);
+    try {
+      const res = await fetch(`/api/sac/booths/${booth.boothId}/summary`);
+      if (!res.ok) throw new Error(String(res.status));
+      setItems(((await res.json()) as BoothSummary).items);
+    } catch {
+      setFailed(true);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function toggle(): void {
+    const next = !open;
+    setOpen(next);
+    if (next && items === null && !loading) void loadItems();
+  }
 
   return (
     <li className="rounded-lg border border-border">
@@ -21,7 +51,7 @@ function BoothRow({ booth }: { booth: BoothSummary }) {
         type="button"
         aria-expanded={open}
         aria-controls={detailId}
-        onClick={() => setOpen((v) => !v)}
+        onClick={toggle}
         className="flex w-full items-center justify-between gap-4 px-4 py-3 text-left"
       >
         <span className="flex flex-col gap-0.5">
@@ -47,11 +77,24 @@ function BoothRow({ booth }: { booth: BoothSummary }) {
 
       {open ? (
         <div id={detailId} className="border-t border-border px-4 py-3">
-          {booth.items.length === 0 ? (
+          {loading ? (
+            <p className="text-sm text-muted">Loading item breakdown…</p>
+          ) : failed ? (
+            <p className="flex items-center gap-3 text-sm text-muted">
+              Couldn&apos;t load the item breakdown.
+              <button
+                type="button"
+                onClick={() => void loadItems()}
+                className="rounded-md border border-border px-2 py-1 text-xs font-medium text-foreground"
+              >
+                Retry
+              </button>
+            </p>
+          ) : items === null || items.length === 0 ? (
             <p className="text-sm text-muted">No items sold yet.</p>
           ) : (
             <ul className="divide-y divide-border">
-              {booth.items.map((item) => (
+              {items.map((item) => (
                 <li
                   key={item.itemId}
                   className="flex items-center justify-between gap-3 py-1.5 text-sm"
@@ -83,7 +126,12 @@ export function ReportsView({ data }: { data: ReportsDTO }) {
         <h1 className="text-2xl font-bold text-foreground">Event reports</h1>
         <button
           type="button"
-          onClick={() => startTransition(() => router.refresh())}
+          onClick={() =>
+            startTransition(async () => {
+              await refreshEventReports();
+              router.refresh();
+            })
+          }
           disabled={pending}
           className="h-10 rounded-md border border-border px-4 text-sm font-medium text-foreground disabled:opacity-50"
         >
@@ -129,7 +177,10 @@ export function ReportsView({ data }: { data: ReportsDTO }) {
         ) : (
           <ul className="flex flex-col gap-3">
             {data.booths.map((booth) => (
-              <BoothRow key={booth.boothId} booth={booth} />
+              <BoothRow
+                key={`${booth.boothId}:${booth.grossCents}:${booth.purchaseCount}:${booth.refundCount}`}
+                booth={booth}
+              />
             ))}
           </ul>
         )}
