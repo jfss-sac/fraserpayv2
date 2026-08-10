@@ -40,6 +40,19 @@ describe("proxy matcher", () => {
       expect(matches(path)).toBe(false);
     });
   }
+
+  const crawlable = [
+    "/robots.txt",
+    "/sitemap.xml",
+    "/llms.txt",
+    "/opengraph-image",
+    "/opengraph-image.png",
+  ];
+  for (const path of crawlable) {
+    it(`leaves ${path} reachable without a session`, () => {
+      expect(matches(path)).toBe(false);
+    });
+  }
 });
 
 describe("proxy redirect", () => {
@@ -90,6 +103,13 @@ describe("proxy CSP nonce", () => {
   it("stamps the CSP on the /login response too", () => {
     const res = proxy(new NextRequest(`${ORIGIN}/login`));
     expect(nonceOf(res)).toBeTruthy();
+  });
+
+  it("forwards the request pathname so the layout can build a canonical URL", () => {
+    const request = new NextRequest(`${ORIGIN}/admin/booths?tab=all`, {
+      headers: { cookie: `${SESSION_COOKIE_NAME}=abc123` },
+    });
+    expect(proxy(request).headers.get("x-middleware-override-headers")).toContain("x-pathname");
   });
 
   it("mints a fresh nonce per request", () => {

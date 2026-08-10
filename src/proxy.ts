@@ -16,11 +16,12 @@ export function proxy(request: NextRequest): NextResponse {
   const nonce = mintNonce();
   const csp = buildContentSecurityPolicy(nonce);
 
+  const pathname = request.nextUrl.pathname;
+
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set("x-nonce", nonce);
+  requestHeaders.set("x-pathname", pathname);
   requestHeaders.set("Content-Security-Policy", csp);
-
-  const pathname = request.nextUrl.pathname;
   const authed = request.cookies.has(SESSION_COOKIE_NAME);
 
   let response: NextResponse;
@@ -37,5 +38,7 @@ export function proxy(request: NextRequest): NextResponse {
 }
 
 export const config = {
-  matcher: ["/((?!api|sw\\.js|manifest\\.webmanifest|_next/|favicon\\.ico).*)"],
+  matcher: [
+    "/((?!api|sw\\.js|manifest\\.webmanifest|robots\\.txt|sitemap\\.xml|llms\\.txt|opengraph-image|_next/|favicon\\.ico).*)",
+  ],
 };

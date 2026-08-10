@@ -1,6 +1,7 @@
 import { Timestamp } from "firebase-admin/firestore";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { computeLeaderboard } from "../../src/lib/server/leaderboard";
+import { getBoothGrossCents, getBoothSummary } from "../../src/lib/server/dal";
 import { type BoothDoc, type LedgerEntryDoc, boothsCol, ledgerCol } from "../../src/lib/server/db";
 import { getAdminFirestore } from "../../src/lib/server/firebase-admin";
 import type { BoothItem } from "../../src/lib/shared/types";
@@ -136,6 +137,13 @@ describe("computeLeaderboard — ranking (A6)", () => {
   it("excludes pending booths regardless of their ledger activity", async () => {
     const { rows } = await computeLeaderboard();
     expect(rows.some((r) => r.boothId === PENDING)).toBe(false);
+  });
+
+  it("matches the full-scan summary gross for every booth", async () => {
+    for (const boothId of [RING, BAKE, QUIET, PENDING]) {
+      const summary = await getBoothSummary(boothId);
+      expect(await getBoothGrossCents(boothId)).toBe(summary!.grossCents);
+    }
   });
 
   it("exposes no per-item breakdown", async () => {

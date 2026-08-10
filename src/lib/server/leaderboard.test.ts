@@ -27,7 +27,7 @@ vi.mock("next/cache", () => ({
 }));
 
 vi.mock("./db", () => ({ boothsCol: () => ({ get: boothsGet }) }));
-vi.mock("./dal", () => ({ getBoothSummary: getGross }));
+vi.mock("./dal", () => ({ getBoothGrossCents: getGross }));
 
 import { buildLeaderboard, computeLeaderboard, getLeaderboard } from "./leaderboard";
 
@@ -88,22 +88,29 @@ describe("computeLeaderboard", () => {
   it("excludes pending booths and drops missing summaries", async () => {
     boothsGet.mockResolvedValue({
       docs: [
-        { id: "approved", data: () => ({ status: "approved" }) },
-        { id: "deactivated", data: () => ({ status: "deactivated" }) },
-        { id: "pending", data: () => ({ status: "pending" }) },
+        { id: "approved", data: () => ({ status: "approved", name: "New" }) },
+        { id: "deactivated", data: () => ({ status: "deactivated", name: "Old" }) },
+        { id: "pending", data: () => ({ status: "pending", name: "Soon" }) },
       ],
     });
-    getGross.mockImplementation(async (id: string) =>
-      id === "deactivated"
-        ? booth({ boothId: "deactivated", boothName: "Old", grossCents: 200 })
-        : booth({ boothId: "approved", boothName: "New", grossCents: 800 }),
-    );
+    getGross.mockImplementation(async (id: string) => (id === "deactivated" ? 200 : 800));
 
     const { rows } = await computeLeaderboard();
 
     expect(getGross).toHaveBeenCalledTimes(2);
     expect(getGross).not.toHaveBeenCalledWith("pending");
     expect(rows.map((r) => r.boothId)).toEqual(["approved", "deactivated"]);
+  });
+
+  it("reads booth names from the booth documents without a summary round-trip", async () => {
+    boothsGet.mockResolvedValue({
+      docs: [{ id: "b1", data: () => ({ status: "approved", name: "Ring Toss" }) }],
+    });
+    getGross.mockResolvedValue(4200);
+
+    const { rows } = await computeLeaderboard();
+
+    expect(rows).toEqual([{ rank: 1, boothId: "b1", boothName: "Ring Toss", grossCents: 4200 }]);
   });
 });
 

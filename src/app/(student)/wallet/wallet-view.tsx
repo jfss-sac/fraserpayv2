@@ -98,6 +98,7 @@ export function WalletView({
 }: WalletViewProps) {
   return (
     <div className="flex flex-col gap-6">
+      <h1 className="sr-only">Wallet</h1>
       <section className="flex flex-col items-center gap-3">
         <div
           className="aspect-square w-full max-w-[15rem] rounded-lg border border-border bg-white p-3"

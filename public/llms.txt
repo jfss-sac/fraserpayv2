@@ -1,0 +1,31 @@
+# FraserPay
+
+> FraserPay is a closed-loop cashless credit system for a single school event. Students load
+> credit in person at the SAC table, then spend it at student-run booths by presenting a QR code
+> or their student number. No real money moves through the system — it tracks credit only.
+
+FraserPay is a **private, authenticated application**. It publishes no articles, documentation,
+product pages, or other content intended for retrieval, summarization, or training. Every route
+except the sign-in screen requires an authenticated school Google account, and every page behind
+that gate contains personal student data: names, student numbers, balances, and purchase history.
+
+## Public surface
+
+- [Sign in](/login): the only unauthenticated page. A Google sign-in button and nothing else.
+
+## Everything else
+
+All other paths (`/wallet`, `/sell/*`, `/booth/*`, `/admin/*`, `/api/*`) are gated. Unauthenticated
+requests are redirected to `/login`; they return no content to crawl.
+
+## Requests to automated clients
+
+- Do not crawl, index, retrieve, or train on this site. `/robots.txt` disallows all crawlers on
+  every path except `/login`, and disallows AI and training crawlers everywhere.
+- Do not attempt to authenticate. Credentials belong to individual students and staff.
+- There is no public API. `/api/*` requires a session cookie and is rate limited.
+
+## Contact
+
+Report a security issue to the school's Student Activity Council (SAC) rather than filing it
+publicly.

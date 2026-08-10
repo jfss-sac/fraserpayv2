@@ -1,9 +1,13 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { PING_INTERVAL_MS, useConnectivity } from "./use-connectivity";
+import { PING_INTERVAL_MS, browserOnline, useConnectivity } from "./use-connectivity";
 
 function setOnLine(value: boolean) {
   Object.defineProperty(navigator, "onLine", { configurable: true, value });
+}
+
+function setOnLineMissing() {
+  Object.defineProperty(navigator, "onLine", { configurable: true, value: undefined });
 }
 
 async function flush() {
@@ -22,6 +26,27 @@ afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
   setOnLine(true);
+});
+
+test("assumes online when the platform exposes navigator without onLine", () => {
+  setOnLineMissing();
+  expect(browserOnline()).toBe(true);
+});
+
+test("starts online on first render when onLine is unavailable", async () => {
+  setOnLineMissing();
+  const probe = vi.fn().mockResolvedValue(true);
+  const { result } = renderHook(() => useConnectivity({ probe }));
+  expect(result.current).toBe(true);
+  await flush();
+  expect(result.current).toBe(true);
+});
+
+test("still reports the browser's own offline state when onLine is a boolean", () => {
+  setOnLine(false);
+  expect(browserOnline()).toBe(false);
+  setOnLine(true);
+  expect(browserOnline()).toBe(true);
 });
 
 test("stays online while the ping succeeds", async () => {

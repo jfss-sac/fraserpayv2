@@ -1,10 +1,16 @@
 import "server-only";
 import { unstable_cache } from "next/cache";
-import { getBoothSummary } from "./dal";
+import { getBoothGrossCents } from "./dal";
 import { boothsCol } from "./db";
-import type { BoothSummary, LeaderboardDTO } from "@/lib/shared/types";
+import type { LeaderboardDTO } from "@/lib/shared/types";
 
-export function buildLeaderboard(booths: BoothSummary[]): LeaderboardDTO {
+export interface LeaderboardBooth {
+  boothId: string;
+  boothName: string;
+  grossCents: number;
+}
+
+export function buildLeaderboard(booths: LeaderboardBooth[]): LeaderboardDTO {
   const rows = [...booths]
     .sort((a, b) => b.grossCents - a.grossCents || a.boothName.localeCompare(b.boothName))
     .map((booth, index) => ({
@@ -19,8 +25,13 @@ export function buildLeaderboard(booths: BoothSummary[]): LeaderboardDTO {
 export async function computeLeaderboard(): Promise<LeaderboardDTO> {
   const boothSnap = await boothsCol().get();
   const ranked = boothSnap.docs.filter((doc) => doc.data().status !== "pending");
-  const summaries = await Promise.all(ranked.map((doc) => getBoothSummary(doc.id)));
-  const booths = summaries.filter((summary): summary is BoothSummary => summary !== null);
+  const booths = await Promise.all(
+    ranked.map(async (doc) => ({
+      boothId: doc.id,
+      boothName: doc.data().name,
+      grossCents: await getBoothGrossCents(doc.id),
+    })),
+  );
   return buildLeaderboard(booths);
 }
 

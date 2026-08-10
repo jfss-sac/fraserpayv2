@@ -1,11 +1,18 @@
 import "server-only";
+import { AggregateField } from "firebase-admin/firestore";
 import { getBoothSummary } from "./dal";
 import { boothsCol, ledgerCol, usersCol } from "./db";
-import type { BoothSummary, PaymentMethod, ReportsDTO } from "@/lib/shared/types";
+import type { BoothSummary, ReportsDTO } from "@/lib/shared/types";
+
+export interface TopupAggregate {
+  totalCents: number;
+  totalCount: number;
+  cardCents: number;
+}
 
 export interface EventReportsInput {
   booths: BoothSummary[];
-  topups: { method?: PaymentMethod; amountCents: number }[];
+  topups: TopupAggregate;
   balanceTotalCents: number;
 }
 
@@ -15,42 +22,55 @@ export function buildEventReports(input: EventReportsInput): ReportsDTO {
   );
   const grossTotalCents = booths.reduce((sum, b) => sum + b.grossCents, 0);
 
-  let cashCents = 0;
-  let cardCents = 0;
-  for (const t of input.topups) {
-    if (t.method === "card") cardCents += t.amountCents;
-    else cashCents += t.amountCents;
-  }
+  const { totalCents, totalCount, cardCents } = input.topups;
 
   return {
     booths,
     grossTotalCents,
     topups: {
-      cashCents,
+      cashCents: totalCents - cardCents,
       cardCents,
-      totalCents: cashCents + cardCents,
-      count: input.topups.length,
+      totalCents,
+      count: totalCount,
     },
     outstandingLiabilityCents: input.balanceTotalCents,
   };
+}
+
+async function getTopupAggregate(): Promise<TopupAggregate> {
+  const topups = ledgerCol().where("type", "==", "topup");
+  const [all, card] = await Promise.all([
+    topups.aggregate({ cents: AggregateField.sum("amountCents"), n: AggregateField.count() }).get(),
+    topups
+      .where("method", "==", "card")
+      .aggregate({ cents: AggregateField.sum("amountCents") })
+      .get(),
+  ]);
+  return {
+    totalCents: all.data().cents,
+    totalCount: all.data().n,
+    cardCents: card.data().cents,
+  };
+}
+
+async function getOutstandingLiabilityCents(): Promise<number> {
+  const snap = await usersCol()
+    .aggregate({ total: AggregateField.sum("balanceCents") })
+    .get();
+  return snap.data().total;
 }
 
 export async function getEventReports(): Promise<ReportsDTO> {
   const boothSnap = await boothsCol().get();
   const reportable = boothSnap.docs.filter((d) => d.data().status !== "pending");
 
-  const [summaries, topupSnap, userSnap] = await Promise.all([
+  const [summaries, topups, balanceTotalCents] = await Promise.all([
     Promise.all(reportable.map((d) => getBoothSummary(d.id))),
-    ledgerCol().where("type", "==", "topup").get(),
-    usersCol().get(),
+    getTopupAggregate(),
+    getOutstandingLiabilityCents(),
   ]);
 
   const booths = summaries.filter((s): s is BoothSummary => s !== null);
-  const topups = topupSnap.docs.map((d) => ({
-    method: d.data().method,
-    amountCents: d.data().amountCents,
-  }));
-  const balanceTotalCents = userSnap.docs.reduce((sum, d) => sum + d.data().balanceCents, 0);
 
   return buildEventReports({ booths, topups, balanceTotalCents });
 }

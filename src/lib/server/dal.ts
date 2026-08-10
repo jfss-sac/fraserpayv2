@@ -1,9 +1,10 @@
 import "server-only";
 import { cookies } from "next/headers";
 import { cache } from "react";
+import { AggregateField } from "firebase-admin/firestore";
 import type { DecodedIdToken } from "firebase-admin/auth";
 import { ForbiddenError, InternalError, SuspendedError, UnauthorizedError } from "./errors";
-import { boothsCol, ledgerCol } from "./db";
+import { type LedgerEntryDoc, boothsCol, ledgerCol } from "./db";
 import { getAdminAuth, getAdminFirestore } from "./firebase-admin";
 import { logger } from "./logger";
 import { SESSION_COOKIE_NAME } from "@/lib/shared/constants";
@@ -123,6 +124,23 @@ export const getBoothForSale = cache(async (boothId: string): Promise<BoothDTO |
     items: data.items,
   };
 });
+
+async function sumAmountCents(type: LedgerEntryDoc["type"], boothId: string): Promise<number> {
+  const snap = await ledgerCol()
+    .where("type", "==", type)
+    .where("boothId", "==", boothId)
+    .aggregate({ total: AggregateField.sum("amountCents") })
+    .get();
+  return snap.data().total;
+}
+
+export async function getBoothGrossCents(boothId: string): Promise<number> {
+  const [purchases, refunds] = await Promise.all([
+    sumAmountCents("purchase", boothId),
+    sumAmountCents("refund", boothId),
+  ]);
+  return purchases - refunds;
+}
 
 export async function getBoothSummary(boothId: string): Promise<BoothSummary | null> {
   const booth = (await boothsCol().doc(boothId).get()).data();

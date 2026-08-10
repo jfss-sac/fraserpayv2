@@ -26,8 +26,10 @@ export async function defaultProbe(url = PING_URL, timeoutMs = PING_TIMEOUT_MS):
   }
 }
 
-function browserOnline(): boolean {
-  return typeof navigator === "undefined" ? true : navigator.onLine;
+export function browserOnline(): boolean {
+  return typeof navigator === "undefined" || typeof navigator.onLine !== "boolean"
+    ? true
+    : navigator.onLine;
 }
 
 export function useConnectivity(opts: { probe?: Probe; intervalMs?: number } = {}): boolean {
