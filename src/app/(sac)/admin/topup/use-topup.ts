@@ -2,6 +2,7 @@
 
 import { useCallback, useRef, useState } from "react";
 import type { PaymentMethod, SacLookupResult, TopUpResult } from "@/lib/shared/types";
+import { ApiError, NETWORK_ERROR_MESSAGE, apiErrorOf } from "@/lib/ui/api-client";
 import type { BuyerId } from "@/lib/ui/scanner";
 import { useIdempotencyKey } from "@/lib/ui/use-idempotency-key";
 
@@ -12,7 +13,7 @@ export const LOOKUP_ERROR_MESSAGE: Record<string, string> = {
   NOT_FOUND: "No student matches that code or number.",
   SUSPENDED: "This account is suspended — send them to an exec.",
   RATE_LIMITED: "Too many lookups — wait a moment and try again.",
-  NETWORK: "Couldn't reach the server. Check your connection and try again.",
+  NETWORK: NETWORK_ERROR_MESSAGE,
 };
 
 export const TOPUP_ERROR_MESSAGE: Record<string, string> = {
@@ -23,7 +24,7 @@ export const TOPUP_ERROR_MESSAGE: Record<string, string> = {
   RATE_LIMITED: "Too many top-ups — wait a moment and try again.",
   IDEMPOTENCY_CONFLICT: "That top-up is still going through — check the wallet before retrying.",
   VALIDATION: "That amount isn't valid — use 50¢ increments.",
-  NETWORK: "Couldn't reach the server. Check your connection and try again.",
+  NETWORK: NETWORK_ERROR_MESSAGE,
 };
 
 export function lookupErrorMessage(code: string): string {
@@ -33,30 +34,6 @@ export function lookupErrorMessage(code: string): string {
 export function topUpErrorMessage(code: string, serverMessage = ""): string {
   if (code === "FORBIDDEN") return serverMessage || TOPUP_ERROR_MESSAGE.FORBIDDEN!;
   return TOPUP_ERROR_MESSAGE[code] ?? "Top-up failed. Try again.";
-}
-
-async function envelopeOf(res: Response): Promise<{ code: string; message: string }> {
-  try {
-    const body = (await res.json()) as { error?: { code?: string; message?: string } };
-    return { code: body.error?.code ?? "INTERNAL", message: body.error?.message ?? "" };
-  } catch {
-    return { code: "INTERNAL", message: "" };
-  }
-}
-
-export class ApiError extends Error {
-  constructor(
-    readonly code: string,
-    readonly serverMessage = "",
-  ) {
-    super(code);
-    this.name = "ApiError";
-  }
-}
-
-async function apiErrorOf(res: Response): Promise<ApiError> {
-  const { code, message } = await envelopeOf(res);
-  return new ApiError(code, message);
 }
 
 export async function requestSacLookup(buyer: BuyerId): Promise<SacLookupResult> {

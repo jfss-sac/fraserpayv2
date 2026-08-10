@@ -9,7 +9,8 @@ import type {
   ReconTopupEntry,
   ReconciliationDTO,
 } from "@/lib/shared/types";
-import { ReconciliationApiError, reconciliationErrorMessage, requestReconciliation } from "./api";
+import { ApiError } from "@/lib/ui/api-client";
+import { reconciliationErrorMessage, requestReconciliation } from "./api";
 
 const DEBOUNCE_MS = 150;
 
@@ -149,7 +150,7 @@ export function ReconciliationView({
         })
         .catch((err) => {
           if (controller.signal.aborted || seq.current !== id) return;
-          const code = err instanceof ReconciliationApiError ? err.code : "NETWORK";
+          const code = err instanceof ApiError ? err.code : "NETWORK";
           setState({ status: "error", message: reconciliationErrorMessage(code) });
         });
     }, DEBOUNCE_MS);

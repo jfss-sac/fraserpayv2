@@ -5,7 +5,6 @@ import { getAdminFirestore } from "./firebase-admin";
 import { logger } from "./logger";
 
 export interface RateLimitRule {
-  key: "uid";
   limit: number;
   windowMs: number;
   failOpen: boolean;
@@ -14,13 +13,13 @@ export interface RateLimitRule {
 const MINUTE = 60_000;
 
 export const RATE_LIMITS = {
-  register: { key: "uid", limit: 20, windowMs: 10 * MINUTE, failOpen: false },
-  join: { key: "uid", limit: 20, windowMs: 10 * MINUTE, failOpen: false },
-  lookup: { key: "uid", limit: 120, windowMs: MINUTE, failOpen: true },
-  charge: { key: "uid", limit: 120, windowMs: MINUTE, failOpen: false },
-  topup: { key: "uid", limit: 40, windowMs: MINUTE, failOpen: false },
-  "exec-mutations": { key: "uid", limit: 60, windowMs: MINUTE, failOpen: false },
-  reads: { key: "uid", limit: 120, windowMs: MINUTE, failOpen: true },
+  register: { limit: 20, windowMs: 10 * MINUTE, failOpen: false },
+  join: { limit: 20, windowMs: 10 * MINUTE, failOpen: false },
+  lookup: { limit: 120, windowMs: MINUTE, failOpen: true },
+  charge: { limit: 120, windowMs: MINUTE, failOpen: false },
+  topup: { limit: 40, windowMs: MINUTE, failOpen: false },
+  "exec-mutations": { limit: 60, windowMs: MINUTE, failOpen: false },
+  reads: { limit: 120, windowMs: MINUTE, failOpen: true },
 } as const satisfies Record<string, RateLimitRule>;
 
 export type RateLimitScope = keyof typeof RATE_LIMITS;

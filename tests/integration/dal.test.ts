@@ -146,12 +146,12 @@ describe("DAL session resolution", () => {
 });
 
 describe("DAL suspension (A3)", () => {
-  it("lets a suspended user pass requireSession (wallet read OK)", async () => {
+  it("lets a suspended user through a role: session handler (wallet read OK)", async () => {
     const res = await readSession(req("GET", await mintSessionCookie("dal-suspended")));
     expect(res.status).toBe(200);
   });
 
-  it("blocks a suspended user on requireActive with SUSPENDED", async () => {
+  it("blocks a suspended user on a role: active handler with SUSPENDED", async () => {
     const res = await readActive(req("GET", await mintSessionCookie("dal-suspended")));
     expect(res.status).toBe(403);
     expect(await code(res)).toBe("SUSPENDED");
@@ -165,13 +165,13 @@ describe("DAL role matrix (arch §7)", () => {
     expect((await readExec(req("GET", cookie))).status).toBe(403);
   });
 
-  it("a SAC member passes requireSacMember but not requireSacExec", async () => {
+  it("a SAC member passes a sacMember handler but not a sacExec one", async () => {
     const cookie = await mintSessionCookie("dal-member");
     expect((await readMember(req("GET", cookie))).status).toBe(200);
     expect((await readExec(req("GET", cookie))).status).toBe(403);
   });
 
-  it("a SAC exec passes both requireSacMember (exec implies member) and requireSacExec", async () => {
+  it("a SAC exec passes both handlers — exec implies member", async () => {
     const cookie = await mintSessionCookie("dal-exec");
     expect((await readMember(req("GET", cookie))).status).toBe(200);
     expect((await readExec(req("GET", cookie))).status).toBe(200);

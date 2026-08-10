@@ -4,6 +4,8 @@ import { useCallback, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { formatCents } from "@/lib/shared/money";
 import type { BoothDetail, BoothItem, BoothStatus, BoothSummary } from "@/lib/shared/types";
+import { ConfirmDialog } from "@/lib/ui/confirm-dialog";
+import { Toaster, useToasts } from "@/lib/ui/toast";
 import { Button } from "@/lib/ui/vendor/button";
 import {
   approveBooth,
@@ -14,8 +16,6 @@ import {
   setActive,
   type PriceEdit,
 } from "../api";
-import { ConfirmDialog } from "../confirm-dialog";
-import { Toaster, useToasts } from "../toast";
 import { PriceEditor } from "./price-editor";
 
 const STATUS_BADGE: Record<BoothStatus, string> = {

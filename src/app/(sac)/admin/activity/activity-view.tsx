@@ -5,9 +5,9 @@ import { useRouter } from "next/navigation";
 import { useCallback, useState, useTransition } from "react";
 import { TIMEZONE } from "@/lib/shared/constants";
 import type { ActivityActor, ActivityDTO, ActivityScopeUsage } from "@/lib/shared/types";
+import { ConfirmDialog } from "@/lib/ui/confirm-dialog";
 import { Button } from "@/lib/ui/vendor/button";
 import { adminActionErrorMessage, execSuspend } from "../students/[uid]/actions-api";
-import { ConfirmDialog } from "../students/[uid]/confirm-dialog";
 
 const LAST_SEEN_FORMAT = new Intl.DateTimeFormat("en-CA", {
   timeZone: TIMEZONE,

@@ -218,38 +218,6 @@ export const getSession = cache(async (): Promise<Session | null> => {
   return resolveSessionFromCookie(cookieValue, false);
 });
 
-export async function requireSession(): Promise<Session> {
-  const session = await getSession();
-  assertSession(session);
-  return session;
-}
-
-export async function requireActive(): Promise<Session> {
-  const session = await getSession();
-  assertActive(session);
-  return session;
-}
-
-export async function requireSacMember(): Promise<Session> {
-  const session = await getSession();
-  assertSacMember(session);
-  return session;
-}
-
-export async function requireSacExec(): Promise<Session> {
-  const session = await getSession();
-  assertSacExec(session);
-  return session;
-}
-
-export async function requireBoothMember(boothId: string): Promise<Session> {
-  const session = await requireActive();
-  if (!(await isBoothMember(boothId, session.uid))) {
-    throw new ForbiddenError("You are not a member of this booth.");
-  }
-  return session;
-}
-
 function isMutation(method: string): boolean {
   const m = method.toUpperCase();
   return m !== "GET" && m !== "HEAD" && m !== "OPTIONS";

@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { FeedEntry, LedgerType, RepeatBuyerAlert } from "@/lib/shared/types";
-import { type FeedQueryParams, FeedApiError, feedErrorMessage, requestFeed } from "./api";
+import { ApiError } from "@/lib/ui/api-client";
+import { type FeedQueryParams, feedErrorMessage, requestFeed } from "./api";
 
 export const FEED_POLL_MS = 60_000;
 
@@ -44,7 +45,7 @@ function newSince(existing: FeedEntry[], head: FeedEntry[]): FeedEntry[] {
 }
 
 function codeOf(err: unknown): string {
-  return err instanceof FeedApiError ? err.code : "NETWORK";
+  return err instanceof ApiError ? err.code : "NETWORK";
 }
 
 export interface UseFeed {

@@ -1,41 +1,10 @@
 "use client";
 
 import type { AdjustResult, RefundResult, SacRoles } from "@/lib/shared/types";
-
-export class ExecApiError extends Error {
-  constructor(
-    readonly code: string,
-    readonly serverMessage: string,
-  ) {
-    super(code);
-    this.name = "ExecApiError";
-  }
-}
-
-async function envelopeOf(res: Response): Promise<{ code: string; message: string }> {
-  try {
-    const body = (await res.json()) as { error?: { code?: string; message?: string } };
-    return { code: body.error?.code ?? "INTERNAL", message: body.error?.message ?? "" };
-  } catch {
-    return { code: "INTERNAL", message: "" };
-  }
-}
-
-async function postJson<T>(url: string, body: unknown, idempotencyKey?: string): Promise<T> {
-  const headers: Record<string, string> = { "content-type": "application/json" };
-  if (idempotencyKey) headers["idempotency-key"] = idempotencyKey;
-  const res = await fetch(url, { method: "POST", headers, body: JSON.stringify(body) });
-  if (!res.ok) {
-    const { code, message } = await envelopeOf(res);
-    throw new ExecApiError(code, message);
-  }
-  return (await res.json()) as T;
-}
-
-const NETWORK = "Couldn't reach the server. Check your connection and try again.";
+import { ApiError, NETWORK_ERROR_MESSAGE, postJson } from "@/lib/ui/api-client";
 
 export function adjustErrorMessage(err: unknown): string {
-  if (!(err instanceof ExecApiError)) return NETWORK;
+  if (!(err instanceof ApiError)) return NETWORK_ERROR_MESSAGE;
   switch (err.code) {
     case "INSUFFICIENT_FUNDS":
       return "That would drop the balance below zero.";
@@ -55,7 +24,7 @@ export function adjustErrorMessage(err: unknown): string {
 }
 
 export function refundErrorMessage(err: unknown): string {
-  if (!(err instanceof ExecApiError)) return NETWORK;
+  if (!(err instanceof ApiError)) return NETWORK_ERROR_MESSAGE;
   switch (err.code) {
     case "CONFLICT":
       return err.serverMessage || "That refund conflicts with the current state.";
@@ -73,7 +42,7 @@ export function refundErrorMessage(err: unknown): string {
 }
 
 export function adminActionErrorMessage(err: unknown): string {
-  if (!(err instanceof ExecApiError)) return NETWORK;
+  if (!(err instanceof ApiError)) return NETWORK_ERROR_MESSAGE;
   switch (err.code) {
     case "CONFLICT":
       return err.serverMessage || "That action conflicts with the current state.";

@@ -309,11 +309,18 @@ async function mintSessionCookie(uid: string): Promise<string> {
 
 function call(
   endpoint: Endpoint,
-  opts: { uid?: string; origin?: string; secFetchSite?: string; idempotencyKey?: string } = {},
+  opts: {
+    uid?: string;
+    origin?: string;
+    secFetchSite?: string;
+    idempotencyKey?: string;
+    headers?: Record<string, string>;
+  } = {},
 ): Promise<Response> {
   const headers: Record<string, string> = {
     "content-type": "application/json",
     origin: opts.origin ?? ORIGIN,
+    ...opts.headers,
   };
   if (endpoint.idempotent) {
     headers[IDEMPOTENCY_HEADER] = opts.idempotencyKey ?? crypto.randomUUID();
@@ -462,8 +469,22 @@ describe("rate-limit coverage (arch §11)", () => {
     expect([...Object.keys(RATE_LIMITS)].sort()).toEqual([...wired].sort());
   });
 
-  it("keys every scope by authenticated uid, never by client IP", () => {
-    expect([...new Set(Object.values(RATE_LIMITS).map((rule) => rule.key))]).toEqual(["uid"]);
+  it("keys the counter by the authenticated uid, ignoring client-supplied IP headers", async () => {
+    const db = getAdminFirestore();
+    await db.recursiveDelete(db.collection("rateLimits"));
+
+    const endpoint = ENDPOINTS.find((e) => e.path === "/api/wallet")!;
+    const res = await call(endpoint, {
+      uid: "sweep-student",
+      headers: { "x-forwarded-for": "203.0.113.7", "x-real-ip": "203.0.113.7" },
+    });
+    expect(res.status).toBe(200);
+
+    const docs = (await db.collection("rateLimits").get()).docs;
+    expect(docs).toHaveLength(1);
+    expect(docs[0]!.data()).toMatchObject({ scope: endpoint.rateLimit, uid: "sweep-student" });
+    expect(docs[0]!.id.startsWith(`${endpoint.rateLimit}_sweep-student_`)).toBe(true);
+    expect(docs[0]!.id).not.toContain("203.0.113.7");
   });
 });
 

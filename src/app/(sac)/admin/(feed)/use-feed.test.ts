@@ -1,7 +1,8 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { FeedDTO, FeedLedgerEntry } from "@/lib/shared/types";
-import { FeedApiError, requestFeed } from "./api";
+import { ApiError } from "@/lib/ui/api-client";
+import { requestFeed } from "./api";
 import { FEED_POLL_MS, useFeed } from "./use-feed";
 
 vi.mock("./api", async (importOriginal) => {
@@ -95,7 +96,7 @@ describe("filters and pagination", () => {
   });
 
   test("a failed fetch surfaces an error message", async () => {
-    mockRequestFeed.mockRejectedValue(new FeedApiError("RATE_LIMITED"));
+    mockRequestFeed.mockRejectedValue(new ApiError("RATE_LIMITED"));
     const { result } = renderHook(() =>
       useFeed({ initialEntries: [ledger("a")], initialCursor: null }),
     );

@@ -21,11 +21,7 @@ export default defineConfig({
       "sw/**/*.{test,spec}.{ts,tsx}",
       "load/**/*.{test,spec}.ts",
     ],
-    exclude: [
-      ...configDefaults.exclude,
-      "tests/integration/**",
-      "src/**/*.integration.{test,spec}.{ts,tsx}",
-    ],
+    exclude: [...configDefaults.exclude, "tests/integration/**"],
     coverage: {
       provider: "v8",
       include: ["src/lib/shared/money.ts", "src/lib/server/money/invariants.ts"],

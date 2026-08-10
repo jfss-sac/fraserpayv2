@@ -14,7 +14,7 @@ import {
 } from "./pending-charge";
 
 const SCOPE = { actorUid: "operator-1", boothId: "booth-1" };
-const LEGACY_KEY = "fraserpay:pending-charge:operator-1:booth-1";
+const SCOPE_KEY = "fraserpay:pending-charge:operator-1:booth-1";
 const KEY_A = "8f1d4a2e-6b3c-4a7d-9e2f-0c5b8a1d3e6f";
 const KEY_B = "1b2c3d4e-5f60-4a1b-8c2d-3e4f5a6b7c8d";
 const KEY_C = "9a8b7c6d-5e4f-4321-b987-6543210fedcb";
@@ -78,35 +78,28 @@ test("keeps every unresolved charge — a later one never evicts an earlier one"
   expect(stored().map((record) => record.key)).toEqual([KEY_B, KEY_C, KEY_A]);
 });
 
-test("reads a record left under the pre-migration single-slot key and clears it once resolved", () => {
-  const legacy = pendingCharge({ key: KEY_A });
-  localStorage.setItem(LEGACY_KEY, JSON.stringify(legacy));
-  writePendingCharge(SCOPE, pendingCharge({ key: KEY_B, startedAt: legacy.startedAt + 1_000 }));
+test("ignores a record filed directly under the scope key, with no per-charge suffix", () => {
+  localStorage.setItem(SCOPE_KEY, JSON.stringify(pendingCharge({ key: KEY_A })));
 
-  expect(stored().map((record) => record.key)).toEqual([KEY_A, KEY_B]);
-
-  clearPendingCharge(SCOPE, KEY_A);
-
-  expect(stored().map((record) => record.key)).toEqual([KEY_B]);
-  expect(localStorage.getItem(LEGACY_KEY)).toBeNull();
+  expect(stored()).toEqual([]);
 });
 
 test("prunes records that are unreadable, expired, or filed under the wrong key", () => {
   const now = Date.now();
-  localStorage.setItem(`${LEGACY_KEY}:${KEY_A}`, "{not json");
+  localStorage.setItem(`${SCOPE_KEY}:${KEY_A}`, "{not json");
   localStorage.setItem(
-    `${LEGACY_KEY}:${KEY_B}`,
+    `${SCOPE_KEY}:${KEY_B}`,
     JSON.stringify(
       pendingCharge({ key: KEY_B, startedAt: now - PENDING_CHARGE_SHOW_WINDOW_MS - 1 }),
     ),
   );
-  localStorage.setItem(`${LEGACY_KEY}:${KEY_C}`, JSON.stringify(pendingCharge({ key: KEY_A })));
+  localStorage.setItem(`${SCOPE_KEY}:${KEY_C}`, JSON.stringify(pendingCharge({ key: KEY_A })));
   writePendingCharge(SCOPE, pendingCharge({ key: KEY_A, startedAt: now }));
 
   prunePendingCharges(SCOPE, now);
 
-  expect(localStorage.getItem(`${LEGACY_KEY}:${KEY_B}`)).toBeNull();
-  expect(localStorage.getItem(`${LEGACY_KEY}:${KEY_C}`)).toBeNull();
+  expect(localStorage.getItem(`${SCOPE_KEY}:${KEY_B}`)).toBeNull();
+  expect(localStorage.getItem(`${SCOPE_KEY}:${KEY_C}`)).toBeNull();
   expect(stored().map((record) => record.key)).toEqual([KEY_A]);
 });
 

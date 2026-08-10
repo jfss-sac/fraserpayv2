@@ -27,12 +27,12 @@ export interface PendingChargeScope {
   boothId: string;
 }
 
-function legacyStorageKey({ actorUid, boothId }: PendingChargeScope): string {
+function scopeKey({ actorUid, boothId }: PendingChargeScope): string {
   return `fraserpay:pending-charge:${actorUid}:${boothId}`;
 }
 
 function storagePrefix(scope: PendingChargeScope): string {
-  return `${legacyStorageKey(scope)}:`;
+  return `${scopeKey(scope)}:`;
 }
 
 function recordStorageKey(scope: PendingChargeScope, key: string): string {
@@ -63,7 +63,6 @@ function scopedStorageKeys(scope: PendingChargeScope): string[] {
       keys.push(name);
     }
     keys.sort();
-    if (store.getItem(legacyStorageKey(scope)) !== null) keys.unshift(legacyStorageKey(scope));
   } catch {
     return [];
   }
@@ -110,11 +109,8 @@ export function writePendingCharge(scope: PendingChargeScope, pending: PendingCh
 }
 
 export function clearPendingCharge(scope: PendingChargeScope, key: string): void {
-  const store = storage();
   try {
-    store?.removeItem(recordStorageKey(scope, key));
-    const legacy = legacyStorageKey(scope);
-    if (parseRecord(store?.getItem(legacy) ?? null)?.key === key) store?.removeItem(legacy);
+    storage()?.removeItem(recordStorageKey(scope, key));
   } catch {
     // storage unavailable: nothing was persisted to clear
   }
@@ -124,7 +120,6 @@ export function clearPendingCharge(scope: PendingChargeScope, key: string): void
 export function prunePendingCharges(scope: PendingChargeScope, now = Date.now()): void {
   const store = storage();
   if (store === null) return;
-  const legacy = legacyStorageKey(scope);
   let removed = false;
   try {
     for (const name of scopedStorageKeys(scope)) {
@@ -132,7 +127,7 @@ export function prunePendingCharges(scope: PendingChargeScope, now = Date.now())
       const orphaned =
         record === null ||
         now - record.startedAt > PENDING_CHARGE_SHOW_WINDOW_MS ||
-        (name !== legacy && name !== recordStorageKey(scope, record.key));
+        name !== recordStorageKey(scope, record.key);
       if (!orphaned) continue;
       store.removeItem(name);
       removed = true;

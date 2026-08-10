@@ -107,7 +107,7 @@ describe("seed-superadmin against the emulators", () => {
     expect((await db.collection("users").where("email", "==", PRE.email).get()).empty).toBe(true);
   });
 
-  it("applies the pending grant on first sign-in, and the account passes requireSacExec", async () => {
+  it("applies the pending grant on first sign-in, and the account resolves as a SAC exec", async () => {
     const db = getAdminFirestore();
     await createAuthUser(PRE.uid, PRE.email);
     await signIn(PRE.uid);
@@ -119,7 +119,7 @@ describe("seed-superadmin against the emulators", () => {
     expect(await passesRequireSacExec(PRE.uid)).toBe(true);
   });
 
-  it("grants directly when the account already exists, and it passes requireSacExec", async () => {
+  it("grants directly when the account already exists, and it resolves as a SAC exec", async () => {
     const db = getAdminFirestore();
     await createAuthUser(POST_.uid, POST_.email);
     await signIn(POST_.uid);

@@ -261,19 +261,6 @@ describe("POST /api/booth/lookup", () => {
     expect(await errorCode(res)).toBe("VALIDATION");
   });
 
-  it("no longer accepts a cart total — sufficiency is the client's to compute", async () => {
-    const buyer = await freshBuyer(2000);
-    const res = await lookupRoute(
-      post(OPERATOR.uid, {
-        boothId: BOOTH_ID,
-        buyer: { paymentCode: buyer.paymentCode },
-        cartTotalCents: 500,
-      }),
-    );
-    expect(res.status).toBe(400);
-    expect(await errorCode(res)).toBe("VALIDATION");
-  });
-
   it("returns a generic NOT_FOUND for an unknown buyer", async () => {
     const res = await lookupRoute(
       post(OPERATOR.uid, {

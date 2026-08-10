@@ -4,7 +4,8 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { formatCents } from "@/lib/shared/money";
 import type { StudentSearchResult } from "@/lib/shared/types";
-import { requestStudentSearch, searchErrorMessage, StudentsApiError } from "./api";
+import { ApiError } from "@/lib/ui/api-client";
+import { requestStudentSearch, searchErrorMessage } from "./api";
 
 const DEBOUNCE_MS = 250;
 
@@ -60,7 +61,7 @@ export function StudentSearch() {
         })
         .catch((err) => {
           if (controller.signal.aborted || seq.current !== id) return;
-          const code = err instanceof StudentsApiError ? err.code : "NETWORK";
+          const code = err instanceof ApiError ? err.code : "NETWORK";
           setState({ status: "error", message: searchErrorMessage(code) });
         });
     }, DEBOUNCE_MS);

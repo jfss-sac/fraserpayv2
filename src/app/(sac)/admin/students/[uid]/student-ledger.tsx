@@ -4,8 +4,9 @@ import { useCallback, useState } from "react";
 import { TIMEZONE } from "@/lib/shared/constants";
 import { formatCents } from "@/lib/shared/money";
 import type { SacLedgerEntry } from "@/lib/shared/types";
+import { ApiError } from "@/lib/ui/api-client";
 import { Button } from "@/lib/ui/vendor/button";
-import { ledgerErrorMessage, requestStudentLedger, StudentsApiError } from "../api";
+import { ledgerErrorMessage, requestStudentLedger } from "../api";
 
 const STAMP_FORMAT = new Intl.DateTimeFormat("en-CA", {
   timeZone: TIMEZONE,
@@ -120,7 +121,7 @@ export function StudentLedger({
       setEntries((prev) => [...prev, ...dto.entries]);
       setCursor(dto.nextCursor);
     } catch (err) {
-      const code = err instanceof StudentsApiError ? err.code : "NETWORK";
+      const code = err instanceof ApiError ? err.code : "NETWORK";
       setError(ledgerErrorMessage(code));
     } finally {
       setLoading(false);

@@ -1,48 +1,15 @@
 "use client";
 
 import type { BoothItem } from "@/lib/shared/types";
+import { ApiError, NETWORK_ERROR_MESSAGE, postJson } from "@/lib/ui/api-client";
 
 export interface PriceEdit {
   id: string;
   priceCents: number;
 }
 
-export class BoothApiError extends Error {
-  constructor(
-    readonly code: string,
-    readonly serverMessage: string,
-  ) {
-    super(code);
-    this.name = "BoothApiError";
-  }
-}
-
-async function envelopeOf(res: Response): Promise<{ code: string; message: string }> {
-  try {
-    const body = (await res.json()) as { error?: { code?: string; message?: string } };
-    return { code: body.error?.code ?? "INTERNAL", message: body.error?.message ?? "" };
-  } catch {
-    return { code: "INTERNAL", message: "" };
-  }
-}
-
-async function postJson<T>(url: string, body: unknown): Promise<T> {
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    const { code, message } = await envelopeOf(res);
-    throw new BoothApiError(code, message);
-  }
-  return (await res.json()) as T;
-}
-
-const NETWORK = "Couldn't reach the server. Check your connection and try again.";
-
 export function boothActionErrorMessage(err: unknown): string {
-  if (!(err instanceof BoothApiError)) return NETWORK;
+  if (!(err instanceof ApiError)) return NETWORK_ERROR_MESSAGE;
   switch (err.code) {
     case "CONFLICT":
       return err.serverMessage || "That action conflicts with the booth's current state.";
