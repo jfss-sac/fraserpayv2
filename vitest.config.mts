@@ -16,7 +16,11 @@ export default defineConfig({
     globals: true,
     setupFiles: ["./vitest.setup.ts"],
     env: { TZ: "UTC" },
-    include: ["src/**/*.{test,spec}.{ts,tsx}", "sw/**/*.{test,spec}.{ts,tsx}"],
+    include: [
+      "src/**/*.{test,spec}.{ts,tsx}",
+      "sw/**/*.{test,spec}.{ts,tsx}",
+      "load/**/*.{test,spec}.ts",
+    ],
     exclude: [
       ...configDefaults.exclude,
       "tests/integration/**",

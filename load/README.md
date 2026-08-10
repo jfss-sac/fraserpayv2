@@ -18,7 +18,8 @@ Two things are being measured, and they are **not** the same environment:
 
 | File                   | Scenario                                                                                                                                                                                                                                            |
 | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `lunch-rush.js`        | Sustained mix: **10/s charges + 2/s lookups + 0.5/s top-ups**, `DURATION` (default 10m). Thresholds: `http_req_duration{expected_response:true} p(95)<500`, `unexpected_errors rate<0.01` (intentional `INSUFFICIENT_FUNDS` excluded).              |
+| `lunch-rush.js`        | Sustained mix: **10/s charges + 30/s lookups + 0.5/s top-ups**, `DURATION` (default 10m). Thresholds: `http_req_duration{expected_response:true} p(95)<500`, `unexpected_errors rate<0.01` (intentional `INSUFFICIENT_FUNDS` excluded).             |
+| `profile.js`           | The load model itself — rates, pool sizes, and the rate-limit caps it assumes. Imported by `lunch-rush.js` and asserted by `profile.test.ts` (runs in `pnpm test`, no emulator needed).                                                             |
 | `correctness-storm.js` | Two concurrent storms on isolated fixtures: **contention** (many sellers charge the same low-balance buyers — oversell must be impossible) and **idempotency** (duplicate `Idempotency-Key`s from one seller — the charge must apply exactly once). |
 | `lib.js`               | Shared helpers: base URL, cookie headers, UUIDv4 idempotency keys, request builders.                                                                                                                                                                |
 
@@ -70,9 +71,32 @@ pnpm seed:load:demo
 
 Seed pool sizes: `LOAD_BOOTHS` (40), `LOAD_SELLERS_PER_BOOTH` (2), `LOAD_CHARGE_BUYERS` (300), `LOAD_TOPUP_BUYERS` (150), `LOAD_SAC_MEMBERS` (4), `LOAD_CONTENTION_BUYERS` (6), `LOAD_CONTENTION_SELLERS` (40), `LOAD_IDEMPOTENCY_BUYERS` (30).
 
-k6: `BASE_URL` (`http://127.0.0.1:3000`), `LOAD_FIXTURES` (`./fixtures/load-fixtures.json`), `DURATION`, `CHARGE_RATE`, `LOOKUP_RATE`, `TOPUP_RATE_PER_MIN`, `CONTENTION_ITERS`, `IDEMPOTENCY_ITERS`, `DUPLICATES_PER_KEY`.
+k6: `BASE_URL` (`http://127.0.0.1:3000`), `LOAD_FIXTURES` (`./fixtures/load-fixtures.json`), `DURATION`, `CHARGE_RATE`, `LOOKUPS_PER_CHARGE` (3), `LOOKUP_RATE` (defaults to `CHARGE_RATE × LOOKUPS_PER_CHARGE`), `TOPUP_RATE_PER_MIN`, `SELLER_POOL`, `EXPECT_RATE_LIMIT`, `CONTENTION_ITERS`, `IDEMPOTENCY_ITERS`, `DUPLICATES_PER_KEY`.
 
-Rate limits are per-seller-uid (charge 120/min); the seed provisions enough sellers that a round-robin 10/s stays well under the limit. If you push `CHARGE_RATE` much higher, add sellers (`LOAD_SELLERS_PER_BOOTH`) or you'll measure the rate limiter, not the app.
+### Why the mix is 3 lookups per charge
+
+The POS cannot ring a sale until a lookup has resolved — `canCharge` requires
+`sufficiency.status === "ready"` — so **lookups can never trail charges**. On top of
+that floor come abandoned scans, "not them — scan again", the "Refresh balance"
+button, and the automatic re-lookup after an `INSUFFICIENT_FUNDS` rejection. The
+default models 3 lookups per charge; override with `LOOKUPS_PER_CHARGE` (or pin
+`LOOKUP_RATE` directly).
+
+### Why the run produces no 429s
+
+Rate limits are per-uid (charge 120/min, lookup 120/min, top-up 40/min). The seed
+provisions 40 booths × 2 sellers = 80 seller accounts, which is the real event
+shape, so the default profile sits at **7.5 charges/min and 22.5 lookups/min per
+uid — 6% and 19% of their caps**. A clean run therefore reports zero `rate_limited`,
+and that is the spec being met, not a gap in coverage: PRD NFR-8 requires that "a
+lunch-rush operator never meets one". `profile.test.ts` asserts that headroom, and
+`setup()` re-checks it against the actual fixture pool and aborts the run rather than
+letting you silently measure the limiter.
+
+To deliberately probe the limiter, narrow the pool and say so — `SELLER_POOL=4
+EXPECT_RATE_LIMIT=1 k6 run load/lunch-rush.js`. That reclassifies 429s as an expected,
+counted outcome (`rate_limited`) instead of a hard failure. **Do not** read an NFR-5
+p95 off such a run: a rejected request is a cheap path that flatters the percentile.
 
 ## Staging run (real latency)
 
