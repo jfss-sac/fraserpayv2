@@ -73,8 +73,7 @@ export function chargeIter() {
   const i = exec.scenario.iterationInTest;
   const seller = pick(fixtures.charge.sellers, i);
   const buyer = pick(fixtures.charge.buyers, i);
-  const ref = i % 2 === 0 ? paymentCodeOf(buyer) : studentNumberOf(buyer);
-  classify(charge(seller, ref));
+  classify(charge(seller, paymentCodeOf(buyer)));
 }
 
 export function lookupIter() {

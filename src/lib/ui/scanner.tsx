@@ -5,12 +5,22 @@ import { Button } from "@/lib/ui/vendor/button";
 
 export type BuyerId = { paymentCode: string } | { studentNumber: string };
 
+export type ManualEntry = "studentNumber" | "paymentCode";
+
+const PAYMENT_CODE_PREFIX = "fp1-";
 const PAYMENT_CODE_RE = /^fp1-[0-9ABCDEFGHJKMNPQRSTVWXYZ]{26}$/;
+const PAYMENT_CODE_MAX = PAYMENT_CODE_PREFIX.length + 26;
 const STUDENT_NUMBER_RE = /^[0-9]+$/;
 const STUDENT_NUMBER_MAX = 12;
 
 export function isValidPaymentCode(raw: string): boolean {
   return PAYMENT_CODE_RE.test(raw.trim());
+}
+
+export function normalizePaymentCode(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed.toLowerCase().startsWith(PAYMENT_CODE_PREFIX)) return trimmed;
+  return PAYMENT_CODE_PREFIX + trimmed.slice(PAYMENT_CODE_PREFIX.length).toUpperCase();
 }
 
 export function isValidStudentNumber(raw: string): boolean {
@@ -65,19 +75,26 @@ export async function createQrDecoder(): Promise<QrDecoder> {
 
 type CameraState = "idle" | "starting" | "scanning" | "denied" | "unsupported" | "error";
 
-const CAMERA_MESSAGE: Record<Exclude<CameraState, "idle" | "starting" | "scanning">, string> = {
-  denied: "Camera access was blocked. Enter the student number below instead.",
-  unsupported: "This device can't open the camera. Enter the student number below instead.",
-  error: "The camera couldn't start. Enter the student number below instead.",
+const CAMERA_REASON: Record<Exclude<CameraState, "idle" | "starting" | "scanning">, string> = {
+  denied: "Camera access was blocked.",
+  unsupported: "This device can't open the camera.",
+  error: "The camera couldn't start.",
+};
+
+const MANUAL_FALLBACK: Record<ManualEntry, string> = {
+  studentNumber: "Enter the student number below instead.",
+  paymentCode: "Enter their payment code below instead.",
 };
 
 const PAD_KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"] as const;
 
 export function Scanner({
   onIdentify,
+  manualEntry,
   className,
 }: {
   onIdentify: (buyer: BuyerId) => void;
+  manualEntry: ManualEntry;
   className?: string;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -200,18 +217,28 @@ export function Scanner({
     setPad((current) => (current + key).slice(0, STUDENT_NUMBER_MAX));
   }
 
+  function identify(buyer: BuyerId) {
+    stopCamera();
+    setCameraState("idle");
+    onIdentifyRef.current(buyer);
+  }
+
   function submitPad() {
     const value = pad.trim();
     if (!isValidStudentNumber(value)) return;
-    stopCamera();
-    setCameraState("idle");
-    onIdentifyRef.current({ studentNumber: value });
+    identify({ studentNumber: value });
+  }
+
+  function submitCode() {
+    const value = normalizePaymentCode(pad);
+    if (!isValidPaymentCode(value)) return;
+    identify({ paymentCode: value });
   }
 
   const scanning = cameraState === "scanning";
   const cameraMessage =
     cameraState === "denied" || cameraState === "unsupported" || cameraState === "error"
-      ? CAMERA_MESSAGE[cameraState]
+      ? `${CAMERA_REASON[cameraState]} ${MANUAL_FALLBACK[manualEntry]}`
       : "";
 
   return (
@@ -270,49 +297,82 @@ export function Scanner({
         )}
       </section>
 
-      <section aria-label="Enter student number" className="mt-6 flex flex-col gap-3">
-        <label htmlFor="scanner-student-number" className="text-sm font-medium text-foreground">
-          Or enter student number
-        </label>
-        <input
-          id="scanner-student-number"
-          inputMode="numeric"
-          autoComplete="off"
-          value={pad}
-          onChange={(event) =>
-            setPad(event.target.value.replace(/\D/g, "").slice(0, STUDENT_NUMBER_MAX))
-          }
-          className="h-12 rounded-md border border-border bg-background px-4 text-center text-2xl tracking-widest text-foreground"
-          aria-label="Student number"
-        />
-        <div className="grid grid-cols-3 gap-2">
-          {PAD_KEYS.map((key) => (
+      {manualEntry === "studentNumber" ? (
+        <section aria-label="Enter student number" className="mt-6 flex flex-col gap-3">
+          <label htmlFor="scanner-student-number" className="text-sm font-medium text-foreground">
+            Or enter student number
+          </label>
+          <input
+            id="scanner-student-number"
+            inputMode="numeric"
+            autoComplete="off"
+            value={pad}
+            onChange={(event) =>
+              setPad(event.target.value.replace(/\D/g, "").slice(0, STUDENT_NUMBER_MAX))
+            }
+            className="h-12 rounded-md border border-border bg-background px-4 text-center text-2xl tracking-widest text-foreground"
+            aria-label="Student number"
+          />
+          <div className="grid grid-cols-3 gap-2">
+            {PAD_KEYS.map((key) => (
+              <Button
+                key={key}
+                type="button"
+                variant="outline"
+                className="h-14 text-xl"
+                onClick={() => pressKey(key)}
+                aria-label={`Digit ${key}`}
+              >
+                {key}
+              </Button>
+            ))}
             <Button
-              key={key}
               type="button"
               variant="outline"
               className="h-14 text-xl"
-              onClick={() => pressKey(key)}
-              aria-label={`Digit ${key}`}
+              onClick={() => setPad((current) => current.slice(0, -1))}
+              disabled={pad.length === 0}
+              aria-label="Delete last digit"
             >
-              {key}
+              ⌫
             </Button>
-          ))}
+          </div>
+          <Button type="button" size="lg" onClick={submitPad} disabled={!isValidStudentNumber(pad)}>
+            Look up student
+          </Button>
+        </section>
+      ) : (
+        <section aria-label="Enter payment code" className="mt-6 flex flex-col gap-3">
+          <label htmlFor="scanner-payment-code" className="text-sm font-medium text-foreground">
+            Or enter their payment code
+          </label>
+          <p className="text-sm text-muted">
+            It is printed under the QR code in their wallet. Only the code identifies a buyer here —
+            student numbers are not accepted.
+          </p>
+          <input
+            id="scanner-payment-code"
+            autoComplete="off"
+            autoCapitalize="characters"
+            autoCorrect="off"
+            spellCheck={false}
+            value={pad}
+            onChange={(event) =>
+              setPad(event.target.value.replace(/\s/g, "").slice(0, PAYMENT_CODE_MAX))
+            }
+            className="h-12 rounded-md border border-border bg-background px-4 text-center font-mono text-lg tracking-wider text-foreground"
+            aria-label="Payment code"
+          />
           <Button
             type="button"
-            variant="outline"
-            className="h-14 text-xl"
-            onClick={() => setPad((current) => current.slice(0, -1))}
-            disabled={pad.length === 0}
-            aria-label="Delete last digit"
+            size="lg"
+            onClick={submitCode}
+            disabled={!isValidPaymentCode(normalizePaymentCode(pad))}
           >
-            ⌫
+            Look up buyer
           </Button>
-        </div>
-        <Button type="button" size="lg" onClick={submitPad} disabled={!isValidStudentNumber(pad)}>
-          Look up student
-        </Button>
-      </section>
+        </section>
+      )}
     </div>
   );
 }

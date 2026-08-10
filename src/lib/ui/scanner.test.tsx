@@ -6,6 +6,7 @@ import {
   hasNativeBarcodeDetector,
   isValidPaymentCode,
   isValidStudentNumber,
+  normalizePaymentCode,
   parseScannedCode,
   Scanner,
 } from "./scanner";
@@ -39,6 +40,12 @@ describe("payment-code validation", () => {
     expect(isValidStudentNumber(" 123456 ")).toBe(true);
     expect(isValidStudentNumber("12a")).toBe(false);
     expect(isValidStudentNumber("")).toBe(false);
+  });
+
+  test("normalizePaymentCode fixes the casing a phone keyboard produces", () => {
+    expect(normalizePaymentCode(" FP1-abcdefghjkmnpqrstvwxyz0123 ")).toBe(VALID_CODE);
+    expect(normalizePaymentCode(VALID_CODE)).toBe(VALID_CODE);
+    expect(normalizePaymentCode("nonsense")).toBe("nonsense");
   });
 });
 
@@ -111,7 +118,7 @@ describe("Scanner component", () => {
   });
 
   test("number pad is always visible before the camera is used", () => {
-    render(<Scanner onIdentify={vi.fn()} />);
+    render(<Scanner onIdentify={vi.fn()} manualEntry="studentNumber" />);
     expect(screen.getByRole("button", { name: "Scan QR code" })).toBeInTheDocument();
     for (const digit of ["0", "1", "5", "9"]) {
       expect(screen.getByRole("button", { name: `Digit ${digit}` })).toBeInTheDocument();
@@ -121,7 +128,7 @@ describe("Scanner component", () => {
 
   test("typing digits and submitting identifies the buyer by student number", async () => {
     const onIdentify = vi.fn();
-    render(<Scanner onIdentify={onIdentify} />);
+    render(<Scanner onIdentify={onIdentify} manualEntry="studentNumber" />);
 
     const submit = screen.getByRole("button", { name: "Look up student" });
     expect(submit).toBeDisabled();
@@ -138,7 +145,7 @@ describe("Scanner component", () => {
   });
 
   test("backspace removes the last digit and is disabled when empty", async () => {
-    render(<Scanner onIdentify={vi.fn()} />);
+    render(<Scanner onIdentify={vi.fn()} manualEntry="studentNumber" />);
     const back = screen.getByRole("button", { name: "Delete last digit" });
     expect(back).toBeDisabled();
 
@@ -150,14 +157,14 @@ describe("Scanner component", () => {
   });
 
   test("the field strips non-digits from direct typing", async () => {
-    render(<Scanner onIdentify={vi.fn()} />);
+    render(<Scanner onIdentify={vi.fn()} manualEntry="studentNumber" />);
     const field = screen.getByLabelText("Student number");
     await userEvent.type(field, "12a3b4");
     expect(field).toHaveValue("1234");
   });
 
   test("shows an unsupported message when the device has no camera API", async () => {
-    render(<Scanner onIdentify={vi.fn()} />);
+    render(<Scanner onIdentify={vi.fn()} manualEntry="studentNumber" />);
     await userEvent.click(screen.getByRole("button", { name: "Scan QR code" }));
     expect(await screen.findByRole("status")).toHaveTextContent(/can't open the camera/i);
   });
@@ -171,11 +178,51 @@ describe("Scanner component", () => {
       value: { getUserMedia },
     });
 
-    render(<Scanner onIdentify={vi.fn()} />);
+    render(<Scanner onIdentify={vi.fn()} manualEntry="studentNumber" />);
     await userEvent.click(screen.getByRole("button", { name: "Scan QR code" }));
 
     await waitFor(() =>
       expect(screen.getByRole("status")).toHaveTextContent(/camera access was blocked/i),
     );
+  });
+});
+
+describe("Scanner in payment-code mode", () => {
+  afterEach(() => {
+    Reflect.deleteProperty(navigator, "mediaDevices");
+  });
+
+  test("offers no student-number path at all", () => {
+    render(<Scanner onIdentify={vi.fn()} manualEntry="paymentCode" />);
+    expect(screen.queryByLabelText("Student number")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Digit 1" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Look up student" })).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Payment code")).toBeInTheDocument();
+  });
+
+  test("a typed payment code identifies the buyer, normalised for casing", async () => {
+    const onIdentify = vi.fn();
+    render(<Scanner onIdentify={onIdentify} manualEntry="paymentCode" />);
+
+    const submit = screen.getByRole("button", { name: "Look up buyer" });
+    expect(submit).toBeDisabled();
+
+    await userEvent.type(screen.getByLabelText("Payment code"), VALID_CODE.toUpperCase());
+    expect(submit).toBeEnabled();
+
+    await userEvent.click(submit);
+    expect(onIdentify).toHaveBeenCalledWith({ paymentCode: VALID_CODE });
+  });
+
+  test("keeps submit disabled for a student number typed into the code field", async () => {
+    render(<Scanner onIdentify={vi.fn()} manualEntry="paymentCode" />);
+    await userEvent.type(screen.getByLabelText("Payment code"), "800123");
+    expect(screen.getByRole("button", { name: "Look up buyer" })).toBeDisabled();
+  });
+
+  test("points a blocked camera at the code field rather than the number pad", async () => {
+    render(<Scanner onIdentify={vi.fn()} manualEntry="paymentCode" />);
+    await userEvent.click(screen.getByRole("button", { name: "Scan QR code" }));
+    expect(await screen.findByRole("status")).toHaveTextContent(/payment code below/i);
   });
 });

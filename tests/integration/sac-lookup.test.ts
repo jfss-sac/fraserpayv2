@@ -3,8 +3,11 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { POST as sacLookupRoute } from "../../src/app/api/sac/lookup/route";
 import { usersCol } from "../../src/lib/server/db";
 import { getAdminAuth, getAdminFirestore } from "../../src/lib/server/firebase-admin";
+import { RATE_LIMITS } from "../../src/lib/server/ratelimit";
 import { SESSION_COOKIE_NAME, SESSION_TTL_MS } from "../../src/lib/shared/constants";
 import type { SacLookupResult } from "../../src/lib/shared/types";
+
+const RATE_LIMIT_SWEEP_TIMEOUT_MS = 60_000;
 
 const ORIGIN = "http://127.0.0.1";
 const ENDPOINT = "/api/sac/lookup";
@@ -205,14 +208,19 @@ describe("POST /api/sac/lookup", () => {
     expect(await errorCode(res)).toBe("VALIDATION");
   });
 
-  it("rate-limits a member past 30 lookups per minute", async () => {
-    const buyer = await freshBuyer();
-    const body = { buyer: { studentNumber: buyer.studentNumber } };
-    const codes: number[] = [];
-    for (let i = 0; i < 31; i += 1) {
-      codes.push((await sacLookupRoute(post(RL_MEMBER.uid, body))).status);
-    }
-    expect(codes.slice(0, 30).every((s) => s === 200)).toBe(true);
-    expect(codes[30]).toBe(429);
-  });
+  it(
+    "rate-limits a member past the per-minute lookup cap",
+    async () => {
+      const buyer = await freshBuyer();
+      const body = { buyer: { studentNumber: buyer.studentNumber } };
+      const { limit } = RATE_LIMITS.lookup;
+      const codes: number[] = [];
+      for (let i = 0; i < limit + 1; i += 1) {
+        codes.push((await sacLookupRoute(post(RL_MEMBER.uid, body))).status);
+      }
+      expect(codes.slice(0, limit).every((s) => s === 200)).toBe(true);
+      expect(codes[limit]).toBe(429);
+    },
+    RATE_LIMIT_SWEEP_TIMEOUT_MS,
+  );
 });

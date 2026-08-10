@@ -151,7 +151,7 @@ export interface RecentPurchase {
 
 export interface LookupResult {
   name: string;
-  sufficient: boolean;
+  balanceCents: number;
   lastPurchase: RecentPurchase | null;
 }
 
@@ -247,9 +247,16 @@ export interface FeedAuditEntry {
 
 export type FeedEntry = FeedLedgerEntry | FeedAuditEntry;
 
+export interface RepeatBuyerAlert {
+  studentUid: string;
+  studentName: string;
+  charges: number;
+}
+
 export interface FeedDTO {
   entries: FeedEntry[];
   nextCursor: string | null;
+  repeatBuyers: RepeatBuyerAlert[];
 }
 
 export interface ReconTopupEntry {
@@ -321,4 +328,30 @@ export interface LeaderboardRow {
 
 export interface LeaderboardDTO {
   rows: LeaderboardRow[];
+}
+
+export interface ActivityScopeUsage {
+  scope: string;
+  peakRequests: number;
+  limit: number;
+  windowMs: number;
+  blockedWindows: number;
+}
+
+export interface ActivityActor {
+  uid: string;
+  displayName: string;
+  suspended: boolean;
+  totalRequests: number;
+  peakRequests: number;
+  blockedWindows: number;
+  lastSeenIso: string;
+  scopes: ActivityScopeUsage[];
+}
+
+export interface ActivityDTO {
+  actors: ActivityActor[];
+  notableThreshold: number;
+  lookbackMs: number;
+  truncated: boolean;
 }

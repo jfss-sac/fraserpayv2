@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import { BOOTH_STUDENT_NUMBER_ENABLED } from "@/lib/shared/constants";
 import { formatCents } from "@/lib/shared/money";
 import type { BoothItem } from "@/lib/shared/types";
 import { Scanner, type BuyerId } from "@/lib/ui/scanner";
@@ -50,19 +51,26 @@ export function LastChargeNote({ purchase }: { purchase: ObservedPurchase }) {
 
 export function BuyerPanel({
   state,
-  typed,
   onClear,
+  onRefresh,
 }: {
   state: SufficiencyState;
-  typed: boolean;
   onClear: () => void;
+  onRefresh: () => void;
 }) {
   return (
     <section aria-label="Buyer" className="flex flex-col gap-3 border-t border-border pt-4">
       {state.status === "error" ? (
-        <p role="alert" className="text-base font-medium text-foreground">
-          {errorMessage(state.code)}
-        </p>
+        <>
+          <p role="alert" className="text-base font-medium text-foreground">
+            {errorMessage(state.code)}
+          </p>
+          {state.retryable && (
+            <Button type="button" onClick={onRefresh} className="self-start">
+              Try again
+            </Button>
+          )}
+        </>
       ) : (
         <>
           <p className="text-lg font-semibold text-foreground">
@@ -70,7 +78,12 @@ export function BuyerPanel({
               ? `Is this ${state.name}?`
               : "Checking…"}
           </p>
-          {typed && <p className="text-sm text-muted">Ask for their student card to confirm.</p>}
+          <p className="text-sm text-muted">Ask for their student card to confirm.</p>
+          {state.status === "ready" && (
+            <p className="text-base font-medium text-foreground">
+              Balance {formatCents(state.balanceCents)}
+            </p>
+          )}
           <p role="status" aria-live="polite" className="text-base font-medium">
             {state.status === "checking" && "Checking funds…"}
             {state.status === "ready" &&
@@ -78,6 +91,11 @@ export function BuyerPanel({
           </p>
           {state.status === "ready" && state.lastPurchase && (
             <LastChargeNote purchase={state.lastPurchase} />
+          )}
+          {state.status === "ready" && (
+            <Button type="button" variant="outline" onClick={onRefresh} className="self-start">
+              Refresh balance
+            </Button>
           )}
         </>
       )}
@@ -100,7 +118,11 @@ export function PosTerminal({
   const [buyer, setBuyer] = useState<BuyerId | null>(null);
   const [cartTotalCents, setCartTotalCents] = useState(0);
   const [cartKey, setCartKey] = useState(0);
-  const sufficiency = useSufficiency({ boothId, buyer, cartTotalCents });
+  const { state: sufficiency, refresh: refreshLookup } = useSufficiency({
+    boothId,
+    buyer,
+    cartTotalCents,
+  });
   const online = useConnectivity();
   const { toasts, push, dismiss } = useToasts();
 
@@ -137,7 +159,10 @@ export function PosTerminal({
         setCartKey((key) => key + 1);
       }
     },
-    onError: (code) => push(chargeErrorMessage(code), "error"),
+    onError: (code) => {
+      if (code === "INSUFFICIENT_FUNDS") refreshLookup();
+      push(chargeErrorMessage(code), "error");
+    },
   });
 
   const handleTotalChange = useCallback((cents: number) => setCartTotalCents(cents), []);
@@ -183,13 +208,13 @@ export function PosTerminal({
       />
 
       {buyer === null ? (
-        <Scanner onIdentify={setBuyer} className="border-t border-border pt-4" />
-      ) : (
-        <BuyerPanel
-          state={sufficiency}
-          typed={"studentNumber" in buyer}
-          onClear={() => setBuyer(null)}
+        <Scanner
+          onIdentify={setBuyer}
+          manualEntry={BOOTH_STUDENT_NUMBER_ENABLED ? "studentNumber" : "paymentCode"}
+          className="border-t border-border pt-4"
         />
+      ) : (
+        <BuyerPanel state={sufficiency} onClear={() => setBuyer(null)} onRefresh={refreshLookup} />
       )}
 
       <Toaster toasts={toasts} onDismiss={dismiss} />

@@ -72,7 +72,7 @@ Seed pool sizes: `LOAD_BOOTHS` (40), `LOAD_SELLERS_PER_BOOTH` (2), `LOAD_CHARGE_
 
 k6: `BASE_URL` (`http://127.0.0.1:3000`), `LOAD_FIXTURES` (`./fixtures/load-fixtures.json`), `DURATION`, `CHARGE_RATE`, `LOOKUP_RATE`, `TOPUP_RATE_PER_MIN`, `CONTENTION_ITERS`, `IDEMPOTENCY_ITERS`, `DUPLICATES_PER_KEY`.
 
-Rate limits are per-seller-uid (charge 20/min); the seed provisions enough sellers that a round-robin 10/s stays well under the limit. If you push `CHARGE_RATE` much higher, add sellers (`LOAD_SELLERS_PER_BOOTH`) or you'll measure the rate limiter, not the app.
+Rate limits are per-seller-uid (charge 120/min); the seed provisions enough sellers that a round-robin 10/s stays well under the limit. If you push `CHARGE_RATE` much higher, add sellers (`LOAD_SELLERS_PER_BOOTH`) or you'll measure the rate limiter, not the app.
 
 ## Staging run (real latency)
 

@@ -31,8 +31,8 @@ import { lookupBuyer } from "./booth-lookup";
 it("degrades to no duplicate-sale warning when the advisory ledger query fails", async () => {
   await expect(
     lookupBuyer({
-      input: { boothId: "b1", buyer: { studentNumber: "123456" }, cartTotalCents: 500 },
+      input: { boothId: "b1", buyer: { studentNumber: "123456" } },
       actorUid: "op-1",
     }),
-  ).resolves.toEqual({ name: "Ada Lovelace", sufficient: true, lastPurchase: null });
+  ).resolves.toEqual({ name: "Ada Lovelace", balanceCents: 800, lastPurchase: null });
 });

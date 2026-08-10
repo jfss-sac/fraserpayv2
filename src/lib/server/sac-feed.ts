@@ -2,9 +2,17 @@ import "server-only";
 import { FieldPath, type Query, Timestamp } from "firebase-admin/firestore";
 import { z } from "zod";
 import { type AuditLogDoc, type LedgerEntryDoc, auditCol, ledgerCol } from "./db";
-import type { FeedAuditEntry, FeedDTO, FeedLedgerEntry } from "@/lib/shared/types";
+import { REPEAT_BUYER_THRESHOLD, REPEAT_BUYER_WINDOW_MS } from "@/lib/shared/constants";
+import type {
+  FeedAuditEntry,
+  FeedDTO,
+  FeedLedgerEntry,
+  RepeatBuyerAlert,
+} from "@/lib/shared/types";
 
 export const FEED_PAGE_SIZE = 25;
+
+export const REPEAT_BUYER_SCAN_LIMIT = 500;
 
 const HIGH_AMOUNT_TAG = "high-amount";
 
@@ -126,12 +134,44 @@ function toAuditEntry(id: string, doc: AuditLogDoc): FeedAuditEntry {
   };
 }
 
-export async function getFeed(input: FeedQuery): Promise<FeedDTO> {
+export function flagRepeatBuyers(
+  purchases: { studentUid: string; studentName: string }[],
+): RepeatBuyerAlert[] {
+  const byBuyer = new Map<string, { studentName: string; charges: number }>();
+  for (const purchase of purchases) {
+    const seen = byBuyer.get(purchase.studentUid) ?? {
+      studentName: purchase.studentName,
+      charges: 0,
+    };
+    seen.charges += 1;
+    byBuyer.set(purchase.studentUid, seen);
+  }
+
+  return [...byBuyer]
+    .filter(([, buyer]) => buyer.charges >= REPEAT_BUYER_THRESHOLD)
+    .map(([studentUid, buyer]) => ({ studentUid, ...buyer }))
+    .sort((a, b) => b.charges - a.charges || a.studentName.localeCompare(b.studentName));
+}
+
+async function repeatBuyersSince(nowMs: number): Promise<RepeatBuyerAlert[]> {
+  const snap = await ledgerCol()
+    .where("type", "==", "purchase")
+    .where("createdAt", ">=", Timestamp.fromMillis(nowMs - REPEAT_BUYER_WINDOW_MS))
+    .orderBy("createdAt", "desc")
+    .limit(REPEAT_BUYER_SCAN_LIMIT)
+    .get();
+  return flagRepeatBuyers(snap.docs.map((doc) => doc.data()));
+}
+
+export async function getFeed(input: FeedQuery, nowMs: number = Date.now()): Promise<FeedDTO> {
   const cursor = input.cursor ? decodeCursor(input.cursor) : null;
 
-  const snaps = await Promise.all([
-    ledgerQuery(input, cursor).get(),
-    auditParticipates(input) ? auditQuery(input, cursor).get() : null,
+  const [snaps, repeatBuyers] = await Promise.all([
+    Promise.all([
+      ledgerQuery(input, cursor).get(),
+      auditParticipates(input) ? auditQuery(input, cursor).get() : null,
+    ]),
+    cursor ? Promise.resolve<RepeatBuyerAlert[]>([]) : repeatBuyersSince(nowMs),
   ]);
 
   const ranked: Ranked[] = [];
@@ -154,5 +194,6 @@ export async function getFeed(input: FeedQuery): Promise<FeedDTO> {
   return {
     entries: page.map((r) => r.entry),
     nextCursor: hasMore && last ? encodeCursor(last.ts, last.id) : null,
+    repeatBuyers,
   };
 }

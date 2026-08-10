@@ -22,6 +22,7 @@ export interface WalletHistoryItem {
 
 export interface WalletViewProps {
   qrSvg: string;
+  paymentCode: string;
   studentNumber: string | null;
   balanceCents: number;
   points: number;
@@ -88,6 +89,7 @@ function HistoryRow({ item }: { item: WalletHistoryItem }) {
 
 export function WalletView({
   qrSvg,
+  paymentCode,
   studentNumber,
   balanceCents,
   points,
@@ -101,6 +103,11 @@ export function WalletView({
           className="aspect-square w-full max-w-[15rem] rounded-lg border border-border bg-white p-3"
           dangerouslySetInnerHTML={{ __html: qrSvg }}
         />
+        <p className="text-center text-sm text-muted">
+          Payment code
+          <br />
+          <code className="font-mono text-xs tracking-wider text-foreground">{paymentCode}</code>
+        </p>
         {studentNumber ? (
           <p className="text-sm text-muted">
             Student <span className="font-medium text-foreground">#{studentNumber}</span>

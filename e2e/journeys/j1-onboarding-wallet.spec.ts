@@ -4,7 +4,7 @@ import { SIGNED_OUT_STATE, provisionViaSignIn, signInAs } from "../helpers/auth"
 import { db } from "../helpers/firebase";
 import { isCached, managedCacheKeys, warmShell, waitForServiceWorker } from "../helpers/sw";
 
-const REGENERATED_CODE = "fp1-Z9Y8X7W6V5U4T3S2R1Q0P";
+const REGENERATED_CODE = "fp1-Z9Y8X7W6V5T4S3R2Q1P0NMKJHG";
 
 test.describe("J1 · onboarding → wallet → offline reopen", () => {
   test.describe("first sign-in provisioning", () => {

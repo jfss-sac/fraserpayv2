@@ -50,7 +50,6 @@ export function lookup(seller, buyer) {
   return post("/api/booth/lookup", seller.cookie, {
     boothId: seller.boothId,
     buyer,
-    cartTotalCents: seller.priceCents,
   });
 }
 

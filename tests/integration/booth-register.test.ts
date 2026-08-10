@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { POST as registerRoute } from "../../src/app/api/booths/register/route";
 import { type BoothDoc, boothsCol, usersCol } from "../../src/lib/server/db";
 import { getAdminAuth, getAdminFirestore } from "../../src/lib/server/firebase-admin";
+import { RATE_LIMITS } from "../../src/lib/server/ratelimit";
 import { SESSION_COOKIE_NAME, SESSION_TTL_MS } from "../../src/lib/shared/constants";
 
 const ORIGIN = "http://127.0.0.1";
@@ -177,7 +178,7 @@ describe("POST /api/booths/register", () => {
   });
 
   it("rate limits repeated registrations from one account", async () => {
-    for (let i = 0; i < 10; i += 1) {
+    for (let i = 0; i < RATE_LIMITS.register.limit; i += 1) {
       const res = await registerRoute(post(RL_USER.uid, validBody()));
       expect(res.status).not.toBe(429);
     }

@@ -102,7 +102,7 @@ const ENDPOINTS: Endpoint[] = [
     handler: boothLookup as AnyHandler,
     role: "active",
     rateLimit: "lookup",
-    body: { boothId: BOOTH_ID, buyer: { studentNumber: "900001" }, cartTotalCents: 100 },
+    body: { boothId: BOOTH_ID, buyer: { paymentCode: "fp1-sweep-student" } },
   },
   {
     path: "/api/booth/charge",
@@ -113,7 +113,7 @@ const ENDPOINTS: Endpoint[] = [
     idempotent: true,
     body: {
       boothId: BOOTH_ID,
-      buyer: { studentNumber: "900001" },
+      buyer: { paymentCode: "fp1-sweep-student" },
       items: [{ itemId: "x", qty: 1 }],
     },
   },
@@ -402,9 +402,11 @@ beforeAll(async () => {
 
 afterAll(async () => {
   const db = getAdminFirestore();
-  await db.recursiveDelete(db.collection("users"));
-  await db.recursiveDelete(db.collection("booths"));
-  await db.recursiveDelete(db.collection("rateLimits"));
+  await Promise.all(
+    ["users", "booths", "rateLimits", "ledger", "idempotency", "auditLog"].map((name) =>
+      db.recursiveDelete(db.collection(name)),
+    ),
+  );
   await getAdminAuth().deleteUsers(FIXTURES.map((f) => f.uid));
   vi.restoreAllMocks();
 });
@@ -559,5 +561,37 @@ describe("IDOR sweep", () => {
     );
     expect(res.status).toBe(403);
     expect(await errorCode(res)).toBe("FORBIDDEN");
+  });
+});
+
+describe("enumeration sweep (NFR-9, I10)", () => {
+  const BUYER_STUDENT_NUMBER = "900001";
+  const boothBuyerEndpoints = ENDPOINTS.filter((e) =>
+    ["/api/booth/lookup", "/api/booth/charge"].includes(e.path),
+  );
+
+  it.each(boothBuyerEndpoints)(
+    "$path takes a payment code only — a guessable student number is refused",
+    async (endpoint) => {
+      const body = {
+        ...(endpoint.body as Record<string, unknown>),
+        buyer: { studentNumber: BUYER_STUDENT_NUMBER },
+      };
+      const res = await call({ ...endpoint, body }, { uid: "sweep-seller" });
+      expect(res.status).toBe(400);
+      expect(await errorCode(res)).toBe("VALIDATION");
+    },
+  );
+
+  it("still serves the same calls when the buyer is identified by payment code", async () => {
+    for (const endpoint of boothBuyerEndpoints) {
+      expect((await call(endpoint, { uid: "sweep-seller" })).status).toBe(200);
+    }
+  });
+
+  it("keeps the SAC lookup on student numbers — SAC is the vetted desk", async () => {
+    const sacLookupEndpoint = ENDPOINTS.find((e) => e.path === "/api/sac/lookup")!;
+    const res = await call(sacLookupEndpoint, { uid: "sweep-member" });
+    expect(res.status).toBe(200);
   });
 });

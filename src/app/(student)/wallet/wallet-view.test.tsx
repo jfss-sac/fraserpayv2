@@ -3,7 +3,8 @@ import { expect, test } from "vitest";
 import { renderPaymentQrSvg } from "@/lib/server/qr";
 import { WalletView, type WalletHistoryItem } from "./wallet-view";
 
-const QR = renderPaymentQrSvg("fp1-ABCDEFGHJKMNPQRSTVWXYZ0123");
+const PAYMENT_CODE = "fp1-ABCDEFGHJKMNPQRSTVWXYZ0123";
+const QR = renderPaymentQrSvg(PAYMENT_CODE);
 
 const purchase: WalletHistoryItem = {
   id: "e-purchase",
@@ -32,6 +33,7 @@ const topup: WalletHistoryItem = {
 function baseProps(history: WalletHistoryItem[] = []) {
   return {
     qrSvg: QR,
+    paymentCode: PAYMENT_CODE,
     studentNumber: "800123",
     balanceCents: 1250,
     points: 100,
@@ -48,6 +50,11 @@ test("renders the QR SVG, balance, points, and student number", () => {
   expect(screen.getByText("$12.50")).toBeInTheDocument();
   expect(screen.getByText("100")).toBeInTheDocument();
   expect(screen.getByText("#800123")).toBeInTheDocument();
+});
+
+test("shows the payment code as text so a booth can key it in when the camera fails", () => {
+  render(<WalletView {...baseProps()} />);
+  expect(screen.getByText(PAYMENT_CODE)).toBeInTheDocument();
 });
 
 test("omits the student number row for teacher-pattern accounts", () => {

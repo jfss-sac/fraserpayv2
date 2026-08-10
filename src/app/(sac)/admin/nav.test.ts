@@ -5,7 +5,7 @@ const MEMBER = { sacMember: true, sacExec: false };
 const EXEC = { sacMember: false, sacExec: true };
 
 describe("ADMIN_NAV config (arch §7)", () => {
-  test("lists the six admin sections in roadmap order", () => {
+  test("lists the seven admin sections in roadmap order", () => {
     expect(ADMIN_NAV.map((i) => i.label)).toEqual([
       "Feed",
       "Top-up",
@@ -13,6 +13,7 @@ describe("ADMIN_NAV config (arch §7)", () => {
       "Booths",
       "Reports",
       "Reconciliation",
+      "Activity",
     ]);
   });
 

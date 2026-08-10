@@ -8,7 +8,12 @@ import {
   buildIdempotencyContext,
 } from "./idempotency";
 import { logger } from "./logger";
-import { type RateLimitScope, checkRateLimit } from "./ratelimit";
+import {
+  type RateLimitScope,
+  type RateLimitTicket,
+  checkRateLimit,
+  releaseRateLimit,
+} from "./ratelimit";
 
 export type { Role, Session };
 export type HandlerSession = Session;
@@ -97,11 +102,11 @@ async function parseInput(request: Request, schema: z.ZodType | undefined): Prom
 async function enforceRateLimit(
   scope: RateLimitScope | undefined,
   session: Session | null,
-): Promise<void> {
-  if (!scope) return;
+): Promise<RateLimitTicket | null> {
+  if (!scope) return null;
   const key = session?.uid;
   if (!key) throw new InternalError();
-  await checkRateLimit(scope, key);
+  return await checkRateLimit(scope, key);
 }
 
 function ledgerEntryId(result: HandlerResult): string | undefined {
@@ -148,7 +153,7 @@ export function defineHandler<
       );
       actorUid = session?.uid;
 
-      await enforceRateLimit(config.rateLimit, session);
+      const rateLimitTicket = await enforceRateLimit(config.rateLimit, session);
 
       const input = (await parseInput(request, config.schema)) as HandlerInput<S>;
 
@@ -164,6 +169,7 @@ export function defineHandler<
       }
 
       const result = await fn({ input, params, session, requestId, request, idempotency });
+      if (idempotency?.replayed) await releaseRateLimit(rateLimitTicket);
       const response = toResponse(result);
       response.headers.set("x-request-id", requestId);
       if (idempotency?.replayed) response.headers.set(IDEMPOTENT_REPLAY_HEADER, "true");

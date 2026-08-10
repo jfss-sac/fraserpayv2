@@ -98,7 +98,11 @@ export interface IdempotencyDoc {
 
 export interface RateLimitDoc {
   count: number;
+  scope: string;
+  uid: string;
+  windowStart: Timestamp;
   expiresAt: Timestamp;
+  refunds?: number;
 }
 
 function pruneUndefined<T extends DocumentData>(model: T): DocumentData {

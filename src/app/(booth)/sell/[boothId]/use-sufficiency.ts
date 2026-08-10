@@ -1,20 +1,46 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { LookupResult, RecentPurchase } from "@/lib/shared/types";
 import type { BuyerId } from "@/lib/ui/scanner";
 
 export const LOOKUP_DEBOUNCE_MS = 300;
+export const LOOKUP_RETRY_DELAYS_MS = [400, 1200, 3000];
+
+const SETTLED_LOOKUP_CODES = new Set([
+  "NOT_FOUND",
+  "SUSPENDED",
+  "FORBIDDEN",
+  "UNAUTHORIZED",
+  "VALIDATION",
+]);
+
+export function isRetryableLookupCode(code: string): boolean {
+  return !SETTLED_LOOKUP_CODES.has(code);
+}
 
 export interface ObservedPurchase extends RecentPurchase {
   observedAt: number;
 }
 
+interface ReadyLookup {
+  status: "ready";
+  name: string;
+  balanceCents: number;
+  lastPurchase: ObservedPurchase | null;
+}
+
+interface LookupFailure {
+  status: "error";
+  code: string;
+  retryable: boolean;
+}
+
 export type SufficiencyState =
   | { status: "idle" }
   | { status: "checking"; name: string | null }
-  | { status: "ready"; name: string; sufficient: boolean; lastPurchase: ObservedPurchase | null }
-  | { status: "error"; code: string };
+  | (ReadyLookup & { sufficient: boolean })
+  | LookupFailure;
 
 export class LookupError extends Error {
   constructor(readonly code: string) {
@@ -26,7 +52,6 @@ export class LookupError extends Error {
 export async function requestLookup(input: {
   boothId: string;
   buyer: BuyerId;
-  cartTotalCents: number;
 }): Promise<LookupResult> {
   const res = await fetch("/api/booth/lookup", {
     method: "POST",
@@ -48,8 +73,9 @@ export async function requestLookup(input: {
 interface Resolved {
   key: string;
   buyer: BuyerId;
+  attempt: number;
   name: string | null;
-  state: Extract<SufficiencyState, { status: "ready" | "error" }>;
+  state: ReadyLookup | LookupFailure;
 }
 
 export function useSufficiency(args: {
@@ -57,12 +83,15 @@ export function useSufficiency(args: {
   buyer: BuyerId | null;
   cartTotalCents: number;
   debounceMs?: number;
-}): SufficiencyState {
+}): { state: SufficiencyState; refresh: () => void } {
   const { boothId, buyer, cartTotalCents, debounceMs = LOOKUP_DEBOUNCE_MS } = args;
   const [resolved, setResolved] = useState<Resolved | null>(null);
+  const [attempt, setAttempt] = useState(0);
   const seqRef = useRef(0);
 
-  const key = buyer ? `${boothId}|${JSON.stringify(buyer)}|${cartTotalCents}` : null;
+  const key = buyer ? `${boothId}|${JSON.stringify(buyer)}` : null;
+
+  const refresh = useCallback(() => setAttempt((n) => n + 1), []);
 
   useEffect(() => {
     if (!buyer || key === null) {
@@ -70,42 +99,67 @@ export function useSufficiency(args: {
       return;
     }
     const seq = (seqRef.current += 1);
-    const timer = setTimeout(() => {
-      requestLookup({ boothId, buyer, cartTotalCents })
-        .then((result) => {
-          if (seq !== seqRef.current) return;
-          setResolved({
-            key,
-            buyer,
-            name: result.name,
-            state: {
-              status: "ready",
-              name: result.name,
-              sufficient: result.sufficient,
-              lastPurchase: result.lastPurchase && {
-                ...result.lastPurchase,
-                observedAt: Date.now(),
-              },
-            },
-          });
-        })
-        .catch((err) => {
-          if (seq !== seqRef.current) return;
-          setResolved({
-            key,
-            buyer,
-            name: null,
-            state: {
-              status: "error",
-              code: err instanceof LookupError ? err.code : "INTERNAL",
-            },
-          });
-        });
-    }, debounceMs);
-    return () => clearTimeout(timer);
-  }, [boothId, buyer, cartTotalCents, debounceMs, key]);
+    let timer: ReturnType<typeof setTimeout>;
 
-  if (!buyer) return { status: "idle" };
-  if (resolved && resolved.key === key && resolved.buyer === buyer) return resolved.state;
-  return { status: "checking", name: resolved && resolved.buyer === buyer ? resolved.name : null };
+    const attemptLookup = (tries: number) => {
+      const delayMs = tries === 0 ? debounceMs : (LOOKUP_RETRY_DELAYS_MS[tries - 1] ?? 0);
+      timer = setTimeout(() => {
+        requestLookup({ boothId, buyer })
+          .then((result) => {
+            if (seq !== seqRef.current) return;
+            setResolved({
+              key,
+              buyer,
+              attempt,
+              name: result.name,
+              state: {
+                status: "ready",
+                name: result.name,
+                balanceCents: result.balanceCents,
+                lastPurchase: result.lastPurchase && {
+                  ...result.lastPurchase,
+                  observedAt: Date.now(),
+                },
+              },
+            });
+          })
+          .catch((err) => {
+            if (seq !== seqRef.current) return;
+            const code = err instanceof LookupError ? err.code : "NETWORK";
+            const retryable = isRetryableLookupCode(code);
+            if (retryable && tries < LOOKUP_RETRY_DELAYS_MS.length) {
+              attemptLookup(tries + 1);
+              return;
+            }
+            setResolved({
+              key,
+              buyer,
+              attempt,
+              name: null,
+              state: { status: "error", code, retryable },
+            });
+          });
+      }, delayMs);
+    };
+
+    attemptLookup(0);
+    return () => {
+      seqRef.current += 1;
+      clearTimeout(timer);
+    };
+  }, [attempt, boothId, buyer, debounceMs, key]);
+
+  if (!buyer) return { state: { status: "idle" }, refresh };
+  const current = resolved?.buyer === buyer ? resolved : null;
+  if (current && current.key === key && current.attempt === attempt) {
+    const state =
+      current.state.status === "ready"
+        ? { ...current.state, sufficient: current.state.balanceCents >= cartTotalCents }
+        : current.state;
+    return { state, refresh };
+  }
+  return {
+    state: { status: "checking", name: current?.name ?? null },
+    refresh,
+  };
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { FeedEntry, LedgerType } from "@/lib/shared/types";
+import type { FeedEntry, LedgerType, RepeatBuyerAlert } from "@/lib/shared/types";
 import { type FeedQueryParams, FeedApiError, feedErrorMessage, requestFeed } from "./api";
 
 export const FEED_POLL_MS = 60_000;
@@ -49,6 +49,7 @@ function codeOf(err: unknown): string {
 
 export interface UseFeed {
   entries: FeedEntry[];
+  repeatBuyers: RepeatBuyerAlert[];
   filter: FeedFilter;
   pending: FeedEntry[];
   cursor: string | null;
@@ -65,13 +66,16 @@ export interface UseFeed {
 export function useFeed({
   initialEntries,
   initialCursor,
+  initialRepeatBuyers = [],
   pollMs = FEED_POLL_MS,
 }: {
   initialEntries: FeedEntry[];
   initialCursor: string | null;
+  initialRepeatBuyers?: RepeatBuyerAlert[];
   pollMs?: number;
 }): UseFeed {
   const [entries, setEntries] = useState<FeedEntry[]>(initialEntries);
+  const [repeatBuyers, setRepeatBuyers] = useState<RepeatBuyerAlert[]>(initialRepeatBuyers);
   const [cursor, setCursor] = useState<string | null>(initialCursor);
   const [filter, setFilterState] = useState<FeedFilter>(ALL_FILTER);
   const [pending, setPending] = useState<FeedEntry[]>([]);
@@ -106,6 +110,7 @@ export function useFeed({
         if (filterSeq.current !== id) return;
         setEntries(dto.entries);
         setCursor(dto.nextCursor);
+        setRepeatBuyers(dto.repeatBuyers);
         setLoading(false);
       })
       .catch((err) => {
@@ -128,6 +133,7 @@ export function useFeed({
         if (!filtersEqual(filterRef.current, target)) return;
         const fresh = newSince(entriesRef.current, dto.entries);
         if (fresh.length > 0) setEntries((prev) => [...fresh, ...prev]);
+        setRepeatBuyers(dto.repeatBuyers);
         setPending([]);
       })
       .catch((err) => {
@@ -171,6 +177,7 @@ export function useFeed({
         .then((dto) => {
           if (!filtersEqual(filterRef.current, target)) return;
           const fresh = newSince(entriesRef.current, dto.entries);
+          setRepeatBuyers(dto.repeatBuyers);
           if (fresh.length > 0) setPending(fresh);
         })
         .catch(() => {});
@@ -180,6 +187,7 @@ export function useFeed({
 
   return {
     entries,
+    repeatBuyers,
     filter,
     pending,
     cursor,

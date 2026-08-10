@@ -98,23 +98,26 @@ function nextKey(): string {
 }
 
 let buyerSeq = 0;
-async function freshBuyer(balanceCents: number): Promise<{ uid: string; studentNumber: string }> {
+async function freshBuyer(
+  balanceCents: number,
+): Promise<{ uid: string; studentNumber: string; paymentCode: string }> {
   buyerSeq += 1;
   const uid = `summary-buyer-${buyerSeq}`;
   const studentNumber = `9300${buyerSeq.toString().padStart(2, "0")}`;
+  const paymentCode = `fp1-SBY${buyerSeq.toString().padStart(3, "0")}`;
   await makeUser({
     uid,
     displayName: `Buyer ${buyerSeq}`,
     studentNumber,
-    paymentCode: `fp1-SBY${buyerSeq.toString().padStart(3, "0")}`,
+    paymentCode,
     balanceCents,
   });
-  return { uid, studentNumber };
+  return { uid, studentNumber, paymentCode };
 }
 
 async function charge(
   boothId: string,
-  studentNumber: string,
+  paymentCode: string,
   items: { itemId: string; qty: number }[],
 ): Promise<ChargeResult> {
   const request = new Request(`${ORIGIN}/api/booth/charge`, {
@@ -125,7 +128,7 @@ async function charge(
       cookie: `${SESSION_COOKIE_NAME}=${cookies[OPERATOR.uid]}`,
       "idempotency-key": nextKey(),
     },
-    body: JSON.stringify({ boothId, buyer: { studentNumber }, items }),
+    body: JSON.stringify({ boothId, buyer: { paymentCode }, items }),
   });
   const res = await chargeRoute(request);
   if (res.status !== 200) throw new Error(`charge failed: ${res.status} ${await res.text()}`);
@@ -206,15 +209,15 @@ beforeAll(async () => {
   const buyer2 = await freshBuyer(2000);
   const buyer3 = await freshBuyer(2000);
 
-  const purchase1 = await charge(BOOTH_ID, buyer1.studentNumber, [
+  const purchase1 = await charge(BOOTH_ID, buyer1.paymentCode, [
     { itemId: "coffee", qty: 2 },
     { itemId: "cookie", qty: 1 },
   ]);
-  await charge(BOOTH_ID, buyer2.studentNumber, [
+  await charge(BOOTH_ID, buyer2.paymentCode, [
     { itemId: "coffee", qty: 1 },
     { itemId: "custom", qty: 3 },
   ]);
-  await charge(OTHER_BOOTH_ID, buyer3.studentNumber, [{ itemId: "coffee", qty: 4 }]);
+  await charge(OTHER_BOOTH_ID, buyer3.paymentCode, [{ itemId: "coffee", qty: 4 }]);
 
   await refund(purchase1.entryId, [{ itemId: "coffee", qty: 1 }]);
 });

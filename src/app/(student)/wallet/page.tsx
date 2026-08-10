@@ -51,6 +51,7 @@ export default async function WalletPage() {
     <>
       <WalletView
         qrSvg={qrSvg}
+        paymentCode={user.paymentCode}
         studentNumber={user.studentNumber}
         balanceCents={user.balanceCents}
         points={user.points}

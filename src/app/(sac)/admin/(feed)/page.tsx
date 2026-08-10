@@ -16,5 +16,11 @@ export default async function FeedPage() {
 
   const feed = await getFeed({});
 
-  return <FeedView initialEntries={feed.entries} initialCursor={feed.nextCursor} />;
+  return (
+    <FeedView
+      initialEntries={feed.entries}
+      initialCursor={feed.nextCursor}
+      initialRepeatBuyers={feed.repeatBuyers}
+    />
+  );
 }

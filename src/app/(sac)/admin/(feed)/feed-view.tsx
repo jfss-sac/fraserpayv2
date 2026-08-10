@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import type { FeedEntry } from "@/lib/shared/types";
+import type { FeedEntry, RepeatBuyerAlert } from "@/lib/shared/types";
 import { Button } from "@/lib/ui/vendor/button";
 import { cn } from "@/lib/ui/vendor/utils";
+import { REPEAT_BUYER_WINDOW_MS } from "@/lib/shared/constants";
 import { FeedRow, type RowActions } from "./feed-row";
 import { ALL_FILTER, type FeedFilter, filtersEqual, useFeed } from "./use-feed";
 
@@ -33,16 +34,37 @@ function ActiveFilterPill({ filter, onClear }: { filter: FeedFilter; onClear: ()
   );
 }
 
+function RepeatBuyerBanner({ buyers }: { buyers: RepeatBuyerAlert[] }) {
+  if (buyers.length === 0) return null;
+  return (
+    <section
+      aria-label="Repeat charge alerts"
+      className="flex flex-col gap-1 rounded-md border border-danger/40 bg-danger/5 p-3"
+    >
+      <p className="text-sm font-semibold text-foreground">
+        Charged unusually often in the last {REPEAT_BUYER_WINDOW_MS / 60_000} minutes
+      </p>
+      {buyers.map((buyer) => (
+        <p key={buyer.studentUid} className="text-sm text-muted">
+          {buyer.studentName} — {buyer.charges} charges
+        </p>
+      ))}
+    </section>
+  );
+}
+
 export function FeedView({
   initialEntries,
   initialCursor,
+  initialRepeatBuyers,
   pollMs,
 }: {
   initialEntries: FeedEntry[];
   initialCursor: string | null;
+  initialRepeatBuyers?: RepeatBuyerAlert[];
   pollMs?: number;
 }) {
-  const feed = useFeed({ initialEntries, initialCursor, pollMs });
+  const feed = useFeed({ initialEntries, initialCursor, initialRepeatBuyers, pollMs });
   const actions: RowActions = {
     onFilterBooth: (boothId, boothName) => feed.setFilter({ kind: "booth", boothId, boothName }),
     onFilterActor: (actorUid, actorName) => feed.setFilter({ kind: "actor", actorUid, actorName }),
@@ -100,6 +122,8 @@ export function FeedView({
           );
         })}
       </div>
+
+      <RepeatBuyerBanner buyers={feed.repeatBuyers} />
 
       <ActiveFilterPill filter={feed.filter} onClear={() => feed.setFilter(ALL_FILTER)} />
 

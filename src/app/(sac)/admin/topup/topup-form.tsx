@@ -190,7 +190,7 @@ export function TopUpForm({ isExec }: { isExec: boolean }) {
       {state.status === "success" ? (
         <SuccessPanel result={state.result} name={student?.name ?? null} onReset={reset} />
       ) : stage === "identify" ? (
-        <Scanner onIdentify={handleIdentify} />
+        <Scanner onIdentify={handleIdentify} manualEntry="studentNumber" />
       ) : stage === "looking-up" ? (
         <p role="status" className="text-base text-muted">
           Looking up student…

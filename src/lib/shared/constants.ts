@@ -17,3 +17,9 @@ export const SESSION_COOKIE_NAME = "__session";
 export const TIMEZONE = "America/Toronto";
 
 export const SCHOOL_DOMAIN = "pdsb.net";
+
+export const BOOTH_STUDENT_NUMBER_ENABLED = false;
+
+export const REPEAT_BUYER_WINDOW_MS = 10 * 60_000;
+
+export const REPEAT_BUYER_THRESHOLD = 10;

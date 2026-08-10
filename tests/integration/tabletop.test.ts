@@ -273,7 +273,7 @@ describe("Tabletop — full event hour", () => {
       uid: AVA.uid,
       body: {
         boothId: PIZZA,
-        buyer: { studentNumber: BEN.num },
+        buyer: { paymentCode: `fp1-${BEN.uid}` },
         items: [
           { itemId: "pie", qty: 1 },
           { itemId: "slice", qty: 1 },
@@ -293,7 +293,7 @@ describe("Tabletop — full event hour", () => {
           uid: AVA.uid,
           body: {
             boothId: PIZZA,
-            buyer: { studentNumber: BEN.num },
+            buyer: { paymentCode: `fp1-${BEN.uid}` },
             items: [{ itemId: "pie", qty: 1 }],
           },
           idem: true,
@@ -351,7 +351,7 @@ describe("Tabletop — full event hour", () => {
           uid: AVA.uid,
           body: {
             boothId: PIZZA,
-            buyer: { studentNumber: CHLOE.num },
+            buyer: { paymentCode: "fp1-CHLOE-OLD" },
             items: [{ itemId: "slice", qty: 1 }],
           },
           idem: true,

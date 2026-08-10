@@ -7,12 +7,12 @@ import { type IdempotencyContext, runIdempotent } from "../idempotency";
 import { isHighAmount } from "@/lib/shared/money";
 import type { ChargeResult, LedgerLineItem } from "@/lib/shared/types";
 import { assertNonNegative } from "./invariants";
-import { buyerSchema, readActiveBuyer, resolveBuyerUid, torontoDate } from "./shared";
+import { boothBuyerSchema, readActiveBuyer, resolveBuyerUid, torontoDate } from "./shared";
 
 export const chargeSchema = z
   .object({
     boothId: z.string().trim().min(1),
-    buyer: buyerSchema,
+    buyer: boothBuyerSchema,
     items: z
       .array(
         z.object({ itemId: z.string().trim().min(1), qty: z.number().int().positive() }).strict(),

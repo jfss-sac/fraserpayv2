@@ -10,8 +10,11 @@ import {
   usersCol,
 } from "../../src/lib/server/db";
 import { getAdminAuth, getAdminFirestore } from "../../src/lib/server/firebase-admin";
+import { RATE_LIMITS } from "../../src/lib/server/ratelimit";
 import { SESSION_COOKIE_NAME, SESSION_TTL_MS } from "../../src/lib/shared/constants";
 import type { BoothItem, LedgerType, LookupResult } from "../../src/lib/shared/types";
+
+const RATE_LIMIT_SWEEP_TIMEOUT_MS = 60_000;
 
 const ORIGIN = "http://127.0.0.1";
 const ENDPOINT = "/api/booth/lookup";
@@ -185,23 +188,24 @@ afterAll(async () => {
 });
 
 describe("POST /api/booth/lookup", () => {
-  it("returns exactly name + sufficient + lastPurchase — no balance or other field leaks (I10)", async () => {
+  it("returns exactly name + balanceCents + lastPurchase — no other field leaks (I10)", async () => {
     const buyer = await freshBuyer(2000);
     const res = await lookupRoute(
       post(OPERATOR.uid, {
         boothId: BOOTH_ID,
-        buyer: { studentNumber: buyer.studentNumber },
-        cartTotalCents: 500,
+        buyer: { paymentCode: buyer.paymentCode },
       }),
     );
     expect(res.status).toBe(200);
     const text = await res.text();
     const body = JSON.parse(text) as LookupResult;
-    expect(body).toEqual({ name: buyer.displayName, sufficient: true, lastPurchase: null });
-    expect(Object.keys(body).sort()).toEqual(["lastPurchase", "name", "sufficient"]);
-    expect(text).not.toContain("balance");
+    expect(body).toEqual({ name: buyer.displayName, balanceCents: 2000, lastPurchase: null });
+    expect(Object.keys(body).sort()).toEqual(["balanceCents", "lastPurchase", "name"]);
     expect(text).not.toContain("studentNumber");
     expect(text).not.toContain("paymentCode");
+    expect(text).not.toContain("points");
+    expect(text).not.toContain("email");
+    expect(text).not.toContain("suspended");
   });
 
   it("looks a buyer up by payment code", async () => {
@@ -210,65 +214,71 @@ describe("POST /api/booth/lookup", () => {
       post(OPERATOR.uid, {
         boothId: BOOTH_ID,
         buyer: { paymentCode: buyer.paymentCode },
-        cartTotalCents: 100,
       }),
     );
     expect(res.status).toBe(200);
     expect((await res.json()) as LookupResult).toEqual({
       name: buyer.displayName,
-      sufficient: true,
+      balanceCents: 2000,
       lastPurchase: null,
     });
   });
 
-  it("flips sufficiency exactly at the balance boundary", async () => {
-    const buyer = await freshBuyer(1000);
-
-    const exact = (await (
-      await lookupRoute(
-        post(OPERATOR.uid, {
-          boothId: BOOTH_ID,
-          buyer: { studentNumber: buyer.studentNumber },
-          cartTotalCents: 1000,
-        }),
-      )
-    ).json()) as LookupResult;
-    expect(exact.sufficient).toBe(true);
-
-    const over = (await (
-      await lookupRoute(
-        post(OPERATOR.uid, {
-          boothId: BOOTH_ID,
-          buyer: { studentNumber: buyer.studentNumber },
-          cartTotalCents: 1050,
-        }),
-      )
-    ).json()) as LookupResult;
-    expect(over.sufficient).toBe(false);
-  });
-
-  it("reports sufficient for an empty cart", async () => {
+  it("reports a zero balance rather than omitting it", async () => {
     const buyer = await freshBuyer(0);
     const res = await lookupRoute(
       post(OPERATOR.uid, {
         boothId: BOOTH_ID,
-        buyer: { studentNumber: buyer.studentNumber },
-        cartTotalCents: 0,
+        buyer: { paymentCode: buyer.paymentCode },
       }),
     );
     expect((await res.json()) as LookupResult).toEqual({
       name: buyer.displayName,
-      sufficient: true,
+      balanceCents: 0,
       lastPurchase: null,
     });
+  });
+
+  it("refuses a student-number buyer — the balance is not walkable (NFR-9, I10)", async () => {
+    const buyer = await freshBuyer(2000);
+    const res = await lookupRoute(
+      post(OPERATOR.uid, {
+        boothId: BOOTH_ID,
+        buyer: { studentNumber: buyer.studentNumber },
+      }),
+    );
+    const text = await res.text();
+    expect(res.status).toBe(400);
+    expect((JSON.parse(text) as { error: { code: string } }).error.code).toBe("VALIDATION");
+    expect(text).not.toContain(buyer.displayName);
+  });
+
+  it("refuses a student number that matches nobody with the same VALIDATION", async () => {
+    const res = await lookupRoute(
+      post(OPERATOR.uid, { boothId: BOOTH_ID, buyer: { studentNumber: "999999999" } }),
+    );
+    expect(res.status).toBe(400);
+    expect(await errorCode(res)).toBe("VALIDATION");
+  });
+
+  it("no longer accepts a cart total — sufficiency is the client's to compute", async () => {
+    const buyer = await freshBuyer(2000);
+    const res = await lookupRoute(
+      post(OPERATOR.uid, {
+        boothId: BOOTH_ID,
+        buyer: { paymentCode: buyer.paymentCode },
+        cartTotalCents: 500,
+      }),
+    );
+    expect(res.status).toBe(400);
+    expect(await errorCode(res)).toBe("VALIDATION");
   });
 
   it("returns a generic NOT_FOUND for an unknown buyer", async () => {
     const res = await lookupRoute(
       post(OPERATOR.uid, {
         boothId: BOOTH_ID,
-        buyer: { studentNumber: "999999999" },
-        cartTotalCents: 100,
+        buyer: { paymentCode: "fp1-NOSUCHBUYER" },
       }),
     );
     expect(res.status).toBe(404);
@@ -280,8 +290,7 @@ describe("POST /api/booth/lookup", () => {
     const res = await lookupRoute(
       post(OPERATOR.uid, {
         boothId: BOOTH_ID,
-        buyer: { studentNumber: buyer.studentNumber },
-        cartTotalCents: 100,
+        buyer: { paymentCode: buyer.paymentCode },
       }),
     );
     expect(res.status).toBe(403);
@@ -293,8 +302,7 @@ describe("POST /api/booth/lookup", () => {
     const res = await lookupRoute(
       post(OUTSIDER.uid, {
         boothId: BOOTH_ID,
-        buyer: { studentNumber: buyer.studentNumber },
-        cartTotalCents: 100,
+        buyer: { paymentCode: buyer.paymentCode },
       }),
     );
     expect(res.status).toBe(403);
@@ -306,9 +314,8 @@ describe("POST /api/booth/lookup", () => {
     const res = await lookupRoute(
       post(OPERATOR.uid, {
         boothId: BOOTH_ID,
-        buyer: { studentNumber: buyer.studentNumber },
-        cartTotalCents: 100,
-        wantBalance: true,
+        buyer: { paymentCode: buyer.paymentCode },
+        wantPoints: true,
       }),
     );
     expect(res.status).toBe(400);
@@ -319,8 +326,7 @@ describe("POST /api/booth/lookup", () => {
     const buyer = await freshBuyer(2000);
     const requestBody = {
       boothId: BOOTH_ID,
-      buyer: { studentNumber: buyer.studentNumber },
-      cartTotalCents: 1250,
+      buyer: { paymentCode: buyer.paymentCode },
     };
     const requestBytes = Buffer.byteLength(JSON.stringify(requestBody), "utf8");
     const res = await lookupRoute(post(OPERATOR.uid, requestBody));
@@ -347,8 +353,7 @@ describe("POST /api/booth/lookup", () => {
     const res = await lookupRoute(
       post(OPERATOR.uid, {
         boothId: BOOTH_ID,
-        buyer: { studentNumber: buyer.studentNumber },
-        cartTotalCents: 100,
+        buyer: { paymentCode: buyer.paymentCode },
       }),
     );
     const body = (await res.json()) as LookupResult;
@@ -371,8 +376,7 @@ describe("POST /api/booth/lookup", () => {
     const res = await lookupRoute(
       post(OPERATOR.uid, {
         boothId: BOOTH_ID,
-        buyer: { studentNumber: buyer.studentNumber },
-        cartTotalCents: 100,
+        buyer: { paymentCode: buyer.paymentCode },
       }),
     );
     const lastPurchase = ((await res.json()) as LookupResult).lastPurchase;
@@ -395,8 +399,7 @@ describe("POST /api/booth/lookup", () => {
     const res = await lookupRoute(
       post(OPERATOR.uid, {
         boothId: BOOTH_ID,
-        buyer: { studentNumber: buyer.studentNumber },
-        cartTotalCents: 100,
+        buyer: { paymentCode: buyer.paymentCode },
       }),
     );
     expect(((await res.json()) as LookupResult).lastPurchase).toBeNull();
@@ -416,8 +419,7 @@ describe("POST /api/booth/lookup", () => {
     const res = await lookupRoute(
       post(OPERATOR.uid, {
         boothId: BOOTH_ID,
-        buyer: { studentNumber: buyer.studentNumber },
-        cartTotalCents: 100,
+        buyer: { paymentCode: buyer.paymentCode },
       }),
     );
     expect(((await res.json()) as LookupResult).lastPurchase).toBeNull();
@@ -437,8 +439,7 @@ describe("POST /api/booth/lookup", () => {
     const res = await lookupRoute(
       post(OPERATOR.uid, {
         boothId: BOOTH_ID,
-        buyer: { studentNumber: buyer.studentNumber },
-        cartTotalCents: 100,
+        buyer: { paymentCode: buyer.paymentCode },
       }),
     );
     expect(((await res.json()) as LookupResult).lastPurchase).toBeNull();
@@ -467,8 +468,7 @@ describe("POST /api/booth/lookup", () => {
     const res = await lookupRoute(
       post(OPERATOR.uid, {
         boothId: BOOTH_ID,
-        buyer: { studentNumber: buyer.studentNumber },
-        cartTotalCents: 100,
+        buyer: { paymentCode: buyer.paymentCode },
       }),
     );
     expect(((await res.json()) as LookupResult).lastPurchase).toBeNull();
@@ -497,8 +497,7 @@ describe("POST /api/booth/lookup", () => {
     const res = await lookupRoute(
       post(OPERATOR.uid, {
         boothId: BOOTH_ID,
-        buyer: { studentNumber: buyer.studentNumber },
-        cartTotalCents: 100,
+        buyer: { paymentCode: buyer.paymentCode },
       }),
     );
     expect(((await res.json()) as LookupResult).lastPurchase?.amountCents).toBe(450);
@@ -530,8 +529,7 @@ describe("POST /api/booth/lookup", () => {
     const res = await lookupRoute(
       post(OPERATOR.uid, {
         boothId: BOOTH_ID,
-        buyer: { studentNumber: buyer.studentNumber },
-        cartTotalCents: 100,
+        buyer: { paymentCode: buyer.paymentCode },
       }),
     );
     expect(((await res.json()) as LookupResult).lastPurchase?.amountCents).toBe(450);
@@ -563,25 +561,28 @@ describe("POST /api/booth/lookup", () => {
     const res = await lookupRoute(
       post(OPERATOR.uid, {
         boothId: BOOTH_ID,
-        buyer: { studentNumber: buyer.studentNumber },
-        cartTotalCents: 100,
+        buyer: { paymentCode: buyer.paymentCode },
       }),
     );
     expect(((await res.json()) as LookupResult).lastPurchase?.amountCents).toBe(450);
   });
 
-  it("rate-limits an operator past 30 lookups per minute", async () => {
-    const buyer = await freshBuyer(2000);
-    const body = {
-      boothId: BOOTH_ID,
-      buyer: { studentNumber: buyer.studentNumber },
-      cartTotalCents: 100,
-    };
-    const codes: number[] = [];
-    for (let i = 0; i < 31; i += 1) {
-      codes.push((await lookupRoute(post(RL_OPERATOR.uid, body))).status);
-    }
-    expect(codes.slice(0, 30).every((s) => s === 200)).toBe(true);
-    expect(codes[30]).toBe(429);
-  });
+  it(
+    "rate-limits an operator past the per-minute lookup cap",
+    async () => {
+      const buyer = await freshBuyer(2000);
+      const body = {
+        boothId: BOOTH_ID,
+        buyer: { paymentCode: buyer.paymentCode },
+      };
+      const { limit } = RATE_LIMITS.lookup;
+      const codes: number[] = [];
+      for (let i = 0; i < limit + 1; i += 1) {
+        codes.push((await lookupRoute(post(RL_OPERATOR.uid, body))).status);
+      }
+      expect(codes.slice(0, limit).every((s) => s === 200)).toBe(true);
+      expect(codes[limit]).toBe(429);
+    },
+    RATE_LIMIT_SWEEP_TIMEOUT_MS,
+  );
 });

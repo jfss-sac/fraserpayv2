@@ -4,6 +4,7 @@ import { POST as joinRoute } from "../../src/app/api/booths/join/route";
 import { authorizeRequest, listMemberBooths } from "../../src/lib/server/dal";
 import { boothsCol, membersCol, usersCol } from "../../src/lib/server/db";
 import { getAdminAuth, getAdminFirestore } from "../../src/lib/server/firebase-admin";
+import { RATE_LIMITS } from "../../src/lib/server/ratelimit";
 import { SESSION_COOKIE_NAME, SESSION_TTL_MS } from "../../src/lib/shared/constants";
 import type { BoothItem } from "../../src/lib/shared/types";
 
@@ -217,7 +218,7 @@ describe("POST /api/booths/join", () => {
     await makeUser({ uid: "join-rl", displayName: "Rae Limit" });
     await makeBooth({ name: "Limit Booth", status: "approved", joinCode: "LIMI-6K8D5" });
 
-    const limit = 10;
+    const { limit } = RATE_LIMITS.join;
     for (let i = 0; i < limit; i += 1) {
       expect((await joinRoute(joinRequest("join-rl", { code: "LIMI-6K8D5" }))).status).toBe(200);
     }

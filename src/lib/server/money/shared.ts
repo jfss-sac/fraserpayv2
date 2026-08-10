@@ -4,7 +4,7 @@ import { z } from "zod";
 import { type UserDoc, usersCol } from "../db";
 import { NotFoundError, SuspendedError } from "../errors";
 import { requireUser } from "./invariants";
-import { TIMEZONE } from "@/lib/shared/constants";
+import { BOOTH_STUDENT_NUMBER_ENABLED, TIMEZONE } from "@/lib/shared/constants";
 
 export const buyerSchema = z
   .union([
@@ -21,6 +21,11 @@ export const buyerSchema = z
   .describe("buyer");
 
 export type BuyerRef = z.infer<typeof buyerSchema>;
+
+export const boothBuyerSchema = buyerSchema.refine(
+  (buyer) => BOOTH_STUDENT_NUMBER_ENABLED || "paymentCode" in buyer,
+  { message: "Scan the buyer's QR code — student numbers are not accepted here." },
+);
 
 export async function resolveBuyerUid(buyer: BuyerRef): Promise<string> {
   const query =

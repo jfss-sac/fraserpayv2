@@ -53,4 +53,10 @@ test.describe("Accessibility — SAC surfaces", () => {
     await expect(page.getByRole("heading", { name: "Pizza Palace" })).toBeVisible();
     await expectNoSeriousViolations(page);
   });
+
+  test("activity", async ({ page }) => {
+    await page.goto("/admin/activity");
+    await expect(page.getByRole("heading", { name: "Account activity" })).toBeVisible();
+    await expectNoSeriousViolations(page);
+  });
 });

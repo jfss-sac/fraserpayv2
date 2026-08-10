@@ -43,7 +43,11 @@ afterEach(() => {
 
 describe("filters and pagination", () => {
   test("changing the filter fetches with that filter and replaces the entries", async () => {
-    mockRequestFeed.mockResolvedValue({ entries: [ledger("t1")], nextCursor: null });
+    mockRequestFeed.mockResolvedValue({
+      entries: [ledger("t1")],
+      nextCursor: null,
+      repeatBuyers: [],
+    });
     const { result } = renderHook(() =>
       useFeed({ initialEntries: [ledger("a")], initialCursor: null }),
     );
@@ -71,7 +75,11 @@ describe("filters and pagination", () => {
   });
 
   test("loadOlder appends the next page and advances the cursor", async () => {
-    mockRequestFeed.mockResolvedValue({ entries: [ledger("b")], nextCursor: "c2" });
+    mockRequestFeed.mockResolvedValue({
+      entries: [ledger("b")],
+      nextCursor: "c2",
+      repeatBuyers: [],
+    });
     const { result } = renderHook(() =>
       useFeed({ initialEntries: [ledger("a")], initialCursor: "c1" }),
     );
@@ -105,6 +113,7 @@ describe("filters and pagination", () => {
     mockRequestFeed.mockResolvedValue({
       entries: [ledger("b"), ledger("a")],
       nextCursor: null,
+      repeatBuyers: [],
     });
     const { result } = renderHook(() =>
       useFeed({ initialEntries: [ledger("a")], initialCursor: null }),
@@ -143,11 +152,15 @@ describe("interleaved requests", () => {
       result.current.refresh();
     });
 
-    refreshReq.resolve({ entries: [ledger("t2"), ledger("t1")], nextCursor: null });
+    refreshReq.resolve({
+      entries: [ledger("t2"), ledger("t1")],
+      nextCursor: null,
+      repeatBuyers: [],
+    });
     await flush();
     expect(result.current.refreshing).toBe(false);
 
-    filterReq.resolve({ entries: [ledger("t1")], nextCursor: null });
+    filterReq.resolve({ entries: [ledger("t1")], nextCursor: null, repeatBuyers: [] });
     await flush();
 
     expect(result.current.loading).toBe(false);
@@ -158,7 +171,7 @@ describe("interleaved requests", () => {
     const refreshReq = deferred();
     mockRequestFeed
       .mockReturnValueOnce(refreshReq.promise)
-      .mockResolvedValueOnce({ entries: [ledger("t1")], nextCursor: null });
+      .mockResolvedValueOnce({ entries: [ledger("t1")], nextCursor: null, repeatBuyers: [] });
     const { result } = renderHook(() =>
       useFeed({ initialEntries: [ledger("a")], initialCursor: null }),
     );
@@ -172,7 +185,7 @@ describe("interleaved requests", () => {
     await flush();
     expect(result.current.loading).toBe(false);
 
-    refreshReq.resolve({ entries: [ledger("stale")], nextCursor: null });
+    refreshReq.resolve({ entries: [ledger("stale")], nextCursor: null, repeatBuyers: [] });
     await flush();
 
     expect(result.current.refreshing).toBe(false);
@@ -183,7 +196,7 @@ describe("interleaved requests", () => {
     const olderReq = deferred();
     mockRequestFeed
       .mockReturnValueOnce(olderReq.promise)
-      .mockResolvedValueOnce({ entries: [ledger("t1")], nextCursor: null });
+      .mockResolvedValueOnce({ entries: [ledger("t1")], nextCursor: null, repeatBuyers: [] });
     const { result } = renderHook(() =>
       useFeed({ initialEntries: [ledger("a")], initialCursor: "c1" }),
     );
@@ -196,7 +209,7 @@ describe("interleaved requests", () => {
     });
     await flush();
 
-    olderReq.resolve({ entries: [ledger("old")], nextCursor: "c2" });
+    olderReq.resolve({ entries: [ledger("old")], nextCursor: "c2", repeatBuyers: [] });
     await flush();
 
     expect(result.current.loadingOlder).toBe(false);
@@ -217,6 +230,7 @@ describe("polling", () => {
     mockRequestFeed.mockResolvedValue({
       entries: [ledger("b"), ledger("a")],
       nextCursor: null,
+      repeatBuyers: [],
     });
     const { result } = renderHook(() =>
       useFeed({ initialEntries: [ledger("a")], initialCursor: null }),
@@ -241,7 +255,11 @@ describe("polling", () => {
   });
 
   test("a poll with nothing new leaves pending empty", async () => {
-    mockRequestFeed.mockResolvedValue({ entries: [ledger("a")], nextCursor: null });
+    mockRequestFeed.mockResolvedValue({
+      entries: [ledger("a")],
+      nextCursor: null,
+      repeatBuyers: [],
+    });
     const { result } = renderHook(() =>
       useFeed({ initialEntries: [ledger("a")], initialCursor: null }),
     );

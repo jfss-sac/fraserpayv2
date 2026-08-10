@@ -9,9 +9,17 @@ import {
   usersCol,
 } from "../../src/lib/server/db";
 import { getAdminAuth, getAdminFirestore } from "../../src/lib/server/firebase-admin";
-import { FEED_PAGE_SIZE } from "../../src/lib/server/sac-feed";
-import { SESSION_COOKIE_NAME, SESSION_TTL_MS } from "../../src/lib/shared/constants";
+import { FEED_PAGE_SIZE, getFeed } from "../../src/lib/server/sac-feed";
+import { RATE_LIMITS } from "../../src/lib/server/ratelimit";
+import {
+  REPEAT_BUYER_THRESHOLD,
+  REPEAT_BUYER_WINDOW_MS,
+  SESSION_COOKIE_NAME,
+  SESSION_TTL_MS,
+} from "../../src/lib/shared/constants";
 import type { FeedDTO, FeedEntry } from "../../src/lib/shared/types";
+
+const RATE_LIMIT_SWEEP_TIMEOUT_MS = 60_000;
 
 const ORIGIN = "http://127.0.0.1";
 
@@ -178,7 +186,11 @@ describe("GET /api/sac/feed — access & validation", () => {
     const res = await feedRoute(feedReq(MEMBER.uid));
     expect(res.status).toBe(200);
     expect(res.headers.get("cache-control")).toBe("no-store");
-    expect((await res.json()) as FeedDTO).toEqual({ entries: [], nextCursor: null });
+    expect((await res.json()) as FeedDTO).toEqual({
+      entries: [],
+      nextCursor: null,
+      repeatBuyers: [],
+    });
   });
 
   it("lets an exec read (exec implies member)", async () => {
@@ -374,12 +386,70 @@ describe("GET /api/sac/feed — cursor stability", () => {
 });
 
 describe("GET /api/sac/feed — rate limiting", () => {
-  it("rate-limits a member past 60 reads per minute", async () => {
-    const codes: number[] = [];
-    for (let i = 0; i < 61; i += 1) {
-      codes.push((await feedRoute(feedReq(RL.uid))).status);
+  it(
+    "rate-limits a member past the per-minute read cap",
+    async () => {
+      const { limit } = RATE_LIMITS.reads;
+      const codes: number[] = [];
+      for (let i = 0; i < limit + 1; i += 1) {
+        codes.push((await feedRoute(feedReq(RL.uid))).status);
+      }
+      expect(codes.slice(0, limit).every((s) => s === 200)).toBe(true);
+      expect(codes[limit]).toBe(429);
+    },
+    RATE_LIMIT_SWEEP_TIMEOUT_MS,
+  );
+});
+
+describe("GET /api/sac/feed — repeat-buyer alerts", () => {
+  it("flags a buyer charged to the threshold inside the window", async () => {
+    const now = BASE_MS + REPEAT_BUYER_WINDOW_MS;
+    for (let i = 0; i < REPEAT_BUYER_THRESHOLD; i += 1) {
+      await seedLedger({
+        studentUid: "repeat-buyer",
+        studentName: "Rita Repeat",
+        atMs: now - 60_000,
+      });
     }
-    expect(codes.slice(0, 60).every((s) => s === 200)).toBe(true);
-    expect(codes[60]).toBe(429);
+
+    const dto = await getFeed({}, now);
+
+    expect(dto.repeatBuyers).toEqual([
+      { studentUid: "repeat-buyer", studentName: "Rita Repeat", charges: REPEAT_BUYER_THRESHOLD },
+    ]);
+  });
+
+  it("ignores a burst that has aged out of the window", async () => {
+    const now = BASE_MS + 4 * REPEAT_BUYER_WINDOW_MS;
+    for (let i = 0; i < REPEAT_BUYER_THRESHOLD; i += 1) {
+      await seedLedger({
+        studentUid: "old-buyer",
+        studentName: "Otto Old",
+        atMs: now - REPEAT_BUYER_WINDOW_MS - 60_000,
+      });
+    }
+
+    const dto = await getFeed({}, now);
+
+    expect(dto.repeatBuyers).toEqual([]);
+  });
+
+  it("does not recompute the alert while paging older entries", async () => {
+    const now = BASE_MS + REPEAT_BUYER_WINDOW_MS;
+    for (let i = 0; i < REPEAT_BUYER_THRESHOLD; i += 1) {
+      await seedLedger({
+        studentUid: "repeat-buyer",
+        studentName: "Rita Repeat",
+        atMs: now - 60_000,
+      });
+    }
+
+    const first = await getFeed({}, now);
+    expect(first.repeatBuyers).toHaveLength(1);
+
+    if (first.nextCursor) {
+      const older = await getFeed({ cursor: first.nextCursor }, now);
+      expect(older.repeatBuyers).toEqual([]);
+    }
   });
 });

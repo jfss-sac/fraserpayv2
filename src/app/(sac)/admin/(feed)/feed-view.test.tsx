@@ -101,6 +101,7 @@ test("selecting a type chip refetches with that filter", async () => {
   const fetchMock = stubFetch(() => ({
     entries: [ledger("t1", { type: "topup", method: "cash", direction: "credit" })],
     nextCursor: null,
+    repeatBuyers: [],
   }));
 
   render(
@@ -120,7 +121,7 @@ test("selecting a type chip refetches with that filter", async () => {
 test("clicking a SAC member filters the feed to that actor and shows a removable pill", async () => {
   const fetchMock = stubFetch((url) => {
     expect(url.searchParams.get("actorUid")).toBe("a1");
-    return { entries: [ledger("only")], nextCursor: null };
+    return { entries: [ledger("only")], nextCursor: null, repeatBuyers: [] };
   });
 
   render(<FeedView initialEntries={[ledger("p1")]} initialCursor={null} />);

@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { APPROVED_BOOTH_ID, SAC_EXEC_STATE } from "../fixtures";
-import { addItem, enterStudentNumber } from "../helpers/numpad";
-import { makeUser } from "../helpers/users";
+import { addItem, enterPaymentCode } from "../helpers/numpad";
+import { makeUser, paymentCodeFor } from "../helpers/users";
 
 const TOGGLE = { uid: "e2e-j6-toggle", number: "849501", name: "Suzy Suspend" };
 const BLOCKED = { uid: "e2e-j6-blocked", number: "849601", name: "Blocke Buyer" };
@@ -48,7 +48,7 @@ test.describe("J6 · suspension mid-flow", () => {
       await expect(page.getByRole("heading", { name: "Pizza Palace" })).toBeVisible();
 
       await addItem(page, "Slice");
-      await enterStudentNumber(page, BLOCKED.number);
+      await enterPaymentCode(page, paymentCodeFor(BLOCKED.uid));
 
       await expect(page.getByText("This account is suspended — send them to SAC.")).toBeVisible();
       await expect(page.getByText("Funds available")).toHaveCount(0);

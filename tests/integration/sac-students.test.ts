@@ -4,6 +4,7 @@ import { GET as searchRoute } from "../../src/app/api/sac/students/route";
 import { GET as ledgerRoute } from "../../src/app/api/sac/students/[uid]/ledger/route";
 import { type LedgerEntryDoc, ledgerCol, usersCol } from "../../src/lib/server/db";
 import { getAdminAuth, getAdminFirestore } from "../../src/lib/server/firebase-admin";
+import { RATE_LIMITS } from "../../src/lib/server/ratelimit";
 import { SESSION_COOKIE_NAME, SESSION_TTL_MS } from "../../src/lib/shared/constants";
 import type {
   SacLedgerEntry,
@@ -11,6 +12,8 @@ import type {
   StudentSearchDTO,
   StudentSearchResult,
 } from "../../src/lib/shared/types";
+
+const RATE_LIMIT_SWEEP_TIMEOUT_MS = 60_000;
 
 const ORIGIN = "http://127.0.0.1";
 
@@ -295,14 +298,19 @@ describe("GET /api/sac/students (search)", () => {
     expect(await errorCode(res)).toBe("VALIDATION");
   });
 
-  it("rate-limits a member past 60 reads per minute", async () => {
-    const codes: number[] = [];
-    for (let i = 0; i < 61; i += 1) {
-      codes.push((await searchRoute(search(RL.uid, "8300001"))).status);
-    }
-    expect(codes.slice(0, 60).every((s) => s === 200)).toBe(true);
-    expect(codes[60]).toBe(429);
-  });
+  it(
+    "rate-limits a member past the per-minute read cap",
+    async () => {
+      const { limit } = RATE_LIMITS.reads;
+      const codes: number[] = [];
+      for (let i = 0; i < limit + 1; i += 1) {
+        codes.push((await searchRoute(search(RL.uid, "8300001"))).status);
+      }
+      expect(codes.slice(0, limit).every((s) => s === 200)).toBe(true);
+      expect(codes[limit]).toBe(429);
+    },
+    RATE_LIMIT_SWEEP_TIMEOUT_MS,
+  );
 });
 
 describe("GET /api/sac/students/[uid]/ledger", () => {

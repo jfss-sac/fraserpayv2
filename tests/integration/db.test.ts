@@ -217,7 +217,13 @@ describe("Firestore converters round-trip through the emulator", () => {
   });
 
   it("rateLimits", async () => {
-    const model: RateLimitDoc = { count: 3, expiresAt: later };
+    const model: RateLimitDoc = {
+      count: 3,
+      scope: "topup",
+      uid: "member1",
+      windowStart: now,
+      expiresAt: later,
+    };
     await rateLimitsCol().doc("topup_member1_1700000000").set(model);
     expect((await rateLimitsCol().doc("topup_member1_1700000000").get()).data()).toEqual(model);
   });

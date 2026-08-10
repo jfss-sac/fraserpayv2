@@ -11,6 +11,7 @@ export const ADMIN_NAV: readonly AdminNavItem[] = [
   { href: "/admin/booths", label: "Booths" },
   { href: "/admin/reports", label: "Reports" },
   { href: "/admin/reconciliation", label: "Reconciliation" },
+  { href: "/admin/activity", label: "Activity" },
 ];
 
 export function visibleNav(

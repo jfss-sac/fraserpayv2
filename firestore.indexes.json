@@ -74,6 +74,14 @@
         { "fieldPath": "actorUid", "order": "ASCENDING" },
         { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "rateLimits",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "count", "order": "DESCENDING" },
+        { "fieldPath": "windowStart", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": [

@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 import {
   APPROVED_BOOTH_ID,
   BUYER_NAME,
-  BUYER_STUDENT_NUMBER,
+  BUYER_UID,
   DEACTIVATED_BOOTH_ID,
   PENDING_BOOTH_SUBMITTER,
   SAC_EXEC_STATE,
@@ -10,9 +10,9 @@ import {
   TEACHER_STATE,
 } from "../fixtures";
 import { db } from "../helpers/firebase";
-import { addItem, enterStudentNumber } from "../helpers/numpad";
+import { addItem, enterPaymentCode } from "../helpers/numpad";
 import { warmShell } from "../helpers/sw";
-import { makeUser } from "../helpers/users";
+import { makeUser, paymentCodeFor, paymentCodeOf } from "../helpers/users";
 
 const SUFFIX = "[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{5}";
 const CODE = new RegExp(`^[A-Z]{4}-${SUFFIX}$`);
@@ -93,7 +93,7 @@ test.describe.serial("J2 · booth lifecycle: register → approve → join → s
       await addItem(page, "Ticket");
       await expect(page.getByLabel("Cart total")).toHaveText("$2.00");
 
-      await enterStudentNumber(page, J2_BUYER.studentNumber);
+      await enterPaymentCode(page, paymentCodeFor(J2_BUYER.uid));
       await expect(page.getByText(`Is this ${J2_BUYER.name}?`)).toBeVisible();
       await expect(page.getByText("Funds available")).toBeVisible();
 
@@ -105,7 +105,7 @@ test.describe.serial("J2 · booth lifecycle: register → approve → join → s
 });
 
 test.describe("J2 · POS terminal", () => {
-  test("build cart with custom ×N, identify by number pad, sufficiency, charge succeeds", async ({
+  test("build cart with custom ×N, identify by payment code, sufficiency, charge succeeds", async ({
     page,
   }) => {
     await page.goto(`/sell/${APPROVED_BOOTH_ID}`);
@@ -115,7 +115,7 @@ test.describe("J2 · POS terminal", () => {
     await addItem(page, "Custom", 3);
     await expect(page.getByLabel("Cart total")).toHaveText("$4.50");
 
-    await enterStudentNumber(page, BUYER_STUDENT_NUMBER);
+    await enterPaymentCode(page, await paymentCodeOf(BUYER_UID));
     await expect(page.getByText(`Is this ${BUYER_NAME}?`)).toBeVisible();
     await expect(page.getByText("Ask for their student card to confirm.")).toBeVisible();
     await expect(page.getByText("Funds available")).toBeVisible();
@@ -132,7 +132,7 @@ test.describe("J2 · POS terminal", () => {
     await addItem(page, "Whole Pie", 2);
     await expect(page.getByLabel("Cart total")).toHaveText("$30.00");
 
-    await enterStudentNumber(page, BUYER_STUDENT_NUMBER);
+    await enterPaymentCode(page, await paymentCodeOf(BUYER_UID));
     await expect(page.getByText("Not enough funds")).toBeVisible();
 
     await page.getByRole("button", { name: "Charge" }).click();
@@ -167,7 +167,7 @@ test.describe("J2 · POS terminal", () => {
     await addItem(page, "Slice");
     await expect(page.getByLabel("Cart total")).toHaveText("$3.00");
 
-    await enterStudentNumber(page, BUYER_STUDENT_NUMBER);
+    await enterPaymentCode(page, await paymentCodeOf(BUYER_UID));
     await expect(page.getByText("Funds available")).toBeVisible();
 
     await page.getByRole("button", { name: "Charge" }).click();
@@ -202,7 +202,7 @@ test.describe("J2 · POS terminal", () => {
 
     await page.goto(`/sell/${APPROVED_BOOTH_ID}`);
     await addItem(page, "Slice");
-    await enterStudentNumber(page, BUYER_STUDENT_NUMBER);
+    await enterPaymentCode(page, await paymentCodeOf(BUYER_UID));
     await expect(page.getByText("Funds available")).toBeVisible();
 
     await page.getByRole("button", { name: "Charge" }).click();

@@ -5,7 +5,7 @@ import { isBoothMember } from "./dal";
 import { ledgerCol, usersCol } from "./db";
 import { ForbiddenError, NotFoundError, SuspendedError } from "./errors";
 import { logger } from "./logger";
-import { buyerSchema, resolveBuyerUid } from "./money/shared";
+import { boothBuyerSchema, resolveBuyerUid } from "./money/shared";
 import type { LookupResult, RecentPurchase } from "@/lib/shared/types";
 
 export const RECENT_PURCHASE_WINDOW_MS = 10 * 60 * 1000;
@@ -14,8 +14,7 @@ const RECENT_PURCHASE_SCAN_LIMIT = 25;
 export const lookupSchema = z
   .object({
     boothId: z.string().trim().min(1),
-    buyer: buyerSchema,
-    cartTotalCents: z.number().int().nonnegative(),
+    buyer: boothBuyerSchema,
   })
   .strict();
 
@@ -80,7 +79,7 @@ export async function lookupBuyer(args: {
 
   return {
     name: buyer.displayName,
-    sufficient: buyer.balanceCents >= input.cartTotalCents,
+    balanceCents: buyer.balanceCents,
     lastPurchase,
   };
 }

@@ -11,6 +11,7 @@ import {
 import { getAdminAuth, getAdminFirestore } from "../../src/lib/server/firebase-admin";
 import { charge } from "../../src/lib/server/money/charge";
 import { buildIdempotencyContext } from "../../src/lib/server/idempotency";
+import { RATE_LIMITS } from "../../src/lib/server/ratelimit";
 import { SESSION_COOKIE_NAME, SESSION_TTL_MS } from "../../src/lib/shared/constants";
 import type { BoothItem, ChargeResult } from "../../src/lib/shared/types";
 
@@ -19,6 +20,7 @@ const ENDPOINT = "/api/booth/charge";
 
 const OPERATOR = { uid: "charge-operator", name: "Opal Operator" };
 const OUTSIDER = { uid: "charge-outsider", name: "Otto Outsider" };
+const QUOTA_OPERATOR = { uid: "charge-quota-operator", name: "Quinn Quota" };
 
 const BOOTH_ID = "charge-booth";
 const PENDING_BOOTH_ID = "charge-booth-pending";
@@ -122,6 +124,28 @@ async function ledgerFor(uid: string): Promise<LedgerEntryDoc[]> {
   return (await ledgerCol().where("studentUid", "==", uid).get()).docs.map((d) => d.data());
 }
 
+async function chargeWindows(uid: string): Promise<{ count: number; refunds: number }[]> {
+  const snap = await getAdminFirestore().collection("rateLimits").get();
+  return snap.docs
+    .filter((d) => d.id.startsWith(`charge_${uid}_`))
+    .map((d) => ({
+      count: (d.data().count as number | undefined) ?? 0,
+      refunds: (d.data().refunds as number | undefined) ?? 0,
+    }));
+}
+
+async function chargeQuotaUsed(uid: string): Promise<number> {
+  const { limit } = RATE_LIMITS.charge;
+  return (await chargeWindows(uid)).reduce(
+    (sum, w) => sum + w.count - Math.min(w.refunds, limit),
+    0,
+  );
+}
+
+async function chargeRequestsSeen(uid: string): Promise<number> {
+  return (await chargeWindows(uid)).reduce((sum, w) => sum + w.count, 0);
+}
+
 beforeAll(async () => {
   if (!process.env.FIRESTORE_EMULATOR_HOST || !process.env.FIREBASE_AUTH_EMULATOR_HOST) {
     throw new Error("Integration test requires the auth + firestore emulators (emulators:exec).");
@@ -130,8 +154,14 @@ beforeAll(async () => {
 
   await makeUser({ uid: OPERATOR.uid, displayName: OPERATOR.name, paymentCode: "fp1-OPERAT" });
   await makeUser({ uid: OUTSIDER.uid, displayName: OUTSIDER.name, paymentCode: "fp1-OUTSID" });
+  await makeUser({
+    uid: QUOTA_OPERATOR.uid,
+    displayName: QUOTA_OPERATOR.name,
+    paymentCode: "fp1-QUOTAO",
+  });
   cookies[OPERATOR.uid] = await mintSessionCookie(OPERATOR.uid);
   cookies[OUTSIDER.uid] = await mintSessionCookie(OUTSIDER.uid);
+  cookies[QUOTA_OPERATOR.uid] = await mintSessionCookie(QUOTA_OPERATOR.uid);
 
   await makeBooth(BOOTH_ID, "approved");
   await makeBooth(PENDING_BOOTH_ID, "pending");
@@ -142,6 +172,9 @@ beforeAll(async () => {
       .doc(OPERATOR.uid)
       .set({ uid: OPERATOR.uid, displayName: OPERATOR.name, joinedAt: Timestamp.now() });
   }
+  await membersCol(BOOTH_ID)
+    .doc(QUOTA_OPERATOR.uid)
+    .set({ uid: QUOTA_OPERATOR.uid, displayName: QUOTA_OPERATOR.name, joinedAt: Timestamp.now() });
 });
 
 afterAll(async () => {
@@ -185,7 +218,7 @@ describe("POST /api/booth/charge", () => {
     const res = await chargeRoute(
       post(OPERATOR.uid, {
         boothId: BOOTH_ID,
-        buyer: { studentNumber: buyer.studentNumber },
+        buyer: { paymentCode: buyer.paymentCode },
         items: [
           { itemId: "coffee", qty: 2 },
           { itemId: "custom", qty: 3 },
@@ -213,7 +246,7 @@ describe("POST /api/booth/charge", () => {
     const res = await chargeRoute(
       post(OPERATOR.uid, {
         boothId: BOOTH_ID,
-        buyer: { studentNumber: buyer.studentNumber },
+        buyer: { paymentCode: buyer.paymentCode },
         items: [
           { itemId: "coffee", qty: 1 },
           { itemId: "cookie", qty: 1 },
@@ -229,7 +262,7 @@ describe("POST /api/booth/charge", () => {
     const res = await chargeRoute(
       post(OPERATOR.uid, {
         boothId: BOOTH_ID,
-        buyer: { studentNumber: buyer.studentNumber },
+        buyer: { paymentCode: buyer.paymentCode },
         items: [
           { itemId: "coffee", qty: 1 },
           { itemId: "cookie", qty: 1 },
@@ -247,7 +280,7 @@ describe("POST /api/booth/charge", () => {
     const res = await chargeRoute(
       post(OPERATOR.uid, {
         boothId: PENDING_BOOTH_ID,
-        buyer: { studentNumber: buyer.studentNumber },
+        buyer: { paymentCode: buyer.paymentCode },
         items: [{ itemId: "coffee", qty: 1 }],
       }),
     );
@@ -261,7 +294,7 @@ describe("POST /api/booth/charge", () => {
     const res = await chargeRoute(
       post(OPERATOR.uid, {
         boothId: DEACTIVATED_BOOTH_ID,
-        buyer: { studentNumber: buyer.studentNumber },
+        buyer: { paymentCode: buyer.paymentCode },
         items: [{ itemId: "coffee", qty: 1 }],
       }),
     );
@@ -274,7 +307,7 @@ describe("POST /api/booth/charge", () => {
     const res = await chargeRoute(
       post(OPERATOR.uid, {
         boothId: BOOTH_ID,
-        buyer: { studentNumber: buyer.studentNumber },
+        buyer: { paymentCode: buyer.paymentCode },
         items: [{ itemId: "not-on-menu", qty: 1 }],
       }),
     );
@@ -284,11 +317,26 @@ describe("POST /api/booth/charge", () => {
     expect(await ledgerFor(buyer.uid)).toHaveLength(0);
   });
 
+  it("refuses to charge a student-number buyer — a guessed number moves no money", async () => {
+    const buyer = await freshBuyer(2000);
+    const res = await chargeRoute(
+      post(OPERATOR.uid, {
+        boothId: BOOTH_ID,
+        buyer: { studentNumber: buyer.studentNumber },
+        items: [{ itemId: "coffee", qty: 1 }],
+      }),
+    );
+    expect(res.status).toBe(400);
+    expect(await errorCode(res)).toBe("VALIDATION");
+    expect((await usersCol().doc(buyer.uid).get()).data()?.balanceCents).toBe(2000);
+    expect(await ledgerFor(buyer.uid)).toHaveLength(0);
+  });
+
   it("rejects a buyer that matches no student with NOT_FOUND", async () => {
     const res = await chargeRoute(
       post(OPERATOR.uid, {
         boothId: BOOTH_ID,
-        buyer: { studentNumber: "999999999" },
+        buyer: { paymentCode: "fp1-NOSUCHBUYER" },
         items: [{ itemId: "coffee", qty: 1 }],
       }),
     );
@@ -301,7 +349,7 @@ describe("POST /api/booth/charge", () => {
     const res = await chargeRoute(
       post(OUTSIDER.uid, {
         boothId: BOOTH_ID,
-        buyer: { studentNumber: buyer.studentNumber },
+        buyer: { paymentCode: buyer.paymentCode },
         items: [{ itemId: "coffee", qty: 1 }],
       }),
     );
@@ -315,7 +363,7 @@ describe("POST /api/booth/charge", () => {
     const res = await chargeRoute(
       post(OPERATOR.uid, {
         boothId: BOOTH_ID,
-        buyer: { studentNumber: buyer.studentNumber },
+        buyer: { paymentCode: buyer.paymentCode },
         items: [{ itemId: "coffee", qty: 1 }],
       }),
     );
@@ -330,7 +378,7 @@ describe("POST /api/booth/charge", () => {
     const res = await chargeRoute(
       post(OPERATOR.uid, {
         boothId: BOOTH_ID,
-        buyer: { studentNumber: buyer.studentNumber },
+        buyer: { paymentCode: buyer.paymentCode },
         items: [{ itemId: "coffee", qty: 1, priceCents: 1 }],
       }),
     );
@@ -344,7 +392,7 @@ describe("POST /api/booth/charge", () => {
     await chargeRoute(
       post(OPERATOR.uid, {
         boothId: BOOTH_ID,
-        buyer: { studentNumber: buyer.studentNumber },
+        buyer: { paymentCode: buyer.paymentCode },
         items: [{ itemId: "custom", qty: 30 }],
       }),
     );
@@ -358,7 +406,7 @@ describe("POST /api/booth/charge", () => {
     await chargeRoute(
       post(OPERATOR.uid, {
         boothId: BOOTH_ID,
-        buyer: { studentNumber: buyer.studentNumber },
+        buyer: { paymentCode: buyer.paymentCode },
         items: [{ itemId: "custom", qty: 31 }],
       }),
     );
@@ -372,7 +420,7 @@ describe("POST /api/booth/charge", () => {
     const key = nextKey();
     const body = {
       boothId: BOOTH_ID,
-      buyer: { studentNumber: buyer.studentNumber },
+      buyer: { paymentCode: buyer.paymentCode },
       items: [{ itemId: "coffee", qty: 2 }],
     };
     const firstRes = await chargeRoute(post(OPERATOR.uid, body, { key }));
@@ -389,7 +437,7 @@ describe("POST /api/booth/charge", () => {
     const key = nextKey();
     const body = {
       boothId: BOOTH_ID,
-      buyer: { studentNumber: buyer.studentNumber },
+      buyer: { paymentCode: buyer.paymentCode },
       items: [{ itemId: "coffee", qty: 2 }],
     };
     const firstRes = await chargeRoute(post(OPERATOR.uid, body, { key }));
@@ -400,11 +448,29 @@ describe("POST /api/booth/charge", () => {
     expect(await secondRes.text()).toBe(await firstRes.text());
   });
 
+  it("spends no rate-limit quota on an idempotent replay", async () => {
+    const buyer = await freshBuyer(2000);
+    const key = nextKey();
+    const body = {
+      boothId: BOOTH_ID,
+      buyer: { paymentCode: buyer.paymentCode },
+      items: [{ itemId: "coffee", qty: 1 }],
+    };
+
+    for (let i = 0; i < 3; i += 1) {
+      expect((await chargeRoute(post(QUOTA_OPERATOR.uid, body, { key }))).status).toBe(200);
+    }
+
+    expect(await ledgerFor(buyer.uid)).toHaveLength(1);
+    expect(await chargeQuotaUsed(QUOTA_OPERATOR.uid)).toBe(1);
+    expect(await chargeRequestsSeen(QUOTA_OPERATOR.uid)).toBe(3);
+  });
+
   it("keeps request and response bodies each under 2 KB (NFR-3)", async () => {
     const buyer = await freshBuyer(2000);
     const requestBody = {
       boothId: BOOTH_ID,
-      buyer: { studentNumber: buyer.studentNumber },
+      buyer: { paymentCode: buyer.paymentCode },
       items: [
         { itemId: "coffee", qty: 2 },
         { itemId: "cookie", qty: 2 },
@@ -439,7 +505,7 @@ describe("charge concurrency (money module)", () => {
       const key = nextKey();
       const body = {
         boothId: BOOTH_ID,
-        buyer: { studentNumber: buyer.studentNumber },
+        buyer: { paymentCode: buyer.paymentCode },
         items: [{ itemId: "coffee", qty: 2 }],
       };
       const actor = { uid: OPERATOR.uid, displayName: OPERATOR.name };

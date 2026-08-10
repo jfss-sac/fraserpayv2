@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { RateLimitedError } from "../../src/lib/server/errors";
 import { getAdminAuth, getAdminFirestore } from "../../src/lib/server/firebase-admin";
 import { defineHandler } from "../../src/lib/server/http";
-import { RATE_LIMITS, checkRateLimit } from "../../src/lib/server/ratelimit";
+import { RATE_LIMITS, checkRateLimit, releaseRateLimit } from "../../src/lib/server/ratelimit";
 import { SESSION_COOKIE_NAME, SESSION_TTL_MS } from "../../src/lib/shared/constants";
 
 const ORIGIN = "http://127.0.0.1";
@@ -59,7 +59,7 @@ describe("checkRateLimit against the Firestore emulator", () => {
   it("passes under the limit and 429s once over it", async () => {
     const { limit } = RATE_LIMITS.join;
     for (let i = 0; i < limit; i++) {
-      await expect(checkRateLimit("join", "over-limit")).resolves.toBeUndefined();
+      await expect(checkRateLimit("join", "over-limit")).resolves.toMatchObject({ scope: "join" });
     }
     await expect(checkRateLimit("join", "over-limit")).rejects.toBeInstanceOf(RateLimitedError);
   });
@@ -68,7 +68,29 @@ describe("checkRateLimit against the Firestore emulator", () => {
     const { limit } = RATE_LIMITS.join;
     for (let i = 0; i < limit; i++) await checkRateLimit("join", "keyA");
     await expect(checkRateLimit("join", "keyA")).rejects.toBeInstanceOf(RateLimitedError);
-    await expect(checkRateLimit("join", "keyB")).resolves.toBeUndefined();
+    await expect(checkRateLimit("join", "keyB")).resolves.toMatchObject({ scope: "join" });
+  });
+
+  it("bounds a window to twice its limit even when every request is refunded", async () => {
+    const { limit } = RATE_LIMITS.join;
+    let served = 0;
+    for (let i = 0; i < limit * 3; i += 1) {
+      const ticket = await checkRateLimit("join", "always-refunded").catch(() => null);
+      if (!ticket) break;
+      served += 1;
+      await releaseRateLimit(ticket);
+    }
+    expect(served).toBe(limit * 2);
+    await expect(checkRateLimit("join", "always-refunded")).rejects.toBeInstanceOf(
+      RateLimitedError,
+    );
+  });
+
+  it("stamps the counter doc with the fields the activity view groups by", async () => {
+    const ticket = await checkRateLimit("lookup", "stamped");
+    const doc = await getAdminFirestore().collection("rateLimits").doc(ticket!.docId).get();
+    expect(doc.data()).toMatchObject({ scope: "lookup", uid: "stamped", count: 1 });
+    expect(doc.data()?.windowStart).toBeDefined();
   });
 
   it("resets when the fixed window rolls over", async () => {
@@ -80,7 +102,7 @@ describe("checkRateLimit against the Firestore emulator", () => {
       for (let i = 0; i < limit; i++) await checkRateLimit("join", "rollover");
       await expect(checkRateLimit("join", "rollover")).rejects.toBeInstanceOf(RateLimitedError);
       vi.setSystemTime(base + windowMs);
-      await expect(checkRateLimit("join", "rollover")).resolves.toBeUndefined();
+      await expect(checkRateLimit("join", "rollover")).resolves.toMatchObject({ scope: "join" });
     } finally {
       vi.useRealTimers();
     }
