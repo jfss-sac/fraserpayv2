@@ -5,6 +5,7 @@ import { TOAST_DURATION_MS, Toaster, useToasts } from "./toast";
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.unstubAllGlobals();
 });
 
 test("push adds a toast and dismiss removes it", () => {
@@ -20,6 +21,18 @@ test("push adds a toast and dismiss removes it", () => {
     result.current.dismiss(id);
   });
   expect(result.current.toasts).toHaveLength(0);
+});
+
+test("push works when randomUUID is unavailable", () => {
+  vi.stubGlobal("crypto", {});
+  const { result } = renderHook(() => useToasts());
+
+  act(() => {
+    result.current.push("Saved", "success");
+  });
+
+  expect(result.current.toasts).toMatchObject([{ message: "Saved", variant: "success" }]);
+  expect(result.current.toasts[0]!.id).not.toBe("");
 });
 
 test("renders success toasts as status and error toasts as alert", () => {

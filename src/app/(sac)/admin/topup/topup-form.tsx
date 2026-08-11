@@ -148,7 +148,9 @@ export function TopUpForm({ isExec }: { isExec: boolean }) {
   const showOverride = isExec && capsExceeded;
   const submitting = state.status === "pending";
   const canSubmit =
-    amountCents !== null && !submitting && (!showOverride || overrideReason.trim().length > 0);
+    amountCents !== null &&
+    !submitting &&
+    (!capsExceeded || (isExec && overrideReason.trim().length > 0));
 
   const doSubmit = useCallback(() => {
     if (!buyer || amountCents === null) return;

@@ -13,6 +13,12 @@ export interface Toast {
   variant: ToastVariant;
 }
 
+let fallbackToastId = 0;
+
+function createToastId(): string {
+  return globalThis.crypto.randomUUID?.() ?? `toast-${fallbackToastId++}`;
+}
+
 export function useToasts() {
   const [toasts, setToasts] = useState<Toast[]>([]);
 
@@ -21,7 +27,7 @@ export function useToasts() {
   }, []);
 
   const push = useCallback((message: string, variant: ToastVariant) => {
-    const id = crypto.randomUUID();
+    const id = createToastId();
     setToasts((current) => [...current, { id, message, variant }]);
     return id;
   }, []);

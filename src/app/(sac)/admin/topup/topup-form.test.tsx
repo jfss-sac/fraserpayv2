@@ -156,6 +156,17 @@ describe("exec-only override (FR-10a, I7)", () => {
 
     expect(screen.queryByLabelText("Reason for override")).not.toBeInTheDocument();
     expect(screen.getByText(/only an exec can override/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Top up $100.50" })).toBeDisabled();
+  });
+
+  test("a member cannot submit an amount that would exceed the balance cap", async () => {
+    const student = { ...STUDENT, balanceCents: 15_000 };
+    stubFetch({ lookup: student });
+    await gotoAmountStage(false, student);
+    await setAmount("50.50");
+
+    expect(screen.getByText(/only an exec can override/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Top up $50.50" })).toBeDisabled();
   });
 
   test("an exec gets a required override field over the cap", async () => {
