@@ -258,6 +258,43 @@ describe("POST /api/exec/suspend", () => {
     expect(await errorCode(res)).toBe("CONFLICT");
   });
 
+  it("blocks suspending the last SAC exec — the lockout guard", async () => {
+    const res = await suspendRoute(
+      post("/api/exec/suspend", EXEC.uid, { studentUid: EXEC.uid, suspended: true }),
+    );
+    expect(res.status).toBe(409);
+    expect(await errorCode(res)).toBe("CONFLICT");
+    expect((await usersCol().doc(EXEC.uid).get()).data()?.suspended).toBe(false);
+  });
+
+  it("allows suspending an exec when another active exec remains, then blocks the last one", async () => {
+    const other = await freshStudent({ roles: { sacMember: true, sacExec: true } });
+
+    const suspendOther = await suspendRoute(
+      post("/api/exec/suspend", EXEC.uid, { studentUid: other.uid, suspended: true }),
+    );
+    expect(suspendOther.status).toBe(200);
+    expect((await usersCol().doc(other.uid).get()).data()?.suspended).toBe(true);
+
+    const suspendSelf = await suspendRoute(
+      post("/api/exec/suspend", EXEC.uid, { studentUid: EXEC.uid, suspended: true }),
+    );
+    expect(suspendSelf.status).toBe(409);
+
+    const revokeSelf = await rolesRoute(
+      post("/api/exec/roles", EXEC.uid, { targetUid: EXEC.uid, role: "sacExec", grant: false }),
+    );
+    expect(revokeSelf.status).toBe(409);
+    expect((await usersCol().doc(EXEC.uid).get()).data()?.roles.sacExec).toBe(true);
+
+    await suspendRoute(
+      post("/api/exec/suspend", EXEC.uid, { studentUid: other.uid, suspended: false }),
+    );
+    await rolesRoute(
+      post("/api/exec/roles", EXEC.uid, { targetUid: other.uid, role: "sacExec", grant: false }),
+    );
+  });
+
   it("forbids a non-exec member and requires auth", async () => {
     const student = await freshStudent();
     const forbidden = await suspendRoute(

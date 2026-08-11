@@ -120,7 +120,7 @@ The invariants the module enforces (each with named tests):
 - **I7**: server-enforced caps: $100 per top-up, $200 resulting balance; exceeding either requires exec role + a reason and tags the entry `cap-override`
 - **I8**: purchases over $15 are tagged `high-amount` server-side and surface in the SAC feed
 - **I9**: authorization is re-checked server-side on every request from a fresh user document
-- **I10**: booth-facing responses reveal only the buyer's name, sufficiency, and that booth's own last sale to them within 10 minutes; never a balance, never activity elsewhere
+- **I10**: booth-facing responses reveal only the buyer's name, balance, and that booth's own last sale to them within 10 minutes; never points, never activity elsewhere. Sufficiency is derived on the client from that balance, so the server is never told the cart total
 - **I11**: the server never accepts client-supplied prices; carts are priced from the booth document at execution time
 - **I12**: no self-dealing: `topUp`/`adjustBalance`/`refundPurchase` reject `actor === target`
 
@@ -153,7 +153,7 @@ All access via `firebase-admin` on the server. `firestore.rules` denies all clie
 Two details worth calling out:
 
 - **Payment codes** are 128-bit CSPRNG values (26-char Crockford base32, `fp1-` prefix): opaque, containing no student information, individually regenerable by an exec if photographed or leaked. The QR encodes only this string.
-- **Aggregates are computed, never counted.** Leaderboard gross, booth summaries, reconciliation, and liability are all produced by reading the relevant indexed ledger slice and grouping in memory on the server, cached per product cadence (leaderboard 15 min). No counter documents, no aggregation queries; the ledger is the single source of truth, and a standing verifier (`pnpm verify:ledger`) recomputes every balance from it and must always agree.
+- **Aggregates are computed, never counted** — by the cheapest query that answers the question. A surface that needs the **item breakdown** (booth summary, reconciliation) reads that one indexed ledger slice and groups in memory; a surface that needs only **scalars** (leaderboard gross, report rows, top-up totals, outstanding liability) uses a Firestore SUM/COUNT aggregation query and reads no documents at all. Cached per product cadence (leaderboard 15 min, reports 60 s). No counter documents; the ledger is the single source of truth, and a standing verifier (`pnpm verify:ledger`) recomputes every balance from it and must always agree.
 
 ## API surface
 

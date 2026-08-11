@@ -4,6 +4,7 @@ import { z } from "zod";
 import { writeAudit } from "@/lib/server/audit";
 import { usersCol } from "@/lib/server/db";
 import { ConflictError, NotFoundError } from "@/lib/server/errors";
+import { hasOtherActiveExec } from "@/lib/server/exec-lockout";
 import { getAdminFirestore } from "@/lib/server/firebase-admin";
 import { defineHandler } from "@/lib/server/http";
 
@@ -30,11 +31,12 @@ export const POST = defineHandler(
         );
       }
 
-      if (input.role === "sacExec" && !input.grant) {
-        const execs = await t.get(usersCol().where("roles.sacExec", "==", true));
-        if (execs.size <= 1) {
-          throw new ConflictError("Can't revoke the last SAC exec — grant another exec first.");
-        }
+      if (
+        input.role === "sacExec" &&
+        !input.grant &&
+        !(await hasOtherActiveExec(t, input.targetUid))
+      ) {
+        throw new ConflictError("Can't revoke the last SAC exec — grant another exec first.");
       }
 
       const roles = { ...user.roles, [input.role]: input.grant };
