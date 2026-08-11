@@ -412,14 +412,15 @@ describe("GET /api/sac/students/[uid]/ledger", () => {
     expect(new Set(seen).size).toBe(30);
   });
 
-  it("treats an unknown cursor as the first page rather than erroring", async () => {
+  it("rejects an unknown cursor instead of repeating the first page", async () => {
     const uid = await freshLedgerStudent();
     for (let i = 0; i < 3; i += 1) {
       await seedEntry(uid, { atMs: BASE_MS + 4_000_000 + i * 1000 });
     }
     const [req, ctx] = ledgerReq(MEMBER.uid, uid, "does-not-exist");
-    const body = (await (await ledgerRoute(req, ctx)).json()) as StudentLedgerDTO;
-    expect(body.entries).toHaveLength(3);
+    const res = await ledgerRoute(req, ctx);
+    expect(res.status).toBe(400);
+    expect(await errorCode(res)).toBe("VALIDATION");
   });
 
   it("returns only the target student's entries", async () => {

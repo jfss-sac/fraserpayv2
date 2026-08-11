@@ -25,16 +25,18 @@ describe("selectStrategy", () => {
     expect(selectStrategy(nav("/api", { isNavigate: false }))).toBe(STRATEGY.NEVER_CACHE);
   });
 
-  test("serves _next/static and public assets cache-first", () => {
-    for (const pathname of [
-      "/_next/static/chunks/main-abc123.js",
-      "/_next/static/css/app.css",
-      "/icons/icon-192.png",
-      "/manifest.webmanifest",
-      "/favicon.ico",
-    ]) {
+  test("serves immutable _next/static assets cache-first", () => {
+    for (const pathname of ["/_next/static/chunks/main-abc123.js", "/_next/static/css/app.css"]) {
       expect(selectStrategy(nav(pathname, { isNavigate: false }))).toBe(
         STRATEGY.STATIC_CACHE_FIRST,
+      );
+    }
+  });
+
+  test("serves mutable public assets stale-while-revalidate", () => {
+    for (const pathname of ["/icons/icon-192.png", "/manifest.webmanifest", "/favicon.ico"]) {
+      expect(selectStrategy(nav(pathname, { isNavigate: false }))).toBe(
+        STRATEGY.STATIC_STALE_WHILE_REVALIDATE,
       );
     }
   });

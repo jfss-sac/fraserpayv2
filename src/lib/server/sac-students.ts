@@ -1,6 +1,7 @@
 import "server-only";
 import { z } from "zod";
 import { type LedgerEntryDoc, type UserDoc, ledgerCol, usersCol } from "./db";
+import { ValidationError } from "./errors";
 import type {
   SacLedgerEntry,
   StudentDetail,
@@ -107,7 +108,8 @@ export async function getStudentLedger(uid: string, cursor?: string): Promise<St
 
   if (cursor) {
     const cursorSnap = await ledgerCol().doc(cursor).get();
-    if (cursorSnap.exists) query = query.startAfter(cursorSnap);
+    if (!cursorSnap.exists) throw new ValidationError("cursor: Unknown cursor.");
+    query = query.startAfter(cursorSnap);
   }
 
   const docs = (await query.get()).docs;

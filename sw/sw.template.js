@@ -46,6 +46,8 @@ self.addEventListener("fetch", (event) => {
   });
   if (strategy === STRATEGY.STATIC_CACHE_FIRST) {
     event.respondWith(cacheFirst(event, false));
+  } else if (strategy === STRATEGY.STATIC_STALE_WHILE_REVALIDATE) {
+    event.respondWith(cacheFirst(event, true));
   } else if (strategy === STRATEGY.HTML_CACHE_FIRST) {
     event.respondWith(cacheFirst(event, true));
   }

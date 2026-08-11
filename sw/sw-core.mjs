@@ -5,6 +5,7 @@ export const PURGE_CACHES_MESSAGE = "fraserpay/purge-caches";
 export const STRATEGY = {
   NEVER_CACHE: "never-cache",
   STATIC_CACHE_FIRST: "static-cache-first",
+  STATIC_STALE_WHILE_REVALIDATE: "static-stale-while-revalidate",
   HTML_CACHE_FIRST: "html-cache-first",
   PASSTHROUGH: "passthrough",
 };
@@ -27,7 +28,8 @@ export function isStaticAsset(pathname) {
 export function selectStrategy({ method, sameOrigin, pathname, isNavigate }) {
   if (method !== "GET" || !sameOrigin) return STRATEGY.PASSTHROUGH;
   if (pathname === "/api" || pathname.startsWith("/api/")) return STRATEGY.NEVER_CACHE;
-  if (isStaticAsset(pathname)) return STRATEGY.STATIC_CACHE_FIRST;
+  if (pathname.startsWith("/_next/static/")) return STRATEGY.STATIC_CACHE_FIRST;
+  if (isStaticAsset(pathname)) return STRATEGY.STATIC_STALE_WHILE_REVALIDATE;
   if (isNavigate && isShellRoute(pathname)) return STRATEGY.HTML_CACHE_FIRST;
   return STRATEGY.PASSTHROUGH;
 }
