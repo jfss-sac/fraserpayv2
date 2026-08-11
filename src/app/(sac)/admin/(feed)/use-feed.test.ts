@@ -48,6 +48,7 @@ describe("filters and pagination", () => {
       entries: [ledger("t1")],
       nextCursor: null,
       repeatBuyers: [],
+      repeatBuyersTruncated: false,
     });
     const { result } = renderHook(() =>
       useFeed({ initialEntries: [ledger("a")], initialCursor: null }),
@@ -80,6 +81,7 @@ describe("filters and pagination", () => {
       entries: [ledger("b")],
       nextCursor: "c2",
       repeatBuyers: [],
+      repeatBuyersTruncated: false,
     });
     const { result } = renderHook(() =>
       useFeed({ initialEntries: [ledger("a")], initialCursor: "c1" }),
@@ -115,6 +117,7 @@ describe("filters and pagination", () => {
       entries: [ledger("b"), ledger("a")],
       nextCursor: null,
       repeatBuyers: [],
+      repeatBuyersTruncated: false,
     });
     const { result } = renderHook(() =>
       useFeed({ initialEntries: [ledger("a")], initialCursor: null }),
@@ -157,11 +160,17 @@ describe("interleaved requests", () => {
       entries: [ledger("t2"), ledger("t1")],
       nextCursor: null,
       repeatBuyers: [],
+      repeatBuyersTruncated: false,
     });
     await flush();
     expect(result.current.refreshing).toBe(false);
 
-    filterReq.resolve({ entries: [ledger("t1")], nextCursor: null, repeatBuyers: [] });
+    filterReq.resolve({
+      entries: [ledger("t1")],
+      nextCursor: null,
+      repeatBuyers: [],
+      repeatBuyersTruncated: false,
+    });
     await flush();
 
     expect(result.current.loading).toBe(false);
@@ -170,9 +179,12 @@ describe("interleaved requests", () => {
 
   test("a filter change during a refresh does not strand refreshing", async () => {
     const refreshReq = deferred();
-    mockRequestFeed
-      .mockReturnValueOnce(refreshReq.promise)
-      .mockResolvedValueOnce({ entries: [ledger("t1")], nextCursor: null, repeatBuyers: [] });
+    mockRequestFeed.mockReturnValueOnce(refreshReq.promise).mockResolvedValueOnce({
+      entries: [ledger("t1")],
+      nextCursor: null,
+      repeatBuyers: [],
+      repeatBuyersTruncated: false,
+    });
     const { result } = renderHook(() =>
       useFeed({ initialEntries: [ledger("a")], initialCursor: null }),
     );
@@ -186,7 +198,12 @@ describe("interleaved requests", () => {
     await flush();
     expect(result.current.loading).toBe(false);
 
-    refreshReq.resolve({ entries: [ledger("stale")], nextCursor: null, repeatBuyers: [] });
+    refreshReq.resolve({
+      entries: [ledger("stale")],
+      nextCursor: null,
+      repeatBuyers: [],
+      repeatBuyersTruncated: false,
+    });
     await flush();
 
     expect(result.current.refreshing).toBe(false);
@@ -195,9 +212,12 @@ describe("interleaved requests", () => {
 
   test("a filter change during loadOlder does not strand loadingOlder", async () => {
     const olderReq = deferred();
-    mockRequestFeed
-      .mockReturnValueOnce(olderReq.promise)
-      .mockResolvedValueOnce({ entries: [ledger("t1")], nextCursor: null, repeatBuyers: [] });
+    mockRequestFeed.mockReturnValueOnce(olderReq.promise).mockResolvedValueOnce({
+      entries: [ledger("t1")],
+      nextCursor: null,
+      repeatBuyers: [],
+      repeatBuyersTruncated: false,
+    });
     const { result } = renderHook(() =>
       useFeed({ initialEntries: [ledger("a")], initialCursor: "c1" }),
     );
@@ -210,7 +230,12 @@ describe("interleaved requests", () => {
     });
     await flush();
 
-    olderReq.resolve({ entries: [ledger("old")], nextCursor: "c2", repeatBuyers: [] });
+    olderReq.resolve({
+      entries: [ledger("old")],
+      nextCursor: "c2",
+      repeatBuyers: [],
+      repeatBuyersTruncated: false,
+    });
     await flush();
 
     expect(result.current.loadingOlder).toBe(false);
@@ -232,6 +257,7 @@ describe("polling", () => {
       entries: [ledger("b"), ledger("a")],
       nextCursor: null,
       repeatBuyers: [],
+      repeatBuyersTruncated: false,
     });
     const { result } = renderHook(() =>
       useFeed({ initialEntries: [ledger("a")], initialCursor: null }),
@@ -260,6 +286,7 @@ describe("polling", () => {
       entries: [ledger("a")],
       nextCursor: null,
       repeatBuyers: [],
+      repeatBuyersTruncated: false,
     });
     const { result } = renderHook(() =>
       useFeed({ initialEntries: [ledger("a")], initialCursor: null }),

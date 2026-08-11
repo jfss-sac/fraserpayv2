@@ -21,6 +21,7 @@ export default async function FeedPage() {
       initialEntries={feed.entries}
       initialCursor={feed.nextCursor}
       initialRepeatBuyers={feed.repeatBuyers}
+      initialRepeatBuyersTruncated={feed.repeatBuyersTruncated}
     />
   );
 }

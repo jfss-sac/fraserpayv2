@@ -51,6 +51,7 @@ function codeOf(err: unknown): string {
 export interface UseFeed {
   entries: FeedEntry[];
   repeatBuyers: RepeatBuyerAlert[];
+  repeatBuyersTruncated: boolean;
   filter: FeedFilter;
   pending: FeedEntry[];
   cursor: string | null;
@@ -68,15 +69,18 @@ export function useFeed({
   initialEntries,
   initialCursor,
   initialRepeatBuyers = [],
+  initialRepeatBuyersTruncated = false,
   pollMs = FEED_POLL_MS,
 }: {
   initialEntries: FeedEntry[];
   initialCursor: string | null;
   initialRepeatBuyers?: RepeatBuyerAlert[];
+  initialRepeatBuyersTruncated?: boolean;
   pollMs?: number;
 }): UseFeed {
   const [entries, setEntries] = useState<FeedEntry[]>(initialEntries);
   const [repeatBuyers, setRepeatBuyers] = useState<RepeatBuyerAlert[]>(initialRepeatBuyers);
+  const [repeatBuyersTruncated, setRepeatBuyersTruncated] = useState(initialRepeatBuyersTruncated);
   const [cursor, setCursor] = useState<string | null>(initialCursor);
   const [filter, setFilterState] = useState<FeedFilter>(ALL_FILTER);
   const [pending, setPending] = useState<FeedEntry[]>([]);
@@ -112,6 +116,7 @@ export function useFeed({
         setEntries(dto.entries);
         setCursor(dto.nextCursor);
         setRepeatBuyers(dto.repeatBuyers);
+        setRepeatBuyersTruncated(dto.repeatBuyersTruncated);
         setLoading(false);
       })
       .catch((err) => {
@@ -135,6 +140,7 @@ export function useFeed({
         const fresh = newSince(entriesRef.current, dto.entries);
         if (fresh.length > 0) setEntries((prev) => [...fresh, ...prev]);
         setRepeatBuyers(dto.repeatBuyers);
+        setRepeatBuyersTruncated(dto.repeatBuyersTruncated);
         setPending([]);
       })
       .catch((err) => {
@@ -179,6 +185,7 @@ export function useFeed({
           if (!filtersEqual(filterRef.current, target)) return;
           const fresh = newSince(entriesRef.current, dto.entries);
           setRepeatBuyers(dto.repeatBuyers);
+          setRepeatBuyersTruncated(dto.repeatBuyersTruncated);
           if (fresh.length > 0) setPending(fresh);
         })
         .catch(() => {});
@@ -189,6 +196,7 @@ export function useFeed({
   return {
     entries,
     repeatBuyers,
+    repeatBuyersTruncated,
     filter,
     pending,
     cursor,

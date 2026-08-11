@@ -102,6 +102,7 @@ test("selecting a type chip refetches with that filter", async () => {
     entries: [ledger("t1", { type: "topup", method: "cash", direction: "credit" })],
     nextCursor: null,
     repeatBuyers: [],
+    repeatBuyersTruncated: false,
   }));
 
   render(
@@ -121,7 +122,12 @@ test("selecting a type chip refetches with that filter", async () => {
 test("clicking a SAC member filters the feed to that actor and shows a removable pill", async () => {
   const fetchMock = stubFetch((url) => {
     expect(url.searchParams.get("actorUid")).toBe("a1");
-    return { entries: [ledger("only")], nextCursor: null, repeatBuyers: [] };
+    return {
+      entries: [ledger("only")],
+      nextCursor: null,
+      repeatBuyers: [],
+      repeatBuyersTruncated: false,
+    };
   });
 
   render(<FeedView initialEntries={[ledger("p1")]} initialCursor={null} />);
@@ -141,6 +147,88 @@ test("shows the auto-refresh affordance and a manual refresh control", () => {
 test("renders an empty state when there are no entries", () => {
   render(<FeedView initialEntries={[]} initialCursor={null} />);
   expect(screen.getByText("No transactions yet.")).toBeInTheDocument();
+});
+
+test("banners a repeat-charged buyer by name and charge count", () => {
+  render(
+    <FeedView
+      initialEntries={[ledger("p1")]}
+      initialCursor={null}
+      initialRepeatBuyers={[
+        { studentUid: "s1", studentName: "Rita Repeat", charges: 12 },
+        { studentUid: "s2", studentName: "Sam Second", charges: 10 },
+      ]}
+    />,
+  );
+
+  const banner = screen.getByRole("region", { name: "Repeat charge alerts" });
+  expect(within(banner).getByText(/Charged unusually often in the last 10 minutes/)).toBeVisible();
+  expect(within(banner).getByText("Rita Repeat — 12 charges")).toBeVisible();
+  expect(within(banner).getByText("Sam Second — 10 charges")).toBeVisible();
+});
+
+test("shows no repeat-charge banner when nobody is flagged and the scan was complete", () => {
+  render(
+    <FeedView initialEntries={[ledger("p1")]} initialCursor={null} initialRepeatBuyers={[]} />,
+  );
+  expect(screen.queryByRole("region", { name: "Repeat charge alerts" })).not.toBeInTheDocument();
+});
+
+test("clears the repeat-charge banner when a refresh finds nobody flagged", async () => {
+  stubFetch(() => ({
+    entries: [ledger("p1")],
+    nextCursor: null,
+    repeatBuyers: [],
+    repeatBuyersTruncated: false,
+  }));
+
+  render(
+    <FeedView
+      initialEntries={[ledger("p1")]}
+      initialCursor={null}
+      initialRepeatBuyers={[{ studentUid: "s1", studentName: "Rita Repeat", charges: 12 }]}
+    />,
+  );
+
+  expect(screen.getByText("Rita Repeat — 12 charges")).toBeVisible();
+
+  await userEvent.click(screen.getByRole("button", { name: "Refresh" }));
+
+  await vi.waitFor(() => {
+    expect(screen.queryByRole("region", { name: "Repeat charge alerts" })).not.toBeInTheDocument();
+  });
+});
+
+test("warns that the repeat-charge scan hit its cap rather than implying nobody was flagged", () => {
+  render(
+    <FeedView
+      initialEntries={[ledger("p1")]}
+      initialCursor={null}
+      initialRepeatBuyers={[]}
+      initialRepeatBuyersTruncated
+    />,
+  );
+
+  const banner = screen.getByRole("region", { name: "Repeat charge alerts" });
+  expect(within(banner).getByText(/a repeat buyer may be missing/)).toBeVisible();
+});
+
+test("surfaces a repeat-charge truncation warning raised by a later refresh", async () => {
+  stubFetch(() => ({
+    entries: [ledger("p1")],
+    nextCursor: null,
+    repeatBuyers: [],
+    repeatBuyersTruncated: true,
+  }));
+
+  render(
+    <FeedView initialEntries={[ledger("p1")]} initialCursor={null} initialRepeatBuyers={[]} />,
+  );
+  expect(screen.queryByRole("region", { name: "Repeat charge alerts" })).not.toBeInTheDocument();
+
+  await userEvent.click(screen.getByRole("button", { name: "Refresh" }));
+
+  expect(await screen.findByText(/a repeat buyer may be missing/)).toBeVisible();
 });
 
 test("offers load-older only while a cursor remains", () => {

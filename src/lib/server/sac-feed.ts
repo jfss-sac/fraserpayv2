@@ -153,14 +153,22 @@ export function flagRepeatBuyers(
     .sort((a, b) => b.charges - a.charges || a.studentName.localeCompare(b.studentName));
 }
 
-async function repeatBuyersSince(nowMs: number): Promise<RepeatBuyerAlert[]> {
+interface RepeatBuyerScan {
+  buyers: RepeatBuyerAlert[];
+  truncated: boolean;
+}
+
+async function repeatBuyersSince(nowMs: number): Promise<RepeatBuyerScan> {
   const snap = await ledgerCol()
     .where("type", "==", "purchase")
     .where("createdAt", ">=", Timestamp.fromMillis(nowMs - REPEAT_BUYER_WINDOW_MS))
     .orderBy("createdAt", "desc")
     .limit(REPEAT_BUYER_SCAN_LIMIT)
     .get();
-  return flagRepeatBuyers(snap.docs.map((doc) => doc.data()));
+  return {
+    buyers: flagRepeatBuyers(snap.docs.map((doc) => doc.data())),
+    truncated: snap.size === REPEAT_BUYER_SCAN_LIMIT,
+  };
 }
 
 export async function getFeed(input: FeedQuery, nowMs: number = Date.now()): Promise<FeedDTO> {
@@ -171,7 +179,9 @@ export async function getFeed(input: FeedQuery, nowMs: number = Date.now()): Pro
       ledgerQuery(input, cursor).get(),
       auditParticipates(input) ? auditQuery(input, cursor).get() : null,
     ]),
-    cursor ? Promise.resolve<RepeatBuyerAlert[]>([]) : repeatBuyersSince(nowMs),
+    cursor
+      ? Promise.resolve<RepeatBuyerScan>({ buyers: [], truncated: false })
+      : repeatBuyersSince(nowMs),
   ]);
 
   const ranked: Ranked[] = [];
@@ -194,6 +204,7 @@ export async function getFeed(input: FeedQuery, nowMs: number = Date.now()): Pro
   return {
     entries: page.map((r) => r.entry),
     nextCursor: hasMore && last ? encodeCursor(last.ts, last.id) : null,
-    repeatBuyers,
+    repeatBuyers: repeatBuyers.buyers,
+    repeatBuyersTruncated: repeatBuyers.truncated,
   };
 }

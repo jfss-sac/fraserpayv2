@@ -9,7 +9,7 @@ import {
   usersCol,
 } from "../../src/lib/server/db";
 import { getAdminAuth, getAdminFirestore } from "../../src/lib/server/firebase-admin";
-import { FEED_PAGE_SIZE, getFeed } from "../../src/lib/server/sac-feed";
+import { FEED_PAGE_SIZE, REPEAT_BUYER_SCAN_LIMIT, getFeed } from "../../src/lib/server/sac-feed";
 import { RATE_LIMITS } from "../../src/lib/server/ratelimit";
 import {
   REPEAT_BUYER_THRESHOLD,
@@ -20,6 +20,8 @@ import {
 import type { FeedDTO, FeedEntry } from "../../src/lib/shared/types";
 
 const RATE_LIMIT_SWEEP_TIMEOUT_MS = 60_000;
+
+const TRUNCATION_TIMEOUT_MS = 60_000;
 
 const ORIGIN = "http://127.0.0.1";
 
@@ -95,6 +97,33 @@ async function seedLedger(
   const ref = ledgerCol().doc();
   await ref.set(entry);
   return ref.id;
+}
+
+async function seedLedgerBatch(
+  entries: (Partial<LedgerEntryDoc> & { atMs?: number })[],
+): Promise<void> {
+  const batch = getAdminFirestore().batch();
+  for (const overrides of entries) {
+    seq += 1;
+    const { atMs, ...rest } = overrides;
+    batch.set(ledgerCol().doc(), {
+      type: "purchase",
+      amountCents: 100,
+      direction: "debit",
+      balanceAfterCents: 0,
+      studentUid: "some-student",
+      studentNumber: "700001",
+      studentName: "Seed Student",
+      actorUid: "seed-actor",
+      actorName: "Seed Actor",
+      tags: [],
+      idempotencyKey: `feed-seed-${seq}`,
+      createdAt: Timestamp.fromMillis(atMs ?? BASE_MS + seq * 1000),
+      createdDate: "2023-11-14",
+      ...rest,
+    });
+  }
+  await batch.commit();
 }
 
 async function seedAudit(
@@ -190,6 +219,7 @@ describe("GET /api/sac/feed — access & validation", () => {
       entries: [],
       nextCursor: null,
       repeatBuyers: [],
+      repeatBuyersTruncated: false,
     });
   });
 
@@ -432,6 +462,44 @@ describe("GET /api/sac/feed — repeat-buyer alerts", () => {
     const dto = await getFeed({}, now);
 
     expect(dto.repeatBuyers).toEqual([]);
+  });
+
+  it(
+    "says the scan hit its cap when a buyer is pushed out of the window by newer sales",
+    async () => {
+      const now = BASE_MS + REPEAT_BUYER_WINDOW_MS;
+      const drainedAtMs = now - REPEAT_BUYER_WINDOW_MS + 1_000;
+
+      await seedLedgerBatch(
+        Array.from({ length: REPEAT_BUYER_THRESHOLD }, () => ({
+          studentUid: "drained-buyer",
+          studentName: "Dee Drained",
+          atMs: drainedAtMs,
+        })),
+      );
+      await seedLedgerBatch(
+        Array.from({ length: REPEAT_BUYER_SCAN_LIMIT }, (_, i) => ({
+          studentUid: `rush-buyer-${i}`,
+          studentName: `Rush Buyer ${i}`,
+          atMs: now - 30_000,
+        })),
+      );
+
+      const dto = await getFeed({}, now);
+
+      expect(dto.repeatBuyers).toEqual([]);
+      expect(dto.repeatBuyersTruncated).toBe(true);
+    },
+    TRUNCATION_TIMEOUT_MS,
+  );
+
+  it("reports a complete scan when the window fits under the cap", async () => {
+    const now = BASE_MS + REPEAT_BUYER_WINDOW_MS;
+    await seedLedger({ atMs: now - 60_000 });
+
+    const dto = await getFeed({}, now);
+
+    expect(dto.repeatBuyersTruncated).toBe(false);
   });
 
   it("does not recompute the alert while paging older entries", async () => {

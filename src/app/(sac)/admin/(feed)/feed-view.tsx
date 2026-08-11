@@ -34,21 +34,38 @@ function ActiveFilterPill({ filter, onClear }: { filter: FeedFilter; onClear: ()
   );
 }
 
-function RepeatBuyerBanner({ buyers }: { buyers: RepeatBuyerAlert[] }) {
-  if (buyers.length === 0) return null;
+function RepeatBuyerBanner({
+  buyers,
+  truncated,
+}: {
+  buyers: RepeatBuyerAlert[];
+  truncated: boolean;
+}) {
+  if (buyers.length === 0 && !truncated) return null;
+  const windowMinutes = REPEAT_BUYER_WINDOW_MS / 60_000;
   return (
     <section
       aria-label="Repeat charge alerts"
       className="flex flex-col gap-1 rounded-md border border-danger/40 bg-danger/5 p-3"
     >
-      <p className="text-sm font-semibold text-foreground">
-        Charged unusually often in the last {REPEAT_BUYER_WINDOW_MS / 60_000} minutes
-      </p>
-      {buyers.map((buyer) => (
-        <p key={buyer.studentUid} className="text-sm text-muted">
-          {buyer.studentName} — {buyer.charges} charges
+      {buyers.length > 0 ? (
+        <>
+          <p className="text-sm font-semibold text-foreground">
+            Charged unusually often in the last {windowMinutes} minutes
+          </p>
+          {buyers.map((buyer) => (
+            <p key={buyer.studentUid} className="text-sm text-muted">
+              {buyer.studentName} — {buyer.charges} charges
+            </p>
+          ))}
+        </>
+      ) : null}
+      {truncated ? (
+        <p role="status" className="text-sm font-medium text-warning">
+          Too many sales in the last {windowMinutes} minutes to check them all — this alert covers
+          only the most recent ones, so a repeat buyer may be missing. Check the feed itself.
         </p>
-      ))}
+      ) : null}
     </section>
   );
 }
@@ -57,14 +74,22 @@ export function FeedView({
   initialEntries,
   initialCursor,
   initialRepeatBuyers,
+  initialRepeatBuyersTruncated,
   pollMs,
 }: {
   initialEntries: FeedEntry[];
   initialCursor: string | null;
   initialRepeatBuyers?: RepeatBuyerAlert[];
+  initialRepeatBuyersTruncated?: boolean;
   pollMs?: number;
 }) {
-  const feed = useFeed({ initialEntries, initialCursor, initialRepeatBuyers, pollMs });
+  const feed = useFeed({
+    initialEntries,
+    initialCursor,
+    initialRepeatBuyers,
+    initialRepeatBuyersTruncated,
+    pollMs,
+  });
   const actions: RowActions = {
     onFilterBooth: (boothId, boothName) => feed.setFilter({ kind: "booth", boothId, boothName }),
     onFilterActor: (actorUid, actorName) => feed.setFilter({ kind: "actor", actorUid, actorName }),
@@ -123,7 +148,7 @@ export function FeedView({
         })}
       </div>
 
-      <RepeatBuyerBanner buyers={feed.repeatBuyers} />
+      <RepeatBuyerBanner buyers={feed.repeatBuyers} truncated={feed.repeatBuyersTruncated} />
 
       <ActiveFilterPill filter={feed.filter} onClear={() => feed.setFilter(ALL_FILTER)} />
 

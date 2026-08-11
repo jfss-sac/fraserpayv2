@@ -260,6 +260,7 @@ export interface FeedDTO {
   entries: FeedEntry[];
   nextCursor: string | null;
   repeatBuyers: RepeatBuyerAlert[];
+  repeatBuyersTruncated: boolean;
 }
 
 export interface ReconTopupEntry {
