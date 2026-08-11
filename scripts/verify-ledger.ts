@@ -53,10 +53,18 @@ export async function verifyLedger(
 ): Promise<VerifyLedgerReport> {
   const scope = options.onlyUids ? new Set(options.onlyUids) : null;
 
-  const ledgerSnap = await db
+  const ledgerQuery = db
     .collection("ledger")
-    .select("studentUid", "amountCents", "direction", "pointsDelta")
-    .get();
+    .select("studentUid", "amountCents", "direction", "pointsDelta");
+  const usersQuery = db.collection("users").select("balanceCents", "points");
+  const [ledgerSnap, usersSnap] = await db.runTransaction(
+    async (transaction) => {
+      const ledger = await transaction.get(ledgerQuery);
+      const users = await transaction.get(usersQuery);
+      return [ledger, users] as const;
+    },
+    { readOnly: true },
+  );
 
   const totals = new Map<string, Totals>();
   let ledgerEntries = 0;
@@ -71,7 +79,6 @@ export async function verifyLedger(
     totals.set(row.studentUid, current);
   }
 
-  const usersSnap = await db.collection("users").select("balanceCents", "points").get();
   const users = new Map<string, UserRow>();
   for (const doc of usersSnap.docs) {
     if (scope && !scope.has(doc.id)) continue;

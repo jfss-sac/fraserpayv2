@@ -1,4 +1,4 @@
-import { Timestamp } from "firebase-admin/firestore";
+import { type Firestore, Timestamp } from "firebase-admin/firestore";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { boothsCol, membersCol, usersCol } from "../../src/lib/server/db";
 import { getAdminFirestore } from "../../src/lib/server/firebase-admin";
@@ -108,6 +108,70 @@ afterAll(async () => {
 });
 
 describe("verify-ledger", () => {
+  it("uses one consistent snapshot when a money transaction commits during verification", async () => {
+    const before = {
+      ledger: [],
+      users: [
+        {
+          id: "concurrent-student",
+          data: () => ({ balanceCents: 0, points: 0 }),
+        },
+      ],
+    };
+    const after = {
+      ledger: [
+        {
+          data: () => ({
+            studentUid: "concurrent-student",
+            amountCents: 500,
+            direction: "credit",
+            pointsDelta: 25,
+          }),
+        },
+      ],
+      users: [
+        {
+          id: "concurrent-student",
+          data: () => ({ balanceCents: 500, points: 25 }),
+        },
+      ],
+    };
+    let committed = false;
+    let transactionOptions: unknown;
+    const query = (name: "ledger" | "users") => ({
+      name,
+      select: () => query(name),
+      get: async () => {
+        const docs = (committed ? after : before)[name];
+        if (name === "ledger") committed = true;
+        return { docs };
+      },
+    });
+    const db = {
+      collection: query,
+      runTransaction: async (
+        work: (transaction: {
+          get: (selected: { name: "ledger" | "users" }) => unknown;
+        }) => unknown,
+        options: unknown,
+      ) => {
+        transactionOptions = options;
+        const snapshot = committed ? after : before;
+        const result = await work({
+          get: async (selected) => ({ docs: snapshot[selected.name] }),
+        });
+        committed = true;
+        return result;
+      },
+    } as unknown as Firestore;
+
+    const report = await verifyLedger(db);
+
+    expect(report.ok).toBe(true);
+    expect(report.divergences).toEqual([]);
+    expect(transactionOptions).toEqual({ readOnly: true });
+  });
+
   it("reconciles balances and points across topup, purchase, refund, and adjustment", async () => {
     const student = await freshStudent();
     const other = await freshStudent();
