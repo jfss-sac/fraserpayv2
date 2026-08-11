@@ -27,14 +27,23 @@ export const boothBuyerSchema = buyerSchema.refine(
   { message: "Scan the buyer's QR code — student numbers are not accepted here." },
 );
 
-export async function resolveBuyerUid(buyer: BuyerRef): Promise<string> {
+export interface ResolvedBuyer {
+  uid: string;
+  data: UserDoc;
+}
+
+export async function resolveBuyer(buyer: BuyerRef): Promise<ResolvedBuyer> {
   const query =
     "paymentCode" in buyer
       ? usersCol().where("paymentCode", "==", buyer.paymentCode)
       : usersCol().where("studentNumber", "==", buyer.studentNumber);
   const doc = (await query.limit(1).get()).docs[0];
   if (!doc) throw new NotFoundError("No student found for that code or number.");
-  return doc.id;
+  return { uid: doc.id, data: doc.data() };
+}
+
+export async function resolveBuyerUid(buyer: BuyerRef): Promise<string> {
+  return (await resolveBuyer(buyer)).uid;
 }
 
 export interface ActiveBuyer {

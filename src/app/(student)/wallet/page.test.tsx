@@ -31,9 +31,13 @@ vi.mock("./wallet-view", () => ({
 
 import WalletPage from "./page";
 
-function mockUser(doc: Record<string, unknown> | undefined) {
-  usersCol.mockReturnValue({ doc: () => ({ get: async () => ({ data: () => doc }) }) });
-}
+const SESSION = {
+  uid: "u1",
+  paymentCode: "fp1-ABCDEFGHJKMNPQRSTVWXYZ0123",
+  studentNumber: "800123",
+  balanceCents: 1250,
+  points: 100,
+};
 
 function mockLedger(docs: { id: string; data: () => unknown }[]) {
   const snap = { docs };
@@ -49,6 +53,7 @@ function mockLedger(docs: { id: string; data: () => unknown }[]) {
 beforeEach(() => {
   getSession.mockReset();
   redirect.mockClear();
+  usersCol.mockReset();
   renderPaymentQrSvg.mockClear();
   walletProps.current = null;
   mockLedger([]);
@@ -59,20 +64,8 @@ test("redirects an unauthenticated visitor to /login", async () => {
   await expect(WalletPage()).rejects.toThrow("REDIRECT:/login");
 });
 
-test("redirects to /login when the user document is missing", async () => {
-  getSession.mockResolvedValue({ uid: "u1" });
-  mockUser(undefined);
-  await expect(WalletPage()).rejects.toThrow("REDIRECT:/login");
-});
-
 test("renders the wallet with a server-rendered QR and mapped history", async () => {
-  getSession.mockResolvedValue({ uid: "u1" });
-  mockUser({
-    paymentCode: "fp1-ABCDEFGHJKMNPQRSTVWXYZ0123",
-    studentNumber: "800123",
-    balanceCents: 1250,
-    points: 100,
-  });
+  getSession.mockResolvedValue(SESSION);
   mockLedger([
     {
       id: "e1",
@@ -105,4 +98,12 @@ test("renders the wallet with a server-rendered QR and mapped history", async ()
   expect(props.history).toHaveLength(1);
   expect(props.history[0].boothName).toBe("Taco Stand");
   expect(props.history[0].createdAtIso).toBe("2026-07-24T15:04:00.000Z");
+});
+
+test("reuses the user snapshot loaded for the session instead of reading the user again", async () => {
+  getSession.mockResolvedValue(SESSION);
+  render(await WalletPage());
+
+  expect(usersCol).not.toHaveBeenCalled();
+  expect(renderPaymentQrSvg).toHaveBeenCalledWith(SESSION.paymentCode);
 });

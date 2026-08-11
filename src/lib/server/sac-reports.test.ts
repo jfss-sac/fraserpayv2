@@ -1,15 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { BoothReportRow } from "@/lib/shared/types";
 
-const { boothsGet, usersAggGet, getTotals, getSummary, cacheCall } = vi.hoisted(() => ({
-  boothsGet: vi.fn(),
-  usersAggGet: vi.fn(),
-  getTotals: vi.fn(),
-  getSummary: vi.fn(),
-  cacheCall: {
-    current: null as null | { keys: string[]; opts: { revalidate?: number; tags?: string[] } },
-  },
-}));
+const { boothsGet, ledgerAggGet, usersAggGet, getTotals, getSummary, cacheCall } = vi.hoisted(
+  () => ({
+    boothsGet: vi.fn(),
+    ledgerAggGet: vi.fn(),
+    usersAggGet: vi.fn(),
+    getTotals: vi.fn(),
+    getSummary: vi.fn(),
+    cacheCall: {
+      current: null as null | { keys: string[]; opts: { revalidate?: number; tags?: string[] } },
+    },
+  }),
+);
 
 vi.mock("next/cache", () => ({
   unstable_cache: (
@@ -30,13 +33,12 @@ vi.mock("next/cache", () => ({
   },
 }));
 
-function ledgerQuery(filters: string[] = []) {
+function ledgerQuery(filters: [string, unknown][] = []) {
   return {
-    where: (field: string) => ledgerQuery([...filters, field]),
+    where: (field: string, _operator: string, value: unknown) =>
+      ledgerQuery([...filters, [field, value]]),
     aggregate: () => ({
-      get: async () => ({
-        data: () => (filters.includes("method") ? { cents: 2000 } : { cents: 3500, n: 3 }),
-      }),
+      get: () => ledgerAggGet(filters),
     }),
   };
 }
@@ -133,10 +135,16 @@ describe("buildEventReports", () => {
 describe("getEventReports — read cost", () => {
   beforeEach(() => {
     boothsGet.mockReset();
+    ledgerAggGet.mockReset();
     usersAggGet.mockReset();
     getTotals.mockReset();
     getSummary.mockReset();
     usersAggGet.mockResolvedValue({ data: () => ({ total: 4200 }) });
+    ledgerAggGet.mockImplementation(async (filters: [string, unknown][]) => {
+      const method = filters.find(([field]) => field === "method")?.[1];
+      if (method === "card") return { data: () => ({ cents: 2000, n: 1 }) };
+      return { data: () => ({ cents: 3500, n: 3 }) };
+    });
     getTotals.mockImplementation(async (id: string) =>
       id === "deactivated"
         ? { grossCents: 600, purchaseCount: 1, refundCount: 0 }
@@ -190,6 +198,39 @@ describe("getEventReports — read cost", () => {
     expect(dto.grossTotalCents).toBe(1600);
     expect(dto.topups).toEqual({ cashCents: 1500, cardCents: 2000, totalCents: 3500, count: 3 });
     expect(dto.outstandingLiabilityCents).toBe(4200);
+  });
+
+  it("counts a top-up without a method as cash instead of dropping it", async () => {
+    ledgerAggGet.mockImplementation(async (filters: [string, unknown][]) => {
+      const method = filters.find(([field]) => field === "method")?.[1];
+      if (method === "cash") return { data: () => ({ cents: 1500, n: 2 }) };
+      if (method === "card") return { data: () => ({ cents: 2000, n: 1 }) };
+      return { data: () => ({ cents: 3750, n: 4 }) };
+    });
+
+    const dto = await getEventReports();
+
+    expect(dto.topups).toEqual({ cashCents: 1750, cardCents: 2000, totalCents: 3750, count: 4 });
+  });
+
+  it("starts independent top-up and liability aggregates while the booth read is pending", async () => {
+    let resolveBooths!: (value: { docs: never[] }) => void;
+    boothsGet.mockReturnValue(
+      new Promise<{ docs: never[] }>((resolve) => {
+        resolveBooths = resolve;
+      }),
+    );
+
+    const reports = getEventReports();
+    await Promise.resolve();
+
+    try {
+      expect(ledgerAggGet).toHaveBeenCalled();
+      expect(usersAggGet).toHaveBeenCalled();
+    } finally {
+      resolveBooths({ docs: [] });
+      await reports;
+    }
   });
 });
 

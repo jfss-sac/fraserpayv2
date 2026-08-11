@@ -63,22 +63,26 @@ async function getOutstandingLiabilityCents(): Promise<number> {
   return snap.data().total;
 }
 
-export async function getEventReports(): Promise<ReportsDTO> {
+async function getBoothReportRows(): Promise<BoothReportRow[]> {
   const boothSnap = await boothsCol().get();
   const reportable = boothSnap.docs.filter((d) => d.data().status !== "pending");
 
+  return Promise.all(
+    reportable.map(async (doc) => {
+      const booth = doc.data();
+      return {
+        boothId: doc.id,
+        boothName: booth.name,
+        status: booth.status,
+        ...(await getBoothLedgerTotals(doc.id)),
+      };
+    }),
+  );
+}
+
+export async function getEventReports(): Promise<ReportsDTO> {
   const [booths, topups, balanceTotalCents] = await Promise.all([
-    Promise.all(
-      reportable.map(async (doc) => {
-        const booth = doc.data();
-        return {
-          boothId: doc.id,
-          boothName: booth.name,
-          status: booth.status,
-          ...(await getBoothLedgerTotals(doc.id)),
-        };
-      }),
-    ),
+    getBoothReportRows(),
     getTopupAggregate(),
     getOutstandingLiabilityCents(),
   ]);

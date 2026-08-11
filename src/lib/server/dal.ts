@@ -29,6 +29,7 @@ export interface Session {
   email: string;
   displayName: string;
   studentNumber: string | null;
+  paymentCode: string;
   balanceCents: number;
   points: number;
   roles: { sacMember: boolean; sacExec: boolean };
@@ -52,6 +53,7 @@ function toSession(decoded: DecodedIdToken, data: FirebaseFirestore.DocumentData
     email: (data.email as string | undefined) ?? decoded.email ?? "",
     displayName: (data.displayName as string | undefined) ?? "",
     studentNumber: (data.studentNumber as string | null | undefined) ?? null,
+    paymentCode: (data.paymentCode as string | undefined) ?? "",
     balanceCents: (data.balanceCents as number | undefined) ?? 0,
     points: (data.points as number | undefined) ?? 0,
     roles: { sacMember: roles.sacMember === true, sacExec: roles.sacExec === true },

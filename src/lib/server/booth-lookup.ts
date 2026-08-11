@@ -2,10 +2,10 @@ import "server-only";
 import { Timestamp } from "firebase-admin/firestore";
 import { z } from "zod";
 import { isBoothMember } from "./dal";
-import { ledgerCol, usersCol } from "./db";
-import { ForbiddenError, NotFoundError, SuspendedError } from "./errors";
+import { ledgerCol } from "./db";
+import { ForbiddenError, SuspendedError } from "./errors";
 import { logger } from "./logger";
-import { boothBuyerSchema, resolveBuyerUid } from "./money/shared";
+import { boothBuyerSchema, resolveBuyer } from "./money/shared";
 import type { LookupResult, RecentPurchase } from "@/lib/shared/types";
 
 export const RECENT_PURCHASE_WINDOW_MS = 10 * 60 * 1000;
@@ -68,13 +68,8 @@ export async function lookupBuyer(args: {
     throw new ForbiddenError("You are not a member of this booth.");
   }
 
-  const buyerUid = await resolveBuyerUid(input.buyer);
-  const [buyerSnap, lastPurchase] = await Promise.all([
-    usersCol().doc(buyerUid).get(),
-    lastPurchaseAtBooth(buyerUid, input.boothId),
-  ]);
-  const buyer = buyerSnap.data();
-  if (!buyer) throw new NotFoundError("No student found for that code or number.");
+  const { uid: buyerUid, data: buyer } = await resolveBuyer(input.buyer);
+  const lastPurchase = await lastPurchaseAtBooth(buyerUid, input.boothId);
   if (buyer.suspended) throw new SuspendedError();
 
   return {

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/server/dal";
-import { type LedgerEntryDoc, ledgerCol, usersCol } from "@/lib/server/db";
+import { type LedgerEntryDoc, ledgerCol } from "@/lib/server/db";
 import { renderPaymentQrSvg } from "@/lib/server/qr";
 import { WALLET_REFRESH_SCRIPT } from "./refresh-script";
 import { WalletView, type WalletHistoryItem } from "./wallet-view";
@@ -32,29 +32,23 @@ export default async function WalletPage() {
   const session = await getSession();
   if (!session) redirect("/login");
 
-  const [userSnap, ledgerSnap] = await Promise.all([
-    usersCol().doc(session.uid).get(),
-    ledgerCol()
-      .where("studentUid", "==", session.uid)
-      .orderBy("createdAt", "desc")
-      .limit(HISTORY_LIMIT)
-      .get(),
-  ]);
+  const ledgerSnap = await ledgerCol()
+    .where("studentUid", "==", session.uid)
+    .orderBy("createdAt", "desc")
+    .limit(HISTORY_LIMIT)
+    .get();
 
-  const user = userSnap.data();
-  if (!user) redirect("/login");
-
-  const qrSvg = renderPaymentQrSvg(user.paymentCode);
+  const qrSvg = renderPaymentQrSvg(session.paymentCode);
   const nonce = (await headers()).get("x-nonce") ?? undefined;
 
   return (
     <>
       <WalletView
         qrSvg={qrSvg}
-        paymentCode={user.paymentCode}
-        studentNumber={user.studentNumber}
-        balanceCents={user.balanceCents}
-        points={user.points}
+        paymentCode={session.paymentCode}
+        studentNumber={session.studentNumber}
+        balanceCents={session.balanceCents}
+        points={session.points}
         asOfIso={new Date().toISOString()}
         history={ledgerSnap.docs.map((doc) => toHistoryItem(doc.id, doc.data()))}
       />
