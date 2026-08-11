@@ -10,6 +10,7 @@ const ORIGIN = "http://127.0.0.1";
 const ENDPOINT = "/api/booths/register";
 
 const SUBMITTER = { uid: "register-submitter", name: "Terry Teacher" };
+const RETRY_SUBMITTER = { uid: "register-retry-submitter", name: "Robin Retry" };
 const SUSPENDED = { uid: "register-suspended", name: "Sam Suspended" };
 const RL_USER = { uid: "register-ratelimit", name: "Rita Ratelimit" };
 
@@ -90,9 +91,11 @@ beforeAll(async () => {
   vi.spyOn(console, "log").mockImplementation(() => {});
 
   await makeUser({ uid: SUBMITTER.uid, displayName: SUBMITTER.name });
+  await makeUser({ uid: RETRY_SUBMITTER.uid, displayName: RETRY_SUBMITTER.name });
   await makeUser({ uid: SUSPENDED.uid, displayName: SUSPENDED.name, suspended: true });
   await makeUser({ uid: RL_USER.uid, displayName: RL_USER.name });
   cookies[SUBMITTER.uid] = await mintSessionCookie(SUBMITTER.uid);
+  cookies[RETRY_SUBMITTER.uid] = await mintSessionCookie(RETRY_SUBMITTER.uid);
   cookies[SUSPENDED.uid] = await mintSessionCookie(SUSPENDED.uid);
   cookies[RL_USER.uid] = await mintSessionCookie(RL_USER.uid);
 });
@@ -129,6 +132,27 @@ describe("POST /api/booths/register", () => {
     const ids = booth.items.map((i) => i.id);
     expect(new Set(ids).size).toBe(ids.length);
     expect(regular.every((i) => i.id !== "custom")).toBe(true);
+  });
+
+  it("deduplicates concurrent retries of the same registration", async () => {
+    const expectedIds = new Set<string>();
+
+    for (let round = 0; round < 3; round += 1) {
+      const body = { ...validBody(), description: `Concurrent retry round ${round}` };
+      const responses = await Promise.all(
+        Array.from({ length: 4 }, () => registerRoute(post(RETRY_SUBMITTER.uid, body))),
+      );
+      expect(responses.every((response) => response.status === 200)).toBe(true);
+
+      const ids = await Promise.all(
+        responses.map(async (response) => ((await response.json()) as { boothId: string }).boothId),
+      );
+      expect(new Set(ids).size).toBe(1);
+      expectedIds.add(ids[0]!);
+    }
+
+    expect(expectedIds.size).toBe(3);
+    expect(await boothsBySubmitter(RETRY_SUBMITTER.uid)).toHaveLength(3);
   });
 
   it("rejects a price that is not a multiple of $0.50", async () => {

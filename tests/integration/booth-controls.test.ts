@@ -287,6 +287,20 @@ describe("POST /api/exec/booths/[id]/members/remove", () => {
     expect(audits[0]!.details.uid).toBe(SELLER.uid);
   });
 
+  it("returns NOT_FOUND without an audit when the target is not a member", async () => {
+    const id = await makeBooth({ status: "approved", joinCode: "TACO-DCDED" });
+
+    const res = await withParams(
+      removeRoute,
+      id,
+      execPost(path(id), EXEC.uid, { uid: SELLER.uid }),
+    );
+
+    expect(res.status).toBe(404);
+    expect(await errorCode(res)).toBe("NOT_FOUND");
+    expect(await auditsFor(id)).toHaveLength(0);
+  });
+
   it("forbids a non-exec", async () => {
     const id = await makeBooth({ status: "approved", joinCode: "TACO-EEEEE" });
     await addMember(id, SELLER);

@@ -20,6 +20,7 @@ export const POST = defineHandler<typeof removeSchema, { id: string }>(
       if (!booth) throw new NotFoundError("Booth not found.");
 
       const member = (await t.get(memberRef)).data();
+      if (!member) throw new NotFoundError("Booth member not found.");
 
       t.delete(memberRef);
 
@@ -28,7 +29,7 @@ export const POST = defineHandler<typeof removeSchema, { id: string }>(
         "booth.memberRemove",
         { uid: session!.uid, displayName: session!.displayName },
         { type: "booth", id: params.id, label: booth.name },
-        { uid: input.uid, displayName: member?.displayName ?? null },
+        { uid: input.uid, displayName: member.displayName },
       );
 
       return { boothId: params.id, uid: input.uid };
