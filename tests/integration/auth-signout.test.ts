@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { type MockInstance, afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { POST } from "../../src/app/api/auth/signout/route";
 import { getAdminAuth, getAdminFirestore } from "../../src/lib/server/firebase-admin";
 import { SESSION_COOKIE_NAME, SESSION_TTL_MS } from "../../src/lib/shared/constants";
@@ -29,13 +29,15 @@ function signout(cookie?: string): Promise<Response> {
   return POST(new Request(`${ORIGIN}/api/auth/signout`, { method: "POST", headers }));
 }
 
+let logLines: MockInstance<typeof console.log>;
+
 beforeAll(async () => {
   if (!process.env.FIRESTORE_EMULATOR_HOST || !process.env.FIREBASE_AUTH_EMULATOR_HOST) {
     throw new Error(
       "Integration test requires the auth + firestore emulators (run via emulators:exec).",
     );
   }
-  vi.spyOn(console, "log").mockImplementation(() => {});
+  logLines = vi.spyOn(console, "log").mockImplementation(() => {});
   await getAdminAuth()
     .deleteUser(UID)
     .catch(() => undefined);
@@ -92,5 +94,36 @@ describe("POST /api/auth/signout", () => {
     const after = await signout(cookie);
     expect(after.status).toBe(401);
     expect(((await after.json()) as { error: { code: string } }).error.code).toBe("UNAUTHORIZED");
+  });
+
+  it("still clears the cookie when revoking refresh tokens fails", async () => {
+    const cookie = await mintSessionCookie();
+    await new Promise((r) => setTimeout(r, 1000));
+
+    const revoke = vi
+      .spyOn(getAdminAuth(), "revokeRefreshTokens")
+      .mockRejectedValue(new Error("auth backend unavailable"));
+    logLines.mockClear();
+
+    try {
+      const res = await signout(cookie);
+
+      expect(revoke).toHaveBeenCalledWith(UID);
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ ok: true, revoked: false });
+
+      const setCookie = res.headers.get("set-cookie");
+      expect(setCookie).toContain(`${SESSION_COOKIE_NAME}=;`);
+      expect(setCookie).toMatch(/Max-Age=0\b/);
+      expect(res.headers.get("clear-site-data")).toBe('"cache", "storage"');
+
+      const logged = logLines.mock.calls
+        .map(([line]) => String(line))
+        .filter((line) => line.includes("signout-revoke-failed"));
+      expect(logged).toHaveLength(1);
+      expect(logged[0]).toContain('"level":"error"');
+    } finally {
+      revoke.mockRestore();
+    }
   });
 });

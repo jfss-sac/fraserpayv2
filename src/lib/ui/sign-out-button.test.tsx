@@ -10,6 +10,8 @@ import { SignOutButton } from "./sign-out-button";
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  replace.mockClear();
+  refresh.mockClear();
 });
 
 function stubServiceWorker(active: { postMessage: ReturnType<typeof vi.fn> } | null) {
@@ -52,4 +54,57 @@ test("still routes to login when no service worker controls the page", async () 
   fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
 
   await waitFor(() => expect(replace).toHaveBeenCalledWith("/login"));
+});
+
+test("stays put and reports failure when the server rejects sign-out", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => new Response(null, { status: 500 })),
+  );
+  const postMessage = vi.fn();
+  stubServiceWorker({ postMessage });
+
+  render(<SignOutButton />);
+  fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+
+  await waitFor(() => expect(screen.getByText(/still signed in/i)).toBeTruthy());
+  expect(replace).not.toHaveBeenCalled();
+  expect(refresh).not.toHaveBeenCalled();
+  expect(postMessage).not.toHaveBeenCalled();
+  expect(screen.getByRole("button", { name: "Sign out" }).hasAttribute("disabled")).toBe(false);
+});
+
+test("stays put and reports failure when the network call throws", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => {
+      throw new TypeError("Failed to fetch");
+    }),
+  );
+  const postMessage = vi.fn();
+  stubServiceWorker({ postMessage });
+
+  render(<SignOutButton />);
+  fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+
+  await waitFor(() => expect(screen.getByText(/still signed in/i)).toBeTruthy());
+  expect(replace).not.toHaveBeenCalled();
+  expect(postMessage).not.toHaveBeenCalled();
+});
+
+test("treats 401 as already signed out and completes the purge + redirect", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => new Response(null, { status: 401 })),
+  );
+  const postMessage = vi.fn((_msg, transfer: MessagePort[]) => {
+    transfer[0]!.postMessage({ type: PURGE_CACHES_MESSAGE, ok: true });
+  });
+  stubServiceWorker({ postMessage });
+
+  render(<SignOutButton />);
+  fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+
+  await waitFor(() => expect(replace).toHaveBeenCalledWith("/login"));
+  expect(postMessage).toHaveBeenCalled();
 });

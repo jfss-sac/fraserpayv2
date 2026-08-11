@@ -1,7 +1,7 @@
 import "server-only";
-import { InternalError } from "@/lib/server/errors";
 import { getAdminAuth } from "@/lib/server/firebase-admin";
 import { defineHandler } from "@/lib/server/http";
+import { logger } from "@/lib/server/logger";
 import { SESSION_COOKIE_NAME } from "@/lib/shared/constants";
 
 function clearedSessionCookie(): string {
@@ -15,14 +15,22 @@ function clearedSessionCookie(): string {
   ].join("; ");
 }
 
-export const POST = defineHandler({ role: "session" }, async ({ session }) => {
+export const POST = defineHandler({ role: "session" }, async ({ session, requestId }) => {
+  let revoked = true;
   try {
     await getAdminAuth().revokeRefreshTokens(session!.uid);
-  } catch {
-    throw new InternalError();
+  } catch (err) {
+    revoked = false;
+    logger.error({
+      event: "signout-revoke-failed",
+      requestId,
+      route: "/api/auth/signout",
+      actorUid: session!.uid,
+      err,
+    });
   }
 
-  const response = Response.json({ ok: true });
+  const response = Response.json({ ok: true, revoked });
   response.headers.append("set-cookie", clearedSessionCookie());
   response.headers.set("clear-site-data", '"cache", "storage"');
   return response;
