@@ -22,7 +22,11 @@ export async function wipeBalances(db: Firestore): Promise<WipeBalancesResult> {
   for (const doc of snapshot.docs) {
     const balanceCents = (doc.data().balanceCents as number | undefined) ?? 0;
     if (balanceCents === 0) continue;
-    batch.update(doc.ref, { balanceCents: 0, updatedAt: FieldValue.serverTimestamp() });
+    batch.update(
+      doc.ref,
+      { balanceCents: 0, updatedAt: FieldValue.serverTimestamp() },
+      { lastUpdateTime: doc.updateTime },
+    );
     balancesZeroed += 1;
     totalCentsCleared += balanceCents;
     pending += 1;

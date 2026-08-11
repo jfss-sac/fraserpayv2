@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { FieldValue } from "firebase-admin/firestore";
+import { FieldValue, type WriteBatch } from "firebase-admin/firestore";
 import { getAdminFirestore } from "../../src/lib/server/firebase-admin";
 import { parseArgs, resolveWipePlan, wipeBalances } from "../../scripts/wipe-balances";
 
@@ -147,5 +147,34 @@ describe("wipe-balances effect", () => {
     const again = await wipeBalances(db);
     expect(again.balancesZeroed).toBe(0);
     expect(again.totalCentsCleared).toBe(0);
+  });
+
+  it("refuses to overwrite a balance changed after the wipe snapshot", async () => {
+    const db = getAdminFirestore();
+    const userRef = db.collection("users").doc(ALICE.uid);
+    await userRef.update({ balanceCents: ALICE.balanceCents });
+
+    const commitStarted = Promise.withResolvers<void>();
+    const releaseCommit = Promise.withResolvers<void>();
+    const originalBatch = db.batch.bind(db);
+    const batchSpy = vi.spyOn(db, "batch").mockImplementation(() => {
+      const batch = originalBatch();
+      const originalCommit = batch.commit.bind(batch);
+      vi.spyOn(batch, "commit").mockImplementation(async () => {
+        commitStarted.resolve();
+        await releaseCommit.promise;
+        return originalCommit();
+      });
+      return batch as WriteBatch;
+    });
+
+    const wipe = wipeBalances(db);
+    await commitStarted.promise;
+    await userRef.update({ balanceCents: ALICE.balanceCents + 500 });
+    releaseCommit.resolve();
+
+    await expect(wipe).rejects.toMatchObject({ code: 9 });
+    expect((await userRef.get()).data()!.balanceCents).toBe(ALICE.balanceCents + 500);
+    batchSpy.mockRestore();
   });
 });
