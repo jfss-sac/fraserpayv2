@@ -563,12 +563,17 @@ describe("POST /api/booth/lookup", () => {
         buyer: { paymentCode: buyer.paymentCode },
       };
       const { limit } = RATE_LIMITS.lookup;
-      const codes: number[] = [];
-      for (let i = 0; i < limit + 1; i += 1) {
-        codes.push((await lookupRoute(post(RL_OPERATOR.uid, body))).status);
+      const dateNow = vi.spyOn(Date, "now").mockReturnValue(Date.now());
+      try {
+        const codes: number[] = [];
+        for (let i = 0; i < limit + 1; i += 1) {
+          codes.push((await lookupRoute(post(RL_OPERATOR.uid, body))).status);
+        }
+        expect(codes.slice(0, limit).every((s) => s === 200)).toBe(true);
+        expect(codes[limit]).toBe(429);
+      } finally {
+        dateNow.mockRestore();
       }
-      expect(codes.slice(0, limit).every((s) => s === 200)).toBe(true);
-      expect(codes[limit]).toBe(429);
     },
     RATE_LIMIT_SWEEP_TIMEOUT_MS,
   );

@@ -420,12 +420,17 @@ describe("GET /api/sac/feed — rate limiting", () => {
     "rate-limits a member past the per-minute read cap",
     async () => {
       const { limit } = RATE_LIMITS.reads;
-      const codes: number[] = [];
-      for (let i = 0; i < limit + 1; i += 1) {
-        codes.push((await feedRoute(feedReq(RL.uid))).status);
+      const dateNow = vi.spyOn(Date, "now").mockReturnValue(Date.now());
+      try {
+        const codes: number[] = [];
+        for (let i = 0; i < limit + 1; i += 1) {
+          codes.push((await feedRoute(feedReq(RL.uid))).status);
+        }
+        expect(codes.slice(0, limit).every((s) => s === 200)).toBe(true);
+        expect(codes[limit]).toBe(429);
+      } finally {
+        dateNow.mockRestore();
       }
-      expect(codes.slice(0, limit).every((s) => s === 200)).toBe(true);
-      expect(codes[limit]).toBe(429);
     },
     RATE_LIMIT_SWEEP_TIMEOUT_MS,
   );

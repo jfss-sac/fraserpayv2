@@ -214,12 +214,17 @@ describe("POST /api/sac/lookup", () => {
       const buyer = await freshBuyer();
       const body = { buyer: { studentNumber: buyer.studentNumber } };
       const { limit } = RATE_LIMITS.lookup;
-      const codes: number[] = [];
-      for (let i = 0; i < limit + 1; i += 1) {
-        codes.push((await sacLookupRoute(post(RL_MEMBER.uid, body))).status);
+      const dateNow = vi.spyOn(Date, "now").mockReturnValue(Date.now());
+      try {
+        const codes: number[] = [];
+        for (let i = 0; i < limit + 1; i += 1) {
+          codes.push((await sacLookupRoute(post(RL_MEMBER.uid, body))).status);
+        }
+        expect(codes.slice(0, limit).every((s) => s === 200)).toBe(true);
+        expect(codes[limit]).toBe(429);
+      } finally {
+        dateNow.mockRestore();
       }
-      expect(codes.slice(0, limit).every((s) => s === 200)).toBe(true);
-      expect(codes[limit]).toBe(429);
     },
     RATE_LIMIT_SWEEP_TIMEOUT_MS,
   );
