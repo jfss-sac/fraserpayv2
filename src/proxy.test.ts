@@ -32,6 +32,11 @@ describe("proxy matcher", () => {
     "/sw.js",
     "/manifest.webmanifest",
     "/favicon.ico",
+    "/icons/apple-touch-icon.png",
+    "/icons/icon-192.png",
+    "/icons/icon-512.png",
+    "/icons/icon-maskable-192.png",
+    "/icons/icon-maskable-512.png",
     "/_next/static/chunk.js",
     "/_next/image",
   ];
