@@ -1,7 +1,7 @@
-import { act, render, renderHook, screen } from "@testing-library/react";
+import { act, fireEvent, render, renderHook, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, test, vi } from "vitest";
-import { TOAST_DURATION_MS, Toaster, useToasts } from "./toast";
+import { TOAST_DURATION_MS, ToastProvider, Toaster, useToast, useToasts } from "./toast";
 
 afterEach(() => {
   vi.useRealTimers();
@@ -78,4 +78,30 @@ test("dismisses a toast when the close button is pressed", async () => {
 
   await user.click(screen.getByRole("button", { name: "Dismiss" }));
   expect(onDismiss).toHaveBeenCalledWith("a");
+});
+
+test("one provider owns consumer toasts and applies the shared duration", () => {
+  vi.useFakeTimers();
+
+  function ToastEmitter() {
+    const { push } = useToast();
+    return (
+      <button type="button" onClick={() => push("Saved", "success")}>
+        Save
+      </button>
+    );
+  }
+
+  render(
+    <ToastProvider>
+      <ToastEmitter />
+    </ToastProvider>,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+  expect(screen.getByRole("status")).toHaveTextContent("Saved");
+  act(() => vi.advanceTimersByTime(TOAST_DURATION_MS - 1));
+  expect(screen.getByRole("status")).toBeInTheDocument();
+  act(() => vi.advanceTimersByTime(1));
+  expect(screen.queryByRole("status")).not.toBeInTheDocument();
 });

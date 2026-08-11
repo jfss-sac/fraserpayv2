@@ -6,7 +6,7 @@ import { TIMEZONE } from "@/lib/shared/constants";
 import { formatCents } from "@/lib/shared/money";
 import type { SacLedgerEntry, SacRoles, StudentDetail } from "@/lib/shared/types";
 import { ConfirmDialog } from "@/lib/ui/confirm-dialog";
-import { Toaster, useToasts } from "@/lib/ui/toast";
+import { useToast } from "@/lib/ui/toast";
 import { useIdempotencyKey } from "@/lib/ui/use-idempotency-key";
 import { Button } from "@/lib/ui/vendor/button";
 import {
@@ -92,7 +92,7 @@ export function StudentActions({
   initialCursor: string | null;
 }) {
   const router = useRouter();
-  const { toasts, push, dismiss } = useToasts();
+  const { push } = useToast();
   const [dialog, setDialog] = useState<Dialog | null>(null);
   const [busy, setBusy] = useState(false);
   const inFlight = useRef(false);
@@ -290,8 +290,6 @@ export function StudentActions({
           )}
         </ConfirmDialog>
       ) : null}
-
-      <Toaster toasts={toasts} onDismiss={dismiss} />
     </>
   );
 }

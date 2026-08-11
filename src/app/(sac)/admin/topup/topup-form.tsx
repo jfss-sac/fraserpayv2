@@ -13,7 +13,7 @@ import {
 import type { PaymentMethod, SacLookupResult, TopUpResult } from "@/lib/shared/types";
 import { ApiError } from "@/lib/ui/api-client";
 import { Scanner, type BuyerId } from "@/lib/ui/scanner";
-import { Toaster, useToasts } from "@/lib/ui/toast";
+import { useToast } from "@/lib/ui/toast";
 import { Button } from "@/lib/ui/vendor/button";
 import { Card, CardContent } from "@/lib/ui/vendor/card";
 import { ReconfirmDialog } from "./reconfirm-dialog";
@@ -88,7 +88,7 @@ function SuccessPanel({
 }
 
 export function TopUpForm({ isExec }: { isExec: boolean }) {
-  const { toasts, push, dismiss } = useToasts();
+  const { push } = useToast();
   const [buyer, setBuyer] = useState<BuyerId | null>(null);
   const [student, setStudent] = useState<SacLookupResult | null>(null);
   const [stage, setStage] = useState<Stage>("identify");
@@ -337,8 +337,6 @@ export function TopUpForm({ isExec }: { isExec: boolean }) {
           onCancel={() => setDialogOpen(false)}
         />
       )}
-
-      <Toaster toasts={toasts} onDismiss={dismiss} />
     </div>
   );
 }

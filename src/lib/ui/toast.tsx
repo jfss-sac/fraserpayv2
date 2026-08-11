@@ -1,11 +1,26 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  createContext,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Button } from "@/lib/ui/vendor/button";
 
 export const TOAST_DURATION_MS = 6000;
 
 export type ToastVariant = "success" | "error";
+
+interface ToastContextValue {
+  push: (message: string, variant: ToastVariant) => string;
+}
+
+const ToastContext = createContext<ToastContextValue | null>(null);
 
 export interface Toast {
   id: string;
@@ -33,6 +48,12 @@ export function useToasts() {
   }, []);
 
   return { toasts, push, dismiss };
+}
+
+export function useToast(): ToastContextValue {
+  const context = useContext(ToastContext);
+  if (!context) throw new Error("useToast must be used within ToastProvider");
+  return context;
 }
 
 function ToastItem({
@@ -94,5 +115,17 @@ export function Toaster({
         <ToastItem key={toast.id} toast={toast} onDismiss={onDismiss} duration={duration} />
       ))}
     </div>
+  );
+}
+
+export function ToastProvider({ children }: { children: ReactNode }) {
+  const { toasts, push, dismiss } = useToasts();
+  const context = useMemo(() => ({ push }), [push]);
+
+  return (
+    <ToastContext.Provider value={context}>
+      {children}
+      <Toaster toasts={toasts} onDismiss={dismiss} />
+    </ToastContext.Provider>
   );
 }

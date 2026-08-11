@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import {
@@ -115,6 +115,8 @@ describe("decoder selection", () => {
 describe("Scanner component", () => {
   afterEach(() => {
     Reflect.deleteProperty(navigator, "mediaDevices");
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
   });
 
   test("number pad is always visible before the camera is used", () => {
@@ -184,6 +186,40 @@ describe("Scanner component", () => {
     await waitFor(() =>
       expect(screen.getByRole("status")).toHaveTextContent(/camera access was blocked/i),
     );
+  });
+
+  test("does not start a frame loop when camera startup finishes after unmount", async () => {
+    let finishPlaying!: () => void;
+    const playPending = new Promise<void>((resolve) => {
+      finishPlaying = resolve;
+    });
+    const stop = vi.fn();
+    const getUserMedia = vi.fn().mockResolvedValue({
+      getTracks: () => [{ stop }],
+      getVideoTracks: () => [{}],
+    });
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: { getUserMedia },
+    });
+    vi.spyOn(HTMLMediaElement.prototype, "play").mockReturnValue(playPending);
+    const requestFrame = vi.fn();
+    vi.stubGlobal("requestAnimationFrame", requestFrame);
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
+
+    const { unmount } = render(<Scanner onIdentify={vi.fn()} manualEntry="studentNumber" />);
+    await userEvent.click(screen.getByRole("button", { name: "Scan QR code" }));
+    await waitFor(() => expect(HTMLMediaElement.prototype.play).toHaveBeenCalled());
+
+    unmount();
+    await act(async () => {
+      finishPlaying();
+      await playPending;
+    });
+    await act(async () => {});
+
+    expect(stop).toHaveBeenCalledOnce();
+    expect(requestFrame).not.toHaveBeenCalled();
   });
 });
 

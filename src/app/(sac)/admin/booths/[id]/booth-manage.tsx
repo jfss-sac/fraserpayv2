@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { formatCents } from "@/lib/shared/money";
 import type { BoothDetail, BoothItem, BoothStatus, BoothSummary } from "@/lib/shared/types";
 import { ConfirmDialog } from "@/lib/ui/confirm-dialog";
-import { Toaster, useToasts } from "@/lib/ui/toast";
+import { useToast } from "@/lib/ui/toast";
 import { Button } from "@/lib/ui/vendor/button";
 import {
   approveBooth,
@@ -104,7 +104,7 @@ function SalesCard({ summary }: { summary: BoothSummary }) {
 
 export function BoothManage({ detail, isExec }: { detail: BoothDetail; isExec: boolean }) {
   const router = useRouter();
-  const { toasts, push, dismiss } = useToasts();
+  const { push } = useToast();
   const [dialog, setDialog] = useState<Dialog | null>(null);
   const [busy, setBusy] = useState(false);
   const inFlight = useRef(false);
@@ -345,8 +345,6 @@ export function BoothManage({ detail, isExec }: { detail: BoothDetail; isExec: b
           <p>{detail.name} can sell again immediately with its existing join code.</p>
         </ConfirmDialog>
       ) : null}
-
-      <Toaster toasts={toasts} onDismiss={dismiss} />
     </div>
   );
 }

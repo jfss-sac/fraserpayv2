@@ -104,6 +104,8 @@ export function Scanner({
   const decoderRef = useRef<QrDecoder | null>(null);
   const rafRef = useRef<number | null>(null);
   const scanningRef = useRef(false);
+  const mountedRef = useRef(false);
+  const cameraRunRef = useRef(0);
   const onIdentifyRef = useRef(onIdentify);
   useEffect(() => {
     onIdentifyRef.current = onIdentify;
@@ -116,6 +118,7 @@ export function Scanner({
   const [pad, setPad] = useState("");
 
   function stopCamera() {
+    cameraRunRef.current += 1;
     scanningRef.current = false;
     if (rafRef.current !== null) {
       cancelAnimationFrame(rafRef.current);
@@ -131,7 +134,13 @@ export function Scanner({
     setTorchOn(false);
   }
 
-  useEffect(() => stopCamera, []);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      stopCamera();
+    };
+  }, []);
 
   function scanLoop() {
     if (!scanningRef.current) return;
@@ -164,6 +173,8 @@ export function Scanner({
   }
 
   async function startCamera() {
+    const cameraRun = ++cameraRunRef.current;
+    const isCurrentRun = () => mountedRef.current && cameraRunRef.current === cameraRun;
     setScanHint("");
     if (!navigator.mediaDevices?.getUserMedia) {
       setCameraState("unsupported");
@@ -174,6 +185,10 @@ export function Scanner({
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: "environment" },
       });
+      if (!isCurrentRun()) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
       streamRef.current = stream;
       const video = videoRef.current;
       if (!video) {
@@ -183,17 +198,21 @@ export function Scanner({
       }
       video.srcObject = stream;
       await video.play();
+      if (!isCurrentRun()) return;
       const track = stream.getVideoTracks()[0] ?? null;
       trackRef.current = track;
       const capabilities = (
         track as MediaStreamTrack & { getCapabilities?: () => MediaTrackCapabilities }
       )?.getCapabilities?.();
       setTorchAvailable(Boolean(capabilities && "torch" in capabilities));
-      decoderRef.current = await createQrDecoder();
+      const decoder = await createQrDecoder();
+      if (!isCurrentRun()) return;
+      decoderRef.current = decoder;
       scanningRef.current = true;
       setCameraState("scanning");
       scanLoop();
     } catch (error) {
+      if (!isCurrentRun()) return;
       stopCamera();
       setCameraState((error as DOMException)?.name === "NotAllowedError" ? "denied" : "error");
     }

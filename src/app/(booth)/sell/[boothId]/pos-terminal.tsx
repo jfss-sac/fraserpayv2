@@ -5,7 +5,7 @@ import { BOOTH_STUDENT_NUMBER_ENABLED } from "@/lib/shared/constants";
 import { formatCents } from "@/lib/shared/money";
 import type { BoothItem } from "@/lib/shared/types";
 import { Scanner, type BuyerId } from "@/lib/ui/scanner";
-import { Toaster, useToasts } from "@/lib/ui/toast";
+import { useToast } from "@/lib/ui/toast";
 import { useNow } from "@/lib/ui/use-now";
 import { Button } from "@/lib/ui/vendor/button";
 import { OfflineBanner } from "./offline-banner";
@@ -16,8 +16,6 @@ import { cartToItems, chargeErrorMessage, useCharge } from "./use-charge";
 import { type ObservedPurchase, type SufficiencyState, useSufficiency } from "./use-sufficiency";
 
 export const LAST_CHARGE_TICK_MS = 5000;
-
-export const POS_TOAST_DURATION_MS = 5000;
 
 const ERROR_MESSAGE: Record<string, string> = {
   NOT_FOUND: "No student matches that code or number.",
@@ -126,7 +124,7 @@ export function PosTerminal({
     cartTotalCents,
   });
   const online = useConnectivity();
-  const { toasts, push, dismiss } = useToasts();
+  const { push } = useToast();
 
   const {
     state: chargeState,
@@ -218,8 +216,6 @@ export function PosTerminal({
       ) : (
         <BuyerPanel state={sufficiency} onClear={() => setBuyer(null)} onRefresh={refreshLookup} />
       )}
-
-      <Toaster toasts={toasts} onDismiss={dismiss} duration={POS_TOAST_DURATION_MS} />
     </div>
   );
 }

@@ -1,10 +1,15 @@
-import { render, screen } from "@testing-library/react";
+import { render as testingRender, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, test, vi } from "vitest";
 import type { SacLedgerEntry, StudentDetail } from "@/lib/shared/types";
+import { ToastProvider } from "@/lib/ui/toast";
 import { StudentActions } from "./student-actions";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
+
+function render(ui: React.ReactNode) {
+  return testingRender(ui, { wrapper: ToastProvider });
+}
 
 const STUDENT: StudentDetail = {
   uid: "stu-1",

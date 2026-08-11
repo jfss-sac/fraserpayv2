@@ -1,9 +1,14 @@
-import { render, screen } from "@testing-library/react";
+import { render as testingRender, screen } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
 import type { BoothDetail } from "@/lib/shared/types";
+import { ToastProvider } from "@/lib/ui/toast";
 import { BoothManage } from "./booth-manage";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
+
+function render(ui: React.ReactNode) {
+  return testingRender(ui, { wrapper: ToastProvider });
+}
 
 const PENDING: BoothDetail = {
   id: "booth-pending",

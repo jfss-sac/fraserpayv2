@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { SITE_DESCRIPTION, SITE_NAME, SITE_TAGLINE, sitePath, siteOrigin } from "@/lib/server/site";
+import { ToastProvider } from "@/lib/ui/toast";
 import "./globals.css";
 
 const SHARE_TITLE = `${SITE_NAME} — ${SITE_TAGLINE}`;
@@ -48,7 +49,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className="min-h-dvh">{children}</body>
+      <body className="min-h-dvh">
+        <ToastProvider>{children}</ToastProvider>
+      </body>
     </html>
   );
 }

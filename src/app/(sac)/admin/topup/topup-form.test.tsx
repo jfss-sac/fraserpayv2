@@ -1,10 +1,15 @@
-import { render, screen, within } from "@testing-library/react";
+import { render as testingRender, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import type { SacLookupResult, TopUpResult } from "@/lib/shared/types";
+import { ToastProvider } from "@/lib/ui/toast";
 import { TopUpForm, parseAmountCents } from "./topup-form";
 
 const STUDENT: SacLookupResult = { name: "Ben Carter", balanceCents: 2000, points: 100 };
+
+function render(ui: React.ReactNode) {
+  return testingRender(ui, { wrapper: ToastProvider });
+}
 
 interface FetchStub {
   lookup?: SacLookupResult;
