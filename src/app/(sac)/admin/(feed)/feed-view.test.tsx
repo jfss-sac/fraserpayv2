@@ -141,7 +141,7 @@ test("clicking a SAC member filters the feed to that actor and shows a removable
 test("shows the auto-refresh affordance and a manual refresh control", () => {
   render(<FeedView initialEntries={[ledger("p1")]} initialCursor={null} />);
   expect(screen.getByRole("button", { name: "Refresh" })).toBeInTheDocument();
-  expect(screen.getByText(/Auto-refreshes every 60s/)).toBeInTheDocument();
+  expect(screen.getByText(/Auto-refreshes every 5 min/)).toBeInTheDocument();
 });
 
 test("renders an empty state when there are no entries", () => {

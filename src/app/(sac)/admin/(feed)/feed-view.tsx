@@ -6,7 +6,9 @@ import { Button } from "@/lib/ui/vendor/button";
 import { cn } from "@/lib/ui/vendor/utils";
 import { REPEAT_BUYER_WINDOW_MS } from "@/lib/shared/constants";
 import { FeedRow, type RowActions } from "./feed-row";
-import { ALL_FILTER, type FeedFilter, filtersEqual, useFeed } from "./use-feed";
+import { ALL_FILTER, FEED_POLL_MS, type FeedFilter, filtersEqual, useFeed } from "./use-feed";
+
+const POLL_MINUTES = FEED_POLL_MS / 60_000;
 
 const CHIPS: { label: string; filter: FeedFilter }[] = [
   { label: "All", filter: { kind: "all" } },
@@ -122,7 +124,7 @@ export function FeedView({
           <Button type="button" variant="outline" onClick={feed.refresh} disabled={feed.refreshing}>
             {feed.refreshing ? "Refreshing…" : "Refresh"}
           </Button>
-          <span className="text-xs text-muted">Auto-refreshes every 60s</span>
+          <span className="text-xs text-muted">Auto-refreshes every {POLL_MINUTES} min</span>
         </div>
       </div>
 

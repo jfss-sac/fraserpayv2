@@ -5,7 +5,7 @@ import type { FeedEntry, LedgerType, RepeatBuyerAlert } from "@/lib/shared/types
 import { ApiError } from "@/lib/ui/api-client";
 import { type FeedQueryParams, feedErrorMessage, requestFeed } from "./api";
 
-export const FEED_POLL_MS = 60_000;
+export const FEED_POLL_MS = 5 * 60_000;
 
 export type FeedFilter =
   | { kind: "all" }

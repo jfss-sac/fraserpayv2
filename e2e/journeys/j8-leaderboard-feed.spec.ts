@@ -3,8 +3,6 @@ import { Timestamp } from "firebase-admin/firestore";
 import { APPROVED_BOOTH_ID, OPERATOR_NAME, OPERATOR_UID, SAC_MEMBER_STATE } from "../fixtures";
 import { db } from "../helpers/firebase";
 
-const ONE_POLL_CYCLE_MS = 60_000;
-
 const CHARGE = {
   studentUid: "e2e-feed-buyer",
   studentNumber: "880009",
@@ -27,10 +25,7 @@ test.describe("J8 · leaderboard + feed observation", () => {
   test.describe("feed", () => {
     test.use({ storageState: SAC_MEMBER_STATE });
 
-    test("a charge lands in the live feed within one poll cycle and is flagged high-amount", async ({
-      page,
-    }) => {
-      test.setTimeout(ONE_POLL_CYCLE_MS + 60_000);
+    test("a charge lands in the feed on refresh and is flagged high-amount", async ({ page }) => {
       await db().collection("ledger").doc("e2e-feed-charge").delete();
 
       await page.goto("/admin");
@@ -59,9 +54,7 @@ test.describe("J8 · leaderboard + feed observation", () => {
           lineItems: [{ itemId: "slice", name: "Slice", qty: 1, unitPriceCents: 2000 }],
         });
 
-      const indicator = page.getByRole("button", { name: /new transaction/ });
-      await expect(indicator).toBeVisible({ timeout: ONE_POLL_CYCLE_MS + 10_000 });
-      await indicator.click();
+      await page.getByRole("button", { name: "Refresh" }).click();
 
       const list = page.getByRole("list", { name: "Transactions" });
       const row = list.locator("li").filter({ hasText: CHARGE.studentName });
