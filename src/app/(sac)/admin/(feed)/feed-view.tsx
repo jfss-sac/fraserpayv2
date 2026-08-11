@@ -112,7 +112,7 @@ export function FeedView({
     });
     observer.observe(node);
     return () => observer.disconnect();
-  }, []);
+  }, [feed.cursor]);
 
   const activeChip = CHIPS.find((c) => filtersEqual(feed.filter, c.filter));
 

@@ -1,4 +1,4 @@
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, test, vi } from "vitest";
 import type { FeedAuditEntry, FeedDTO, FeedLedgerEntry } from "@/lib/shared/types";
@@ -238,4 +238,45 @@ test("offers load-older only while a cursor remains", () => {
   cleanup();
   render(<FeedView initialEntries={[ledger("p1")]} initialCursor={null} />);
   expect(screen.queryByRole("button", { name: "Load older" })).not.toBeInTheDocument();
+});
+
+test("attaches infinite scrolling when a filter response introduces a cursor", async () => {
+  let intersectionCallback: IntersectionObserverCallback | undefined;
+  const observe = vi.fn();
+  const disconnect = vi.fn();
+  vi.stubGlobal(
+    "IntersectionObserver",
+    class {
+      constructor(callback: IntersectionObserverCallback) {
+        intersectionCallback = callback;
+      }
+
+      observe = observe;
+      disconnect = disconnect;
+    },
+  );
+  const fetchMock = stubFetch((url) => ({
+    entries: [ledger(url.searchParams.has("cursor") ? "older" : "filtered")],
+    nextCursor: url.searchParams.has("cursor") ? null : "c1",
+    repeatBuyers: [],
+    repeatBuyersTruncated: false,
+  }));
+
+  render(<FeedView initialEntries={[ledger("p1")]} initialCursor={null} />);
+  expect(observe).not.toHaveBeenCalled();
+
+  await userEvent.click(screen.getByRole("button", { name: "Top-ups" }));
+  expect(await screen.findByRole("button", { name: "Load older" })).toBeVisible();
+  await vi.waitFor(() => expect(observe).toHaveBeenCalledTimes(1));
+
+  act(() => {
+    intersectionCallback?.(
+      [{ isIntersecting: true } as IntersectionObserverEntry],
+      {} as IntersectionObserver,
+    );
+  });
+
+  await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+  const olderUrl = new URL(fetchMock.mock.calls[1]![0] as string, "http://test");
+  expect(olderUrl.searchParams.get("cursor")).toBe("c1");
 });

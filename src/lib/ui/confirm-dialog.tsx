@@ -24,8 +24,11 @@ export function ConfirmDialog({
   const titleId = useId();
 
   useEffect(() => {
-    dialogRef.current?.querySelector<HTMLButtonElement>("button")?.focus();
-  }, []);
+    const action = danger ? "cancel" : "confirm";
+    dialogRef.current
+      ?.querySelector<HTMLButtonElement>(`[data-dialog-action="${action}"]`)
+      ?.focus();
+  }, [danger]);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -55,6 +58,7 @@ export function ConfirmDialog({
             className={
               danger ? "bg-danger text-background hover:bg-danger/90 sm:flex-1" : "sm:flex-1"
             }
+            data-dialog-action="confirm"
             onClick={onConfirm}
             disabled={busy}
           >
@@ -65,6 +69,7 @@ export function ConfirmDialog({
             variant="outline"
             size="lg"
             className="sm:flex-1"
+            data-dialog-action="cancel"
             onClick={onCancel}
             disabled={busy}
           >
