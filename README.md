@@ -85,16 +85,17 @@ pnpm dev:demo
 
 Copy it to fill in a real project: `cp .env.example .env.local` (gitignored). Emulator work needs none of these; use `.env.demo`.
 
-| Variable                                                                    | Purpose                                                                                          |
-| --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `NEXT_PUBLIC_FIREBASE_API_KEY` / `_AUTH_DOMAIN` / `_PROJECT_ID` / `_APP_ID` | Public client-SDK config (login page). Ships in the browser bundle.                              |
-| `FIREBASE_PROJECT_ID` / `FIREBASE_CLIENT_EMAIL` / `FIREBASE_PRIVATE_KEY`    | **Secret** Admin-SDK service account (server only). Keep the key's literal `\n` escapes, quoted. |
-| `SEED_SUPERADMIN_EMAIL`                                                     | `@pdsb.net` address promoted to the first SAC exec by the seed script.                           |
-| `LOG_LEVEL`                                                                 | Minimum structured-log level: `debug` \| `info` \| `warn` \| `error` (default `info`).           |
-| `NEXT_PUBLIC_USE_EMULATORS`                                                 | Browser SDK to emulators when `true`. Leave blank in the cloud.                                  |
-| `FIRESTORE_EMULATOR_HOST` / `FIREBASE_AUTH_EMULATOR_HOST`                   | Admin SDK to emulators. Blank in the cloud.                                                      |
-| `NEXT_PUBLIC_FIREBASE_AUTH_EMULATOR_HOST`                                   | Browser Auth emulator host (defaults to `127.0.0.1:9099`).                                       |
-| `DEV_ALLOWED_ORIGINS`                                                       | Extra dev-server origins (e.g. a LAN IP for on-device testing).                                  |
+| Variable                                                                    | Purpose                                                                                                                       |
+| --------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `NEXT_PUBLIC_FIREBASE_API_KEY` / `_AUTH_DOMAIN` / `_PROJECT_ID` / `_APP_ID` | Public client-SDK config (login page). Ships in the browser bundle.                                                           |
+| `FIREBASE_PROJECT_ID` / `FIREBASE_CLIENT_EMAIL` / `FIREBASE_PRIVATE_KEY`    | **Secret** Admin-SDK service account (server only). Keep the key's literal `\n` escapes, quoted.                              |
+| `SEED_SUPERADMIN_EMAIL`                                                     | `@pdsb.net` address promoted to the first SAC exec by the seed script.                                                        |
+| `LOG_LEVEL`                                                                 | Minimum structured-log level: `debug` \| `info` \| `warn` \| `error` (default `info`).                                        |
+| `NEXT_PUBLIC_SITE_URL`                                                      | Canonical origin for metadata (canonical tags, sitemap, OG). Optional — falls back to the request host. Set it in production. |
+| `NEXT_PUBLIC_USE_EMULATORS`                                                 | Browser SDK to emulators when `true`. Leave blank in the cloud.                                                               |
+| `FIRESTORE_EMULATOR_HOST` / `FIREBASE_AUTH_EMULATOR_HOST`                   | Admin SDK to emulators. Blank in the cloud.                                                                                   |
+| `NEXT_PUBLIC_FIREBASE_AUTH_EMULATOR_HOST`                                   | Browser Auth emulator host (defaults to `127.0.0.1:9099`).                                                                    |
+| `DEV_ALLOWED_ORIGINS`                                                       | Extra dev-server origins (e.g. a LAN IP for on-device testing).                                                               |
 
 ---
 

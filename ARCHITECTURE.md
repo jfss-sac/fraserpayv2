@@ -82,7 +82,7 @@ Roles **stack on one account** and live on the Firestore user document, read fre
 | ------------------------------------------------------------------------------------------------------- | :-----: | :----------: | :--------: | :------: |
 | Wallet, own history, leaderboard, register/join booths                                                  |   ✅    |      ✅      |     ✅     |    ✅    |
 | POS: buyer lookup + charge (own booth)                                                                  |    -    |      ✅      |     -      |   ✅*    |
-| Top-ups, student lookup, audit feed, reports, reconciliation                                            |    -    |      -       |     ✅     |    ✅    |
+| Top-ups, student lookup, audit feed, reports, reconciliation, account activity                          |    -    |      -       |     ✅     |    ✅    |
 | Refunds, adjustments, cap overrides, payment-code regen, suspensions, role grants, all booth management |    -    |      -       |     -      |    ✅    |
 
 \* Execs charge only for booths they've actually joined; exec does not imply booth membership.
@@ -157,19 +157,19 @@ Two details worth calling out:
 
 ## API surface
 
-| Endpoint                                                                                  | Role                | Notes                                                                                                                   |
-| ----------------------------------------------------------------------------------------- | ------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `POST /api/auth/session` · `signout`                                                      | public / session    | token → cookie; sign-out revokes + purges                                                                               |
-| `GET /api/wallet`                                                                         | student             | balance, points, `asOf`, last-20 fully itemized history                                                                 |
-| `POST /api/booths/register` · `join`                                                      | any active user     | open registration; join by code                                                                                         |
-| `POST /api/booth/lookup`                                                                  | booth member        | `{buyer, cartTotalCents}` → name + sufficiency + own-booth last sale, **nothing else**; re-called as the cart changes   |
-| `POST /api/booth/charge`                                                                  | booth member        | idempotent; request/response bodies < 2 KB by test                                                                      |
-| `GET /api/booth/[id]/summary`                                                             | that booth's member | own totals + per-item breakdown                                                                                         |
-| `POST /api/sac/topup` · `POST /api/sac/lookup`                                            | SAC member          | idempotent top-up with caps; name-confirm lookup                                                                        |
-| `GET /api/sac/students` · `students/[uid]/ledger` · `feed` · `reconciliation` · `reports` | SAC member          | search, full histories, merged ledger+audit feed (one filter at a time), per-member day totals by method, event reports |
-| `POST /api/exec/refund` · `adjust`                                                        | SAC exec            | idempotent money corrections, reason required                                                                           |
-| `POST /api/exec/payment-code` · `suspend` · `roles`                                       | SAC exec            | audited account controls                                                                                                |
-| `POST /api/exec/booths/[id]/…`                                                            | SAC exec            | approve (mints join code), price edits, rotate code, remove member, de/reactivate, all audited                          |
+| Endpoint                                                                                                          | Role                | Notes                                                                                                                                                                                     |
+| ----------------------------------------------------------------------------------------------------------------- | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /api/auth/session` · `signout`                                                                              | public / session    | token → cookie; sign-out revokes + purges                                                                                                                                                 |
+| `GET /api/wallet`                                                                                                 | student             | balance, points, `asOf`, last-20 fully itemized history                                                                                                                                   |
+| `POST /api/booths/register` · `join`                                                                              | any active user     | open registration; join by code                                                                                                                                                           |
+| `POST /api/booth/lookup`                                                                                          | booth member        | `{boothId, buyer}` (payment code only) → name + balance + own-booth last sale, **nothing else**; called once per buyer, not per cart change                                               |
+| `POST /api/booth/charge`                                                                                          | booth member        | idempotent; request/response bodies < 2 KB by test                                                                                                                                        |
+| `GET /api/booth/[id]/summary`                                                                                     | that booth's member | own totals + per-item breakdown                                                                                                                                                           |
+| `POST /api/sac/topup` · `POST /api/sac/lookup`                                                                    | SAC member          | idempotent top-up with caps; name-confirm lookup                                                                                                                                          |
+| `GET /api/sac/students` · `students/[uid]/ledger` · `feed` · `reconciliation` · `reports` · `booths/[id]/summary` | SAC member          | search, full histories, merged ledger+audit feed (one filter at a time, plus the repeat-charge alert), per-member day totals by method, event reports, per-booth item breakdown on demand |
+| `POST /api/exec/refund` · `adjust`                                                                                | SAC exec            | idempotent money corrections, reason required                                                                                                                                             |
+| `POST /api/exec/payment-code` · `suspend` · `roles`                                                               | SAC exec            | audited account controls                                                                                                                                                                  |
+| `POST /api/exec/booths/[id]/…`                                                                                    | SAC exec            | approve (mints join code), price edits, rotate code, remove member, de/reactivate, all audited                                                                                            |
 
 The leaderboard is a page, not an API: a Server Component behind a 15-minute shared cache.
 
@@ -179,17 +179,19 @@ Money endpoints are deliberately plain Route Handlers rather than Server Actions
 
 Fixed-window Firestore counters checked in the wrapper before business logic: no extra vendor, portable, sufficient at the event's ~10 requests/sec scale:
 
-| Scope              | Limit                   | Why                |
-| ------------------ | ----------------------- | ------------------ |
-| booth registration | 10 / 10 min             | pending-booth spam |
-| join-code attempts | 10 / 10 min             | code guessing      |
-| buyer lookup       | 30 / min per operator   | enumeration guard  |
-| charge             | 20 / min per operator   |                    |
-| top-up             | 20 / min per SAC member |                    |
-| exec mutations     | 30 / min                |                    |
-| reads              | 60 / min                |                    |
+| Scope              | Limit                   | Why                    |
+| ------------------ | ----------------------- | ---------------------- |
+| booth registration | 20 / 10 min             | pending-booth spam     |
+| join-code attempts | 20 / 10 min             | code guessing          |
+| buyer lookup       | 120 / min per operator  | runaway-client ceiling |
+| charge             | 120 / min per operator  |                        |
+| top-up             | 40 / min per SAC member |                        |
+| exec mutations     | 60 / min                |                        |
+| reads              | 120 / min               |                        |
 
-Money scopes **fail closed** if the limiter is unreachable; pure reads fail open. Sign-in is deliberately _not_ rate-limited: before authentication the only per-caller identifier is the IP, and at a school event the entire crowd shares one NAT egress IP; any IP limit low enough to matter would lock out real students. The endpoint is already gated by Google-signed, domain-verified ID tokens.
+**The limits are deliberately loose.** They bound a runaway or hostile client; they are not the enumeration control. Since booth lookup accepts only an unguessable payment code, what an endpoint _accepts_ is the enumeration bound, and a lunch-rush operator ringing a sale every three seconds must never meet a 429. Abuse _within_ the limits is caught by `/admin/activity`, which reads the limiter's own counter documents (no extra write per request) and lists accounts that pushed a window, and answered with suspension.
+
+Money scopes **fail closed** if the limiter is unreachable; pure reads fail open. An idempotent replay refunds its token — credited as a `refunds` counter rather than subtracted, so a window serves at most 2× its limit however many replays arrive, and `count` stays the honest request total `/admin/activity` reports. Sign-in is deliberately _not_ rate-limited: before authentication the only per-caller identifier is the IP, and at a school event the entire crowd shares one NAT egress IP; any IP limit low enough to matter would lock out real students. The endpoint is already gated by Google-signed, domain-verified ID tokens.
 
 On enumeration math: payment codes live in a 2¹²⁸ space, so guessing is meaningless. Booth join codes pair a public name-derived prefix with a 5-character random suffix over a 31-character unambiguous alphabet (~28.6 M combinations); combined with the per-user attempt limiter and an identical error for unknown-vs-unapproved codes, guessing is impractical and yields no oracle.
 
@@ -209,8 +211,8 @@ Performance is enforced, not hoped for: the first-visit wallet transfer budget (
 - **Deny-all Firestore rules**, tested; service-account credentials exist only in server env vars; CI greps built client bundles for secret markers.
 - **CSP with per-request nonces** (no `unsafe-inline`; Google's OAuth origins are the only third-party allowance, used solely by the login flow), plus HSTS, `X-Content-Type-Options`, `Referrer-Policy`, and camera-scoped `Permissions-Policy`.
 - **CSRF**: `SameSite=Lax` cookies plus an explicit cross-site `Origin`/`Sec-Fetch-Site` rejection on every mutation (Route Handlers don't get Server Actions' built-in check, so the wrapper does it).
-- **Least disclosure** everywhere: booths see name + sufficiency only; exact balances are visible only to the student themself and SAC; logs carry no names, amounts, or payment codes (a closed log-field schema makes over-logging a type error; the ledger, not the log, is the record of what happened).
-- **Auditability as deterrent**: every sharp-knife action writes the audit log; high-amount charges surface in the live feed; suspension severs a compromised account instantly.
+- **Least disclosure** everywhere: booths see name + balance + their own last sale to that buyer, and nothing else — no points, no activity at other booths, no contact details. The balance is deliberately booth-visible (the operator has to say how short a buyer is), which is exactly why lookup accepts **only** an unguessable payment code: the enumeration bound is the identifier, not the rate limit. Logs carry no names, amounts, or payment codes (a closed log-field schema makes over-logging a type error; the ledger, not the log, is the record of what happened).
+- **Auditability as deterrent**: every sharp-knife action writes the audit log; high-amount charges surface in the live feed; suspension severs a compromised account instantly. The feed also banners any buyer charged 10+ times in the last 10 minutes — the signature of a leaked payment code — computed read-side on each feed load rather than tagged at charge time, so the money path pays nothing for it. It is a prompt to look, not a block.
 
 ## Testing strategy
 
@@ -225,23 +227,24 @@ Everything runs against emulators; no test ever needs a cloud project. CI is two
 
 ## Repository map
 
-| Path                                                          | Responsibility                                                                                                              |
-| ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `src/app/api/**`                                              | Route Handlers: the only database-writing surface                                                                           |
-| `src/app/(public)` `(student)` `(booth)` `(sac)`              | role-split route groups: login, wallet/leaderboard/booth forms, POS, admin dashboard                                        |
-| `src/proxy.ts`                                                | optimistic cookieless-request redirect (never an auth boundary)                                                             |
-| `src/lib/server/http.ts`                                      | the handler wrapper: auth → role → rate limit → validate → log → envelope                                                   |
-| `src/lib/server/dal.ts`                                       | session verification + fresh role/suspension loading, per-request memoized                                                  |
-| `src/lib/server/money/`                                       | the four money operations + invariant guards; sole writer of balances and ledger                                            |
-| `src/lib/server/idempotency.ts` · `ratelimit.ts` · `audit.ts` | the money-safety primitives                                                                                                 |
-| `src/lib/server/{booth-lookup,sac-*,leaderboard}.ts`          | read models: lookup, feed, reconciliation, reports, students, leaderboard                                                   |
-| `src/lib/server/{paymentCode,boothCode,qr}.ts`                | CSPRNG code generation, server-side QR SVG                                                                                  |
-| `src/lib/shared/`                                             | isomorphic constants, money math, Zod schemas, DTO types; client forms and server handlers validate with the same schemas   |
-| `src/lib/ui/`                                                 | client leaves: scanner, POS charge hook + pending-charge persistence, shell/mode switch, sign-in                            |
-| `sw/` → `public/sw.js`                                        | service-worker template, stamped with a build version at build time                                                         |
-| `scripts/`                                                    | seed data, superadmin bootstrap, ledger verifier, load fixtures + integrity check, security scans, the guarded balance wipe |
-| `tests/integration/` · `e2e/` · `load/`                       | emulator integration suites, Playwright journeys, k6 scenarios                                                              |
-| `firestore.rules` · `firestore.indexes.json`                  | deny-all rules; composite indexes + TTL policies, version-controlled and deployed explicitly                                |
+| Path                                                              | Responsibility                                                                                                              |
+| ----------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `src/app/api/**`                                                  | Route Handlers: the only database-writing surface                                                                           |
+| `src/app/(public)` `(student)` `(booth)` `(sac)`                  | role-split route groups: login, wallet/leaderboard/booth forms, POS, admin dashboard                                        |
+| `src/proxy.ts`                                                    | optimistic cookieless-request redirect (never an auth boundary)                                                             |
+| `src/lib/server/http.ts`                                          | the handler wrapper: auth → role → rate limit → validate → log → envelope                                                   |
+| `src/lib/server/dal.ts`                                           | session verification + fresh role/suspension loading, per-request memoized                                                  |
+| `src/lib/server/money/`                                           | the four money operations + invariant guards; sole writer of balances and ledger                                            |
+| `src/lib/server/idempotency.ts` · `ratelimit.ts` · `audit.ts`     | the money-safety primitives                                                                                                 |
+| `src/lib/server/{booth-lookup,sac-*,leaderboard}.ts`              | read models: lookup, feed, reconciliation, reports, students, leaderboard                                                   |
+| `src/lib/server/{paymentCode,boothCode,qr}.ts`                    | CSPRNG code generation, server-side QR SVG                                                                                  |
+| `src/lib/server/site.ts` + `app/{robots,sitemap,opengraph-image}` | the signed-out public surface: canonical origin, JSON-LD, OG image, `robots.txt`/`sitemap.xml`/`llms.txt`                   |
+| `src/lib/shared/`                                                 | isomorphic constants, money math, Zod schemas, DTO types; client forms and server handlers validate with the same schemas   |
+| `src/lib/ui/`                                                     | client leaves: scanner, POS charge hook + pending-charge persistence, shell/mode switch, sign-in                            |
+| `sw/` → `public/sw.js`                                            | service-worker template, stamped with a build version at build time                                                         |
+| `scripts/`                                                        | seed data, superadmin bootstrap, ledger verifier, load fixtures + integrity check, security scans, the guarded balance wipe |
+| `tests/integration/` · `e2e/` · `load/`                           | emulator integration suites, Playwright journeys, k6 scenarios                                                              |
+| `firestore.rules` · `firestore.indexes.json`                      | deny-all rules; composite indexes + TTL policies, version-controlled and deployed explicitly                                |
 
 ## Design choices, briefly
 
