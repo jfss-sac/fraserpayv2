@@ -78,7 +78,11 @@ export async function refundPurchase(args: {
 
     let refundLines: LedgerLineItem[];
     if (input.lineItems !== undefined) {
-      refundLines = input.lineItems.map(({ itemId, qty }) => {
+      const requestedByItem = new Map<string, number>();
+      for (const { itemId, qty } of input.lineItems) {
+        requestedByItem.set(itemId, (requestedByItem.get(itemId) ?? 0) + qty);
+      }
+      refundLines = [...requestedByItem].map(([itemId, qty]) => {
         const orig = originalByItem.get(itemId);
         if (!orig) throw new ValidationError("That item was not part of the original purchase.");
         const remaining = orig.qty - (refundedByItem.get(itemId) ?? 0);

@@ -256,6 +256,25 @@ describe("POST /api/exec/refund", () => {
     expect((await usersCol().doc(student.uid).get()).data()?.balanceCents).toBe(500);
   });
 
+  it("rejects duplicate requested item ids whose combined quantity exceeds the original", async () => {
+    const student = await freshStudent(0);
+    const purchaseId = await makePurchase(student.uid, [COFFEE]);
+    const res = await refundRoute(
+      post(EXEC.uid, {
+        originalEntryId: purchaseId,
+        reason: "duplicate rows",
+        lineItems: [
+          { itemId: "coffee", qty: 2 },
+          { itemId: "coffee", qty: 2 },
+        ],
+      }),
+    );
+    expect(res.status).toBe(409);
+    expect(await errorCode(res)).toBe("CONFLICT");
+    expect((await refundsFor(purchaseId)).filter((e) => e.type === "refund")).toHaveLength(0);
+    expect((await usersCol().doc(student.uid).get()).data()?.balanceCents).toBe(0);
+  });
+
   it("rejects refunding an item that was not in the original purchase with VALIDATION", async () => {
     const student = await freshStudent(0);
     const purchaseId = await makePurchase(student.uid, [COFFEE]);
