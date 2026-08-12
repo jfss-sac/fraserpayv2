@@ -9,6 +9,12 @@ const ALICE = { uid: "wipe-alice", balanceCents: 5000, points: 120 };
 const BOB = { uid: "wipe-bob", balanceCents: 250, points: 3 };
 const CARE = { uid: "wipe-zero", balanceCents: 0, points: 40 };
 const LEDGER_ID = "wipe-ledger-1";
+const MULTI_BATCH_USERS = Array.from({ length: 451 }, (_, index) => ({
+  uid: `wipe-batch-${index.toString().padStart(3, "0")}`,
+  balanceCents: 50,
+}));
+const LATE_CREDIT_UID = "wipe-late-credit";
+const STALE_BATCH_UID = "wipe-stale-batch";
 
 async function seed(): Promise<void> {
   const db = getAdminFirestore();
@@ -48,6 +54,20 @@ async function seed(): Promise<void> {
   });
 }
 
+async function seedMultiBatchUsers(): Promise<void> {
+  const db = getAdminFirestore();
+  const batch = db.batch();
+  for (const user of MULTI_BATCH_USERS) {
+    batch.set(db.collection("users").doc(user.uid), {
+      balanceCents: user.balanceCents,
+      points: 0,
+    });
+  }
+  batch.set(db.collection("users").doc(LATE_CREDIT_UID), { balanceCents: 0, points: 0 });
+  batch.set(db.collection("users").doc(STALE_BATCH_UID), { balanceCents: 50, points: 0 });
+  await batch.commit();
+}
+
 beforeAll(async () => {
   if (!process.env.FIRESTORE_EMULATOR_HOST) {
     throw new Error("Integration test requires the firestore emulator (run via emulators:exec).");
@@ -60,6 +80,7 @@ afterAll(async () => {
   const db = getAdminFirestore();
   await db.recursiveDelete(db.collection("users"));
   await db.recursiveDelete(db.collection("ledger"));
+  await db.recursiveDelete(db.collection("operations"));
   vi.restoreAllMocks();
 });
 
@@ -149,32 +170,91 @@ describe("wipe-balances effect", () => {
     expect(again.totalCentsCleared).toBe(0);
   });
 
-  it("refuses to overwrite a balance changed after the wipe snapshot", async () => {
+  it("rechecks transactionally when a balance appears after an empty scan", async () => {
     const db = getAdminFirestore();
-    const userRef = db.collection("users").doc(ALICE.uid);
-    await userRef.update({ balanceCents: ALICE.balanceCents });
+    const creditedRef = db.collection("users").doc(CARE.uid);
+    const originalRunTransaction = db.runTransaction.bind(db);
+    let injected = false;
+    const transactionSpy = vi.spyOn(db, "runTransaction").mockImplementation((updateFunction) => {
+      return originalRunTransaction(async (transaction) => {
+        if (!injected) {
+          injected = true;
+          await creditedRef.update({ balanceCents: 500 });
+        }
+        return updateFunction(transaction);
+      });
+    });
 
-    const commitStarted = Promise.withResolvers<void>();
-    const releaseCommit = Promise.withResolvers<void>();
+    try {
+      await wipeBalances(db);
+      expect(injected).toBe(true);
+      expect((await creditedRef.get()).data()!.balanceCents).toBe(0);
+    } finally {
+      transactionSpy.mockRestore();
+    }
+  });
+
+  it("revisits an initially zero user credited after the first batch", async () => {
+    const db = getAdminFirestore();
+    await seedMultiBatchUsers();
+    const creditedRef = db.collection("users").doc(LATE_CREDIT_UID);
     const originalBatch = db.batch.bind(db);
+    let commitCount = 0;
     const batchSpy = vi.spyOn(db, "batch").mockImplementation(() => {
       const batch = originalBatch();
       const originalCommit = batch.commit.bind(batch);
       vi.spyOn(batch, "commit").mockImplementation(async () => {
-        commitStarted.resolve();
-        await releaseCommit.promise;
+        const result = await originalCommit();
+        commitCount += 1;
+        if (commitCount === 1) await creditedRef.update({ balanceCents: 500 });
+        return result;
+      });
+      return batch as WriteBatch;
+    });
+
+    try {
+      await wipeBalances(db);
+      expect((await creditedRef.get()).data()!.balanceCents).toBe(0);
+    } finally {
+      batchSpy.mockRestore();
+    }
+  }, 60_000);
+
+  it("retries a later batch whose precondition becomes stale", async () => {
+    const db = getAdminFirestore();
+    const seedBatch = db.batch();
+    for (const user of MULTI_BATCH_USERS) {
+      seedBatch.set(db.collection("users").doc(user.uid), { balanceCents: 50 }, { merge: true });
+    }
+    const staleRef = db.collection("users").doc(STALE_BATCH_UID);
+    seedBatch.set(staleRef, { balanceCents: 50 }, { merge: true });
+    await seedBatch.commit();
+
+    const originalBatch = db.batch.bind(db);
+    let commitCount = 0;
+    let interfered = false;
+    const batchSpy = vi.spyOn(db, "batch").mockImplementation(() => {
+      const batch = originalBatch();
+      const originalCommit = batch.commit.bind(batch);
+      vi.spyOn(batch, "commit").mockImplementation(async () => {
+        commitCount += 1;
+        if (commitCount === 2 && !interfered) {
+          interfered = true;
+          await staleRef.update({ balanceCents: FieldValue.increment(500) });
+        }
         return originalCommit();
       });
       return batch as WriteBatch;
     });
 
-    const wipe = wipeBalances(db);
-    await commitStarted.promise;
-    await userRef.update({ balanceCents: ALICE.balanceCents + 500 });
-    releaseCommit.resolve();
-
-    await expect(wipe).rejects.toMatchObject({ code: 9 });
-    expect((await userRef.get()).data()!.balanceCents).toBe(ALICE.balanceCents + 500);
-    batchSpy.mockRestore();
-  });
+    try {
+      await wipeBalances(db);
+      expect(interfered).toBe(true);
+      expect((await staleRef.get()).data()!.balanceCents).toBe(0);
+      const remaining = await db.collection("users").where("balanceCents", "!=", 0).get();
+      expect(remaining.empty).toBe(true);
+    } finally {
+      batchSpy.mockRestore();
+    }
+  }, 60_000);
 });

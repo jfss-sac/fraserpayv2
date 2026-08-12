@@ -1,10 +1,12 @@
 import { stdin, stdout } from "node:process";
 import { createInterface } from "node:readline/promises";
 import { pathToFileURL } from "node:url";
+import { randomUUID } from "node:crypto";
 import { type App, cert, getApps, initializeApp } from "firebase-admin/app";
 import { FieldValue, type Firestore, getFirestore } from "firebase-admin/firestore";
 
 const BATCH_LIMIT = 450;
+const WIPE_STATE_PATH = "operations/balanceWipe";
 
 export interface WipeBalancesResult {
   usersScanned: number;
@@ -12,33 +14,67 @@ export interface WipeBalancesResult {
   totalCentsCleared: number;
 }
 
+function hasStalePrecondition(error: unknown): boolean {
+  if (typeof error !== "object" || error === null || !("code" in error)) return false;
+  const code = (error as { code?: unknown }).code;
+  return code === 9 || code === "failed-precondition";
+}
+
 export async function wipeBalances(db: Firestore): Promise<WipeBalancesResult> {
-  const snapshot = await db.collection("users").get();
+  const runId = randomUUID();
+  const wipeStateRef = db.doc(WIPE_STATE_PATH);
+  const users = db.collection("users");
+  const usersScanned = (await users.count().get()).data().count;
   let balancesZeroed = 0;
   let totalCentsCleared = 0;
-  let batch = db.batch();
-  let pending = 0;
 
-  for (const doc of snapshot.docs) {
-    const balanceCents = (doc.data().balanceCents as number | undefined) ?? 0;
-    if (balanceCents === 0) continue;
-    batch.update(
-      doc.ref,
-      { balanceCents: 0, updatedAt: FieldValue.serverTimestamp() },
-      { lastUpdateTime: doc.updateTime },
-    );
-    balancesZeroed += 1;
-    totalCentsCleared += balanceCents;
-    pending += 1;
-    if (pending === BATCH_LIMIT) {
-      await batch.commit();
-      batch = db.batch();
-      pending = 0;
+  await wipeStateRef.set({ runId, status: "running", startedAt: FieldValue.serverTimestamp() });
+
+  while (true) {
+    const snapshot = await users.where("balanceCents", "!=", 0).limit(BATCH_LIMIT).get();
+
+    if (snapshot.empty) {
+      const complete = await db.runTransaction(async (transaction) => {
+        const remaining = await transaction.get(users.where("balanceCents", "!=", 0).limit(1));
+        if (!remaining.empty) return false;
+        transaction.set(
+          wipeStateRef,
+          {
+            runId,
+            status: "complete",
+            completedAt: FieldValue.serverTimestamp(),
+          },
+          { merge: true },
+        );
+        return true;
+      });
+      if (complete) break;
+      continue;
     }
-  }
-  if (pending > 0) await batch.commit();
 
-  return { usersScanned: snapshot.size, balancesZeroed, totalCentsCleared };
+    const batch = db.batch();
+    let batchTotalCents = 0;
+    for (const doc of snapshot.docs) {
+      const balanceCents = (doc.data().balanceCents as number | undefined) ?? 0;
+      batch.update(
+        doc.ref,
+        { balanceCents: 0, updatedAt: FieldValue.serverTimestamp() },
+        { lastUpdateTime: doc.updateTime },
+      );
+      batchTotalCents += balanceCents;
+    }
+
+    try {
+      await batch.commit();
+    } catch (error) {
+      if (hasStalePrecondition(error)) continue;
+      throw error;
+    }
+    balancesZeroed += snapshot.size;
+    totalCentsCleared += batchTotalCents;
+  }
+
+  return { usersScanned, balancesZeroed, totalCentsCleared };
 }
 
 interface Args {
