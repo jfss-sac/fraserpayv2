@@ -293,6 +293,26 @@ describe("POST /api/exec/adjust", () => {
     expect(await errorCode(res)).toBe("VALIDATION");
   });
 
+  it("rejects a positive adjustment linked to a top-up with VALIDATION", async () => {
+    const student = await freshStudent({ balanceCents: 1050, points: 52.5 });
+    const topupId = await makeTopupEntry(student.uid, 1050);
+    const res = await adjustRoute(
+      post(EXEC.uid, {
+        studentUid: student.uid,
+        amountCents: 500,
+        reason: "invalid linked credit",
+        originalEntryId: topupId,
+      }),
+    );
+    expect(res.status).toBe(400);
+    expect(await errorCode(res)).toBe("VALIDATION");
+    expect((await usersCol().doc(student.uid).get()).data()).toMatchObject({
+      balanceCents: 1050,
+      points: 52.5,
+    });
+    expect((await ledgerFor(student.uid)).filter((e) => e.type === "adjustment")).toHaveLength(0);
+  });
+
   it("reverses points exactly on a linked reversal, including half-points", async () => {
     const student = await freshStudent({ balanceCents: 1050, points: 52.5 });
     const topupId = await makeTopupEntry(student.uid, 1050);
@@ -334,6 +354,60 @@ describe("POST /api/exec/adjust", () => {
     expect(user?.points).toBe(0);
     const entry = (await ledgerFor(student.uid)).find((e) => e.type === "adjustment");
     expect(entry?.pointsDelta).toBe(-20);
+  });
+
+  it("rejects linked reversals that cumulatively exceed the original top-up", async () => {
+    const student = await freshStudent({ balanceCents: 3000, points: 150 });
+    const topupId = await makeTopupEntry(student.uid, 1050);
+    const first = await adjustRoute(
+      post(EXEC.uid, {
+        studentUid: student.uid,
+        amountCents: -500,
+        reason: "first partial reversal",
+        originalEntryId: topupId,
+      }),
+    );
+    expect(first.status).toBe(200);
+
+    const second = await adjustRoute(
+      post(EXEC.uid, {
+        studentUid: student.uid,
+        amountCents: -1000,
+        reason: "oversized second reversal",
+        originalEntryId: topupId,
+      }),
+    );
+    expect(second.status).toBe(409);
+    expect(await errorCode(second)).toBe("CONFLICT");
+    expect((await usersCol().doc(student.uid).get()).data()).toMatchObject({
+      balanceCents: 2500,
+      points: 125,
+    });
+    expect(
+      (await ledgerFor(student.uid)).filter(
+        (e) => e.type === "adjustment" && e.originalEntryId === topupId,
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("allows partial linked reversals up to exactly the original top-up", async () => {
+    const student = await freshStudent({ balanceCents: 1050, points: 52.5 });
+    const topupId = await makeTopupEntry(student.uid, 1050);
+    for (const amountCents of [-500, -550]) {
+      const res = await adjustRoute(
+        post(EXEC.uid, {
+          studentUid: student.uid,
+          amountCents,
+          reason: "partial reversal",
+          originalEntryId: topupId,
+        }),
+      );
+      expect(res.status).toBe(200);
+    }
+    expect((await usersCol().doc(student.uid).get()).data()).toMatchObject({
+      balanceCents: 0,
+      points: 0,
+    });
   });
 
   it("forbids an exec crediting their own balance", async () => {
@@ -415,6 +489,43 @@ describe("adjustBalance concurrency (money module)", () => {
       expect(a).toEqual(b);
       expect((await usersCol().doc(student.uid).get()).data()?.balanceCents).toBe(1000);
       expect(await ledgerFor(student.uid)).toHaveLength(1);
+    }
+  }, 120_000);
+
+  it("allows only one of two concurrent full reversals of the same top-up (loop)", async () => {
+    for (let i = 0; i < 10; i += 1) {
+      const student = await freshStudent({ balanceCents: 2100, points: 105 });
+      const topupId = await makeTopupEntry(student.uid, 1050);
+      const body = {
+        studentUid: student.uid,
+        amountCents: -1050,
+        reason: "concurrent reversal",
+        originalEntryId: topupId,
+      };
+      const actor = { uid: EXEC.uid, displayName: EXEC.name };
+      const results = await Promise.allSettled([
+        adjustBalance({
+          input: body,
+          actor,
+          idempotency: ctxFor(EXEC.uid, nextKey(), body),
+        }),
+        adjustBalance({
+          input: body,
+          actor,
+          idempotency: ctxFor(EXEC.uid, nextKey(), body),
+        }),
+      ]);
+      expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+      expect(results.filter((result) => result.status === "rejected")).toHaveLength(1);
+      expect((await usersCol().doc(student.uid).get()).data()).toMatchObject({
+        balanceCents: 1050,
+        points: 52.5,
+      });
+      expect(
+        (await ledgerFor(student.uid)).filter(
+          (entry) => entry.type === "adjustment" && entry.originalEntryId === topupId,
+        ),
+      ).toHaveLength(1);
     }
   }, 120_000);
 });

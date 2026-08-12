@@ -12,6 +12,8 @@ export function adjustErrorMessage(err: unknown): string {
       return err.serverMessage || "You aren't allowed to make that adjustment.";
     case "VALIDATION":
       return err.serverMessage || "Check the amount and reason and try again.";
+    case "CONFLICT":
+      return err.serverMessage || "That adjustment conflicts with the current state.";
     case "NOT_FOUND":
       return "Student not found.";
     case "IDEMPOTENCY_CONFLICT":

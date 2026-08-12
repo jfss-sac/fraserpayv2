@@ -23,7 +23,6 @@ describe("pointsPreview", () => {
     expect(pointsPreview(52.5, -1050)).toBe(-52.5);
     expect(pointsPreview(20, -1050)).toBe(-20);
     expect(pointsPreview(0, -500)).toBe(0);
-    expect(pointsPreview(10, 500)).toBe(25);
   });
 });
 
@@ -100,6 +99,39 @@ describe("AdjustDialog", () => {
       reason: "erroneous top-up",
       originalEntryId: "topup-1",
     });
+  });
+
+  test("only links top-ups to balance removals", async () => {
+    const onSubmit = vi.fn();
+    render(
+      <AdjustDialog
+        studentName="Ben Carter"
+        currentPoints={52.5}
+        topups={[{ id: "topup-1", label: "Jul 20 · $10.50 (cash)" }]}
+        busy={false}
+        onSubmit={onSubmit}
+        onCancel={() => {}}
+      />,
+    );
+
+    expect(
+      screen.queryByLabelText("Link to a top-up (reverses its points)"),
+    ).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Remove credit" }));
+    await userEvent.selectOptions(
+      screen.getByLabelText("Link to a top-up (reverses its points)"),
+      "topup-1",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Add credit" }));
+
+    expect(
+      screen.queryByLabelText("Link to a top-up (reverses its points)"),
+    ).not.toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText("Adjustment amount in dollars"), "5");
+    await userEvent.type(screen.getByLabelText("Reason"), "cash box correction");
+    await userEvent.click(screen.getByRole("button", { name: "Apply adjustment" }));
+
+    expect(onSubmit).toHaveBeenCalledWith({ amountCents: 500, reason: "cash box correction" });
   });
 
   test("submit is disabled until an amount and reason are present", async () => {

@@ -2,7 +2,7 @@ import "server-only";
 import { Timestamp } from "firebase-admin/firestore";
 import { z } from "zod";
 import { type LedgerEntryDoc, ledgerCol } from "../db";
-import { InsufficientFundsError, ValidationError } from "../errors";
+import { ConflictError, InsufficientFundsError, ValidationError } from "../errors";
 import { type IdempotencyContext, runIdempotent } from "../idempotency";
 import { CENT_STEP } from "@/lib/shared/constants";
 import { pointsFor } from "@/lib/shared/money";
@@ -51,9 +51,22 @@ export async function adjustBalance(args: {
 
     let pointsDelta: number | undefined;
     if (input.originalEntryId !== undefined) {
+      if (input.amountCents > 0) {
+        throw new ValidationError("A top-up link can only be used for a reversal.");
+      }
       const original = (await t.get(ledgerCol().doc(input.originalEntryId))).data();
       if (!original || original.type !== "topup" || original.studentUid !== input.studentUid) {
         throw new ValidationError("The linked entry must be a top-up for this student.");
+      }
+      const prior = await t.get(ledgerCol().where("originalEntryId", "==", input.originalEntryId));
+      const reversedCents = prior.docs.reduce((sum, doc) => {
+        const entry = doc.data();
+        return entry.type === "adjustment" && entry.direction === "debit"
+          ? sum + entry.amountCents
+          : sum;
+      }, 0);
+      if (reversedCents + Math.abs(input.amountCents) > original.amountCents) {
+        throw new ConflictError("This exceeds the top-up's remaining reversible amount.");
       }
       const raw = pointsFor(input.amountCents);
       const pointsAfter = Math.max(0, data.points + raw);

@@ -97,7 +97,10 @@ export function AdjustDialog({
                 variant={direction === option ? "default" : "outline"}
                 aria-pressed={direction === option}
                 className="flex-1 capitalize"
-                onClick={() => setDirection(option)}
+                onClick={() => {
+                  setDirection(option);
+                  if (option === "add") setLinkedId("");
+                }}
               >
                 {option === "add" ? "Add credit" : "Remove credit"}
               </Button>
@@ -134,7 +137,7 @@ export function AdjustDialog({
           ) : null}
         </div>
 
-        {topups.length > 0 ? (
+        {topups.length > 0 && direction === "remove" ? (
           <div className="flex flex-col gap-2">
             <label htmlFor="adjust-link" className="text-sm font-medium text-foreground">
               Link to a top-up (reverses its points)
