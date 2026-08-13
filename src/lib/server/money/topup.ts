@@ -24,7 +24,6 @@ export type TopUpInput = z.infer<typeof topUpSchema>;
 export interface TopUpActor {
   uid: string;
   displayName: string;
-  isExec: boolean;
 }
 
 export async function topUp(args: {
@@ -41,62 +40,66 @@ export async function topUp(args: {
   );
   const createdDate = torontoDate(new Date());
 
-  const { response } = await runIdempotent<TopUpResult>(idempotency, async (t) => {
-    const { ref, data } = await readActiveBuyer(t, buyerUid);
+  const { response } = await runIdempotent<TopUpResult>(
+    idempotency,
+    "sacMember",
+    async (t, authorizedActor) => {
+      const { ref, data } = await readActiveBuyer(t, buyerUid);
 
-    const balanceAfterCents = data.balanceCents + input.amountCents;
+      const balanceAfterCents = data.balanceCents + input.amountCents;
 
-    const tags: string[] = [];
-    let reason: string | undefined;
-    if (exceedsTopupCap(input.amountCents) || exceedsBalanceCap(balanceAfterCents)) {
-      reason = input.overrideReason;
-      if (!actor.isExec || !reason) {
-        throw new CapExceededError(
-          "This exceeds the $100 top-up or $200 balance cap. An exec must override with a reason.",
-        );
+      const tags: string[] = [];
+      let reason: string | undefined;
+      if (exceedsTopupCap(input.amountCents) || exceedsBalanceCap(balanceAfterCents)) {
+        reason = input.overrideReason;
+        if (!authorizedActor.roles.sacExec || !reason) {
+          throw new CapExceededError(
+            "This exceeds the $100 top-up or $200 balance cap. An exec must override with a reason.",
+          );
+        }
+        tags.push("cap-override");
       }
-      tags.push("cap-override");
-    }
 
-    assertNonNegative(balanceAfterCents);
+      assertNonNegative(balanceAfterCents);
 
-    const points = pointsFor(input.amountCents);
-    const pointsAfter = data.points + points;
-    const now = Timestamp.now();
+      const points = pointsFor(input.amountCents);
+      const pointsAfter = data.points + points;
+      const now = Timestamp.now();
 
-    const entry: LedgerEntryDoc = {
-      type: "topup",
-      amountCents: input.amountCents,
-      direction: "credit",
-      balanceAfterCents,
-      studentUid: buyerUid,
-      studentNumber: data.studentNumber,
-      studentName: data.displayName,
-      actorUid: actor.uid,
-      actorName: actor.displayName,
-      tags,
-      idempotencyKey: idempotency.key,
-      createdAt: now,
-      createdDate,
-      method: input.method,
-      pointsDelta: points,
-      ...(reason !== undefined ? { reason } : {}),
-    };
-
-    const entryRef = ledgerCol().doc();
-    t.create(entryRef, entry);
-    t.update(ref, { balanceCents: balanceAfterCents, points: pointsAfter, updatedAt: now });
-
-    return {
-      response: {
-        entryId: entryRef.id,
+      const entry: LedgerEntryDoc = {
+        type: "topup",
         amountCents: input.amountCents,
+        direction: "credit",
         balanceAfterCents,
-        points: pointsAfter,
-      },
-      ledgerEntryId: entryRef.id,
-    };
-  });
+        studentUid: buyerUid,
+        studentNumber: data.studentNumber,
+        studentName: data.displayName,
+        actorUid: actor.uid,
+        actorName: actor.displayName,
+        tags,
+        idempotencyKey: idempotency.key,
+        createdAt: now,
+        createdDate,
+        method: input.method,
+        pointsDelta: points,
+        ...(reason !== undefined ? { reason } : {}),
+      };
+
+      const entryRef = ledgerCol().doc();
+      t.create(entryRef, entry);
+      t.update(ref, { balanceCents: balanceAfterCents, points: pointsAfter, updatedAt: now });
+
+      return {
+        response: {
+          entryId: entryRef.id,
+          amountCents: input.amountCents,
+          balanceAfterCents,
+          points: pointsAfter,
+        },
+        ledgerEntryId: entryRef.id,
+      };
+    },
+  );
 
   return response;
 }

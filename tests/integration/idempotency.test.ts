@@ -41,7 +41,7 @@ function ledgerEntry(key: string, amountCents: number): LedgerEntryDoc {
 }
 
 function chargeOnce(ctx: IdempotencyContext, amountCents: number) {
-  return runIdempotent<ChargeResponse>(ctx, async (t) => {
+  return runIdempotent<ChargeResponse>(ctx, "sacMember", async (t) => {
     const ref = ledgerCol().doc();
     t.create(ref, ledgerEntry(ctx.key, amountCents));
     return { response: { entryId: ref.id, amountCents }, ledgerEntryId: ref.id };
@@ -81,6 +81,21 @@ beforeAll(async () => {
     throw new Error("Integration test requires the auth + firestore emulators (emulators:exec).");
   }
   vi.spyOn(console, "log").mockImplementation(() => {});
+  await usersCol()
+    .doc(ACTOR_UID)
+    .set({
+      email: "900003@pdsb.net",
+      displayName: "Test Member",
+      displayNameLower: "test member",
+      studentNumber: "900003",
+      paymentCode: "fp1-IDEM01",
+      balanceCents: 0,
+      points: 0,
+      roles: { sacMember: true, sacExec: false },
+      suspended: false,
+      createdAt: Timestamp.now(),
+      updatedAt: Timestamp.now(),
+    });
 });
 
 afterAll(async () => {
@@ -156,14 +171,18 @@ describe("defineHandler idempotent slot wiring", () => {
   const chargeHandler = defineHandler(
     { role: "sacMember", schema: z.object({ amountCents: z.number() }), idempotent: true },
     async ({ input, idempotency }) => {
-      const { response } = await runIdempotent<ChargeResponse>(idempotency!, async (t) => {
-        const ref = ledgerCol().doc();
-        t.create(ref, ledgerEntry(idempotency!.key, input.amountCents));
-        return {
-          response: { entryId: ref.id, amountCents: input.amountCents },
-          ledgerEntryId: ref.id,
-        };
-      });
+      const { response } = await runIdempotent<ChargeResponse>(
+        idempotency!,
+        "sacMember",
+        async (t) => {
+          const ref = ledgerCol().doc();
+          t.create(ref, ledgerEntry(idempotency!.key, input.amountCents));
+          return {
+            response: { entryId: ref.id, amountCents: input.amountCents },
+            ledgerEntryId: ref.id,
+          };
+        },
+      );
       return { entryId: response.entryId, amountCents: response.amountCents };
     },
   );

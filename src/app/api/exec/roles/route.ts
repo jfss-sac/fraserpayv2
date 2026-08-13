@@ -2,10 +2,10 @@ import "server-only";
 import { Timestamp } from "firebase-admin/firestore";
 import { z } from "zod";
 import { writeAudit } from "@/lib/server/audit";
+import { runAuthorizedTransaction } from "@/lib/server/dal";
 import { usersCol } from "@/lib/server/db";
 import { ConflictError, NotFoundError } from "@/lib/server/errors";
 import { hasOtherActiveExec } from "@/lib/server/exec-lockout";
-import { getAdminFirestore } from "@/lib/server/firebase-admin";
 import { defineHandler } from "@/lib/server/http";
 
 const rolesSchema = z
@@ -19,10 +19,9 @@ const rolesSchema = z
 export const POST = defineHandler(
   { role: "sacExec", schema: rolesSchema, rateLimit: "exec-mutations" },
   async ({ input, session }) => {
-    const db = getAdminFirestore();
     const userRef = usersCol().doc(input.targetUid);
 
-    return db.runTransaction(async (t) => {
+    return runAuthorizedTransaction({ actorUid: session!.uid, role: "sacExec" }, async (t) => {
       const user = (await t.get(userRef)).data();
       if (!user) throw new NotFoundError("User not found.");
       if (user.roles[input.role] === input.grant) {

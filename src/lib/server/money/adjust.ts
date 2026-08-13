@@ -43,7 +43,7 @@ export async function adjustBalance(args: {
   );
   const createdDate = torontoDate(new Date());
 
-  const { response } = await runIdempotent<AdjustResult>(idempotency, async (t) => {
+  const { response } = await runIdempotent<AdjustResult>(idempotency, "sacExec", async (t) => {
     const { ref, data } = await readUser(t, input.studentUid);
 
     const balanceAfterCents = data.balanceCents + input.amountCents;

@@ -54,6 +54,7 @@ async function makeUser(args: {
   studentNumber?: string | null;
   paymentCode: string;
   balanceCents?: number;
+  roles?: { sacMember: boolean; sacExec: boolean };
 }): Promise<void> {
   await usersCol()
     .doc(args.uid)
@@ -65,7 +66,7 @@ async function makeUser(args: {
       paymentCode: args.paymentCode,
       balanceCents: args.balanceCents ?? 0,
       points: 0,
-      roles: { sacMember: false, sacExec: false },
+      roles: args.roles ?? { sacMember: false, sacExec: false },
       suspended: false,
       createdAt: Timestamp.now(),
       updatedAt: Timestamp.now(),
@@ -197,7 +198,12 @@ beforeAll(async () => {
   }
   vi.spyOn(console, "log").mockImplementation(() => {});
 
-  await makeUser({ uid: OPERATOR.uid, displayName: OPERATOR.name, paymentCode: "fp1-SOPERA" });
+  await makeUser({
+    uid: OPERATOR.uid,
+    displayName: OPERATOR.name,
+    paymentCode: "fp1-SOPERA",
+    roles: { sacMember: true, sacExec: true },
+  });
   await makeUser({ uid: OUTSIDER.uid, displayName: OUTSIDER.name, paymentCode: "fp1-SOUTSI" });
   cookies[OPERATOR.uid] = await mintSessionCookie(OPERATOR.uid);
   cookies[OUTSIDER.uid] = await mintSessionCookie(OUTSIDER.uid);

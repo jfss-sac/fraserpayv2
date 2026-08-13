@@ -10,7 +10,6 @@ export const POST = defineHandler(
       actor: {
         uid: session!.uid,
         displayName: session!.displayName,
-        isExec: session!.roles.sacExec,
       },
       idempotency: idempotency!,
     });

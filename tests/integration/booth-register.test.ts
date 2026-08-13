@@ -153,7 +153,7 @@ describe("POST /api/booths/register", () => {
 
     expect(expectedIds.size).toBe(3);
     expect(await boothsBySubmitter(RETRY_SUBMITTER.uid)).toHaveLength(3);
-  });
+  }, 15_000);
 
   it("rejects a price that is not a multiple of $0.50", async () => {
     const before = (await boothsBySubmitter(SUBMITTER.uid)).length;

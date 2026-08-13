@@ -1,10 +1,10 @@
 import "server-only";
 import { cookies } from "next/headers";
 import { cache } from "react";
-import { AggregateField } from "firebase-admin/firestore";
+import { AggregateField, type Transaction } from "firebase-admin/firestore";
 import type { DecodedIdToken } from "firebase-admin/auth";
 import { ForbiddenError, InternalError, SuspendedError, UnauthorizedError } from "./errors";
-import { type LedgerEntryDoc, boothsCol, ledgerCol } from "./db";
+import { type LedgerEntryDoc, type UserDoc, boothsCol, ledgerCol, usersCol } from "./db";
 import { getAdminAuth, getAdminFirestore } from "./firebase-admin";
 import { logger } from "./logger";
 import { SESSION_COOKIE_NAME } from "@/lib/shared/constants";
@@ -17,6 +17,12 @@ import type {
 } from "@/lib/shared/types";
 
 export type Role = "public" | "session" | "active" | "sacMember" | "sacExec" | "boothMember";
+export type TransactionRole = "active" | "sacMember" | "sacExec";
+
+export interface TransactionAuthorization {
+  actorUid: string;
+  role: TransactionRole;
+}
 
 export interface BoothLedgerTotals {
   grossCents: number;
@@ -230,6 +236,38 @@ function assertSacMember(session: Session | null): asserts session is Session {
 function assertSacExec(session: Session | null): asserts session is Session {
   assertActive(session);
   if (!session.roles.sacExec) throw new ForbiddenError();
+}
+
+export async function assertTransactionAuthorized(
+  transaction: Transaction,
+  authorization: TransactionAuthorization,
+): Promise<UserDoc> {
+  const actor = (await transaction.get(usersCol().doc(authorization.actorUid))).data();
+  if (!actor) throw new UnauthorizedError();
+  if (actor.suspended) throw new SuspendedError();
+
+  switch (authorization.role) {
+    case "active":
+      break;
+    case "sacMember":
+      if (!actor.roles.sacMember && !actor.roles.sacExec) throw new ForbiddenError();
+      break;
+    case "sacExec":
+      if (!actor.roles.sacExec) throw new ForbiddenError();
+      break;
+  }
+
+  return actor;
+}
+
+export async function runAuthorizedTransaction<T>(
+  authorization: TransactionAuthorization,
+  updateFunction: (transaction: Transaction) => Promise<T>,
+): Promise<T> {
+  return getAdminFirestore().runTransaction(async (transaction) => {
+    await assertTransactionAuthorized(transaction, authorization);
+    return updateFunction(transaction);
+  });
 }
 
 export const getSession = cache(async (): Promise<Session | null> => {

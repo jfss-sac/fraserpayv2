@@ -1,7 +1,8 @@
 import "server-only";
 import { createHash } from "node:crypto";
 import { type DocumentReference, type Transaction, Timestamp } from "firebase-admin/firestore";
-import { type IdempotencyDoc, idempotencyCol } from "./db";
+import { type IdempotencyDoc, type UserDoc, idempotencyCol } from "./db";
+import { assertTransactionAuthorized, type TransactionRole } from "./dal";
 import { IdempotencyConflictError, ValidationError } from "./errors";
 import { getAdminFirestore } from "./firebase-admin";
 import { UUID_V4_RE } from "@/lib/shared/uuid";
@@ -101,13 +102,19 @@ export function recordResult(
 
 export async function runIdempotent<R>(
   ctx: IdempotencyContext,
-  execute: (t: Transaction) => Promise<{ response: R; ledgerEntryId?: string }>,
+  role: TransactionRole,
+  execute: (t: Transaction, actor: UserDoc) => Promise<{ response: R; ledgerEntryId?: string }>,
 ): Promise<IdempotentOutcome<R>> {
-  const outcome = await getAdminFirestore().runTransaction(async (t) => {
-    const replay = await readReplay<R>(t, ctx);
+  const outcome = await getAdminFirestore().runTransaction(async (transaction) => {
+    const replay = await readReplay<R>(transaction, ctx);
     if (replay !== null) return { response: replay, replayed: true };
-    const { response, ledgerEntryId } = await execute(t);
-    recordResult(t, ctx, response, ledgerEntryId);
+
+    const actor = await assertTransactionAuthorized(transaction, {
+      actorUid: ctx.actorUid,
+      role,
+    });
+    const { response, ledgerEntryId } = await execute(transaction, actor);
+    recordResult(transaction, ctx, response, ledgerEntryId);
     return { response, replayed: false };
   });
   ctx.replayed = outcome.replayed;

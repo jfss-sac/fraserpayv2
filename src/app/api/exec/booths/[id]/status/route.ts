@@ -1,9 +1,9 @@
 import "server-only";
 import { z } from "zod";
 import { writeAudit } from "@/lib/server/audit";
+import { runAuthorizedTransaction } from "@/lib/server/dal";
 import { boothsCol } from "@/lib/server/db";
 import { ConflictError, NotFoundError } from "@/lib/server/errors";
-import { getAdminFirestore } from "@/lib/server/firebase-admin";
 import { defineHandler } from "@/lib/server/http";
 
 const statusSchema = z.object({ active: z.boolean() }).strict();
@@ -11,10 +11,9 @@ const statusSchema = z.object({ active: z.boolean() }).strict();
 export const POST = defineHandler<typeof statusSchema, { id: string }>(
   { role: "sacExec", schema: statusSchema, rateLimit: "exec-mutations" },
   async ({ input, params, session }) => {
-    const db = getAdminFirestore();
     const boothRef = boothsCol().doc(params.id);
 
-    return db.runTransaction(async (t) => {
+    return runAuthorizedTransaction({ actorUid: session!.uid, role: "sacExec" }, async (t) => {
       const booth = (await t.get(boothRef)).data();
       if (!booth) throw new NotFoundError("Booth not found.");
 

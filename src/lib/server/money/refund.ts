@@ -42,7 +42,7 @@ export async function refundPurchase(args: {
   const { input, actor, idempotency } = args;
   const createdDate = torontoDate(new Date());
 
-  const { response } = await runIdempotent<RefundResult>(idempotency, async (t) => {
+  const { response } = await runIdempotent<RefundResult>(idempotency, "sacExec", async (t) => {
     const original = (await t.get(ledgerCol().doc(input.originalEntryId))).data();
     if (!original || original.type !== "purchase") {
       throw new ValidationError("Only a purchase can be refunded.");

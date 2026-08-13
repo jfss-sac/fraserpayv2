@@ -38,6 +38,7 @@ async function makeUser(args: {
   displayName: string;
   studentNumber?: string | null;
   paymentCode: string;
+  roles?: { sacMember: boolean; sacExec: boolean };
 }): Promise<void> {
   await usersCol()
     .doc(args.uid)
@@ -49,7 +50,7 @@ async function makeUser(args: {
       paymentCode: args.paymentCode,
       balanceCents: 0,
       points: 0,
-      roles: { sacMember: false, sacExec: false },
+      roles: args.roles ?? { sacMember: false, sacExec: false },
       suspended: false,
       createdAt: Timestamp.now(),
       updatedAt: Timestamp.now(),
@@ -77,7 +78,12 @@ beforeAll(async () => {
   vi.spyOn(console, "log").mockImplementation(() => {});
 
   await makeUser({ uid: OPERATOR.uid, displayName: OPERATOR.name, paymentCode: "vl1-OPER" });
-  await makeUser({ uid: EXEC.uid, displayName: EXEC.name, paymentCode: "vl1-EXEC" });
+  await makeUser({
+    uid: EXEC.uid,
+    displayName: EXEC.name,
+    paymentCode: "vl1-EXEC",
+    roles: { sacMember: true, sacExec: true },
+  });
   await boothsCol()
     .doc(BOOTH_ID)
     .set({
@@ -178,12 +184,12 @@ describe("verify-ledger", () => {
 
     await topUp({
       input: { buyer: { studentNumber: student.studentNumber }, amountCents: 5000, method: "cash" },
-      actor: { uid: EXEC.uid, displayName: EXEC.name, isExec: true },
+      actor: { uid: EXEC.uid, displayName: EXEC.name },
       idempotency: idempotency(EXEC.uid, "/api/sac/topup", { s: student.uid, a: 5000 }),
     });
     const topupOther = await topUp({
       input: { buyer: { studentNumber: other.studentNumber }, amountCents: 1050, method: "card" },
-      actor: { uid: EXEC.uid, displayName: EXEC.name, isExec: true },
+      actor: { uid: EXEC.uid, displayName: EXEC.name },
       idempotency: idempotency(EXEC.uid, "/api/sac/topup", { s: other.uid, a: 1050 }),
     });
 
@@ -235,7 +241,7 @@ describe("verify-ledger", () => {
     const student = await freshStudent();
     await topUp({
       input: { buyer: { studentNumber: student.studentNumber }, amountCents: 2000, method: "cash" },
-      actor: { uid: EXEC.uid, displayName: EXEC.name, isExec: true },
+      actor: { uid: EXEC.uid, displayName: EXEC.name },
       idempotency: idempotency(EXEC.uid, "/api/sac/topup", { s: student.uid, a: 2000 }),
     });
 
@@ -261,7 +267,7 @@ describe("verify-ledger", () => {
     const student = await freshStudent();
     await topUp({
       input: { buyer: { studentNumber: student.studentNumber }, amountCents: 1050, method: "cash" },
-      actor: { uid: EXEC.uid, displayName: EXEC.name, isExec: true },
+      actor: { uid: EXEC.uid, displayName: EXEC.name },
       idempotency: idempotency(EXEC.uid, "/api/sac/topup", { s: student.uid, a: 1050 }),
     });
 

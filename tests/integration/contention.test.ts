@@ -43,6 +43,7 @@ async function makeUser(args: {
   displayName: string;
   studentNumber: string;
   paymentCode: string;
+  roles?: { sacMember: boolean; sacExec: boolean };
 }): Promise<void> {
   await usersCol()
     .doc(args.uid)
@@ -54,7 +55,7 @@ async function makeUser(args: {
       paymentCode: args.paymentCode,
       balanceCents: 0,
       points: 0,
-      roles: { sacMember: false, sacExec: false },
+      roles: args.roles ?? { sacMember: false, sacExec: false },
       suspended: false,
       createdAt: Timestamp.now(),
       updatedAt: Timestamp.now(),
@@ -78,7 +79,7 @@ async function freshStudent(): Promise<{
 async function fund(studentNumber: string, amountCents: number): Promise<void> {
   await topUp({
     input: { buyer: { studentNumber }, amountCents, method: "cash" },
-    actor: { uid: EXEC.uid, displayName: EXEC.name, isExec: true },
+    actor: { uid: EXEC.uid, displayName: EXEC.name },
     idempotency: idempotency(EXEC.uid, "/api/sac/topup", { studentNumber, amountCents }),
   });
 }
@@ -121,6 +122,7 @@ beforeAll(async () => {
     displayName: EXEC.name,
     studentNumber: "9500001",
     paymentCode: "con-EXEC",
+    roles: { sacMember: true, sacExec: true },
   });
   await boothsCol()
     .doc(BOOTH_ID)

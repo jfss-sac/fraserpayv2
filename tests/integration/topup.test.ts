@@ -420,7 +420,7 @@ describe("topUp concurrency (money module)", () => {
         amountCents: 500,
         method: "cash" as const,
       };
-      const actor = { uid: MEMBER.uid, displayName: MEMBER.name, isExec: false };
+      const actor = { uid: MEMBER.uid, displayName: MEMBER.name };
       const ctx = ctxFor(MEMBER.uid, key, body);
       const [a, b] = await Promise.all([
         topUp({ input: body, actor, idempotency: ctx }),

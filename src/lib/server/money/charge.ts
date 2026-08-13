@@ -37,7 +37,7 @@ export async function charge(args: {
   const buyerUid = await resolveBuyerUid(input.buyer);
   const createdDate = torontoDate(new Date());
 
-  const { response } = await runIdempotent<ChargeResult>(idempotency, async (t) => {
+  const { response } = await runIdempotent<ChargeResult>(idempotency, "active", async (t) => {
     const boothRef = boothsCol().doc(input.boothId);
     const booth = (await t.get(boothRef)).data();
     if (!booth || booth.status !== "approved") throw new BoothNotSellableError();

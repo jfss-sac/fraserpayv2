@@ -2,9 +2,9 @@ import "server-only";
 import { Timestamp } from "firebase-admin/firestore";
 import { z } from "zod";
 import { writeAudit } from "@/lib/server/audit";
+import { runAuthorizedTransaction } from "@/lib/server/dal";
 import { usersCol } from "@/lib/server/db";
 import { InternalError, NotFoundError } from "@/lib/server/errors";
-import { getAdminFirestore } from "@/lib/server/firebase-admin";
 import { defineHandler } from "@/lib/server/http";
 import { generatePaymentCode } from "@/lib/server/paymentCode";
 
@@ -15,10 +15,9 @@ const regenSchema = z.object({ studentUid: z.string().trim().min(1) }).strict();
 export const POST = defineHandler(
   { role: "sacExec", schema: regenSchema, rateLimit: "exec-mutations" },
   async ({ input, session }) => {
-    const db = getAdminFirestore();
     const userRef = usersCol().doc(input.studentUid);
 
-    return db.runTransaction(async (t) => {
+    return runAuthorizedTransaction({ actorUid: session!.uid, role: "sacExec" }, async (t) => {
       const user = (await t.get(userRef)).data();
       if (!user) throw new NotFoundError("Student not found.");
 
