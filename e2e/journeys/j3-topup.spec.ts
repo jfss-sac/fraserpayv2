@@ -76,9 +76,7 @@ test.describe("J3 · SAC member top-up with guards", () => {
     await expect(page.getByText(/only an exec can override/)).toBeVisible();
     await expect(page.getByLabel("Reason for override")).toHaveCount(0);
 
-    await page.getByRole("button", { name: "Top up $10.00" }).click();
-    await expect(page.getByText(/an exec can override with a reason/)).toBeVisible();
-    await expect(page.getByRole("button", { name: "Top up $10.00" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Top up $10.00" })).toBeDisabled();
   });
 });
 

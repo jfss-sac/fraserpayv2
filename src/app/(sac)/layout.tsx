@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { getSession, hasAnyBoothMembership } from "@/lib/server/dal";
 import { AppShell, buildModes } from "@/lib/ui/shell";
+import { ToastProvider } from "@/lib/ui/toast";
 
 export default async function SacLayout({ children }: { children: React.ReactNode }) {
   const session = await getSession();
@@ -13,7 +14,7 @@ export default async function SacLayout({ children }: { children: React.ReactNod
 
   return (
     <AppShell active="admin" modes={modes} suspended={session.suspended}>
-      {children}
+      <ToastProvider>{children}</ToastProvider>
     </AppShell>
   );
 }
