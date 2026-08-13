@@ -7,6 +7,7 @@ import {
   membersCol,
   usersCol,
 } from "../../src/lib/server/db";
+import type { TransactionRole } from "../../src/lib/server/dal";
 import type { AppError } from "../../src/lib/server/errors";
 import { getAdminFirestore } from "../../src/lib/server/firebase-admin";
 import { type IdempotencyContext, requestHash } from "../../src/lib/server/idempotency";
@@ -24,6 +25,13 @@ const ITEMS: BoothItem[] = [
   { id: "coffee", name: "Coffee", priceCents: COFFEE_CENTS, isCustom: false },
 ];
 
+const ROLE_BY_ENDPOINT: Record<string, TransactionRole> = {
+  "/api/sac/topup": "sacMember",
+  "/api/booth/charge": "active",
+  "/api/exec/refund": "sacExec",
+  "/api/exec/adjust": "sacExec",
+};
+
 let keySeq = 0;
 function idempotency(actorUid: string, endpoint: string, body: unknown): IdempotencyContext {
   keySeq += 1;
@@ -31,6 +39,7 @@ function idempotency(actorUid: string, endpoint: string, body: unknown): Idempot
   return {
     key,
     actorUid,
+    role: ROLE_BY_ENDPOINT[endpoint]!,
     endpoint,
     docId: `${actorUid}_${key}`,
     requestHash: requestHash(body),
@@ -79,7 +88,6 @@ async function freshStudent(): Promise<{
 async function fund(studentNumber: string, amountCents: number): Promise<void> {
   await topUp({
     input: { buyer: { studentNumber }, amountCents, method: "cash" },
-    actor: { uid: EXEC.uid, displayName: EXEC.name },
     idempotency: idempotency(EXEC.uid, "/api/sac/topup", { studentNumber, amountCents }),
   });
 }
@@ -88,7 +96,6 @@ function chargeCoffee(studentNumber: string, qty: number, ctx?: IdempotencyConte
   const input = { boothId: BOOTH_ID, buyer: { studentNumber }, items: [{ itemId: "coffee", qty }] };
   return charge({
     input,
-    actor: { uid: OPERATOR.uid, displayName: OPERATOR.name },
     idempotency: ctx ?? idempotency(OPERATOR.uid, "/api/booth/charge", input),
   });
 }

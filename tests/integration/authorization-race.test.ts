@@ -1,6 +1,7 @@
 import { Timestamp } from "firebase-admin/firestore";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { POST as chargeRoute } from "../../src/app/api/booth/charge/route";
+import { POST as registerRoute } from "../../src/app/api/booths/register/route";
 import { POST as rolesRoute } from "../../src/app/api/exec/roles/route";
 import { POST as topupRoute } from "../../src/app/api/sac/topup/route";
 import { boothsCol, ledgerCol, membersCol, usersCol } from "../../src/lib/server/db";
@@ -17,6 +18,9 @@ const CAP_EXEC_UID = "authorization-race-cap-exec";
 const CAP_BUYER_UID = "authorization-race-cap-buyer";
 const REPLAY_MEMBER_UID = "authorization-race-replay-member";
 const REPLAY_BUYER_UID = "authorization-race-replay-buyer";
+const NAME_MEMBER_UID = "authorization-race-name-member";
+const NAME_BUYER_UID = "authorization-race-name-buyer";
+const REGISTER_UID = "authorization-race-register";
 const BOOTH_ID = "authorization-race-booth";
 
 const cookies: Record<string, string> = {};
@@ -119,10 +123,15 @@ beforeAll(async () => {
   await makeUser(CAP_BUYER_UID, { sacMember: false, sacExec: false });
   await makeUser(REPLAY_MEMBER_UID, { sacMember: true, sacExec: false });
   await makeUser(REPLAY_BUYER_UID, { sacMember: false, sacExec: false });
+  await makeUser(NAME_MEMBER_UID, { sacMember: true, sacExec: false });
+  await makeUser(NAME_BUYER_UID, { sacMember: false, sacExec: false });
+  await makeUser(REGISTER_UID, { sacMember: false, sacExec: false });
   cookies[EXEC_UID] = await mintSessionCookie(EXEC_UID);
   cookies[OPERATOR_UID] = await mintSessionCookie(OPERATOR_UID);
   cookies[CAP_EXEC_UID] = await mintSessionCookie(CAP_EXEC_UID);
   cookies[REPLAY_MEMBER_UID] = await mintSessionCookie(REPLAY_MEMBER_UID);
+  cookies[NAME_MEMBER_UID] = await mintSessionCookie(NAME_MEMBER_UID);
+  cookies[REGISTER_UID] = await mintSessionCookie(REGISTER_UID);
 
   await boothsCol()
     .doc(BOOTH_ID)
@@ -275,5 +284,65 @@ describe("transactional authorization freshness", () => {
 
     expect((await usersCol().doc(REPLAY_BUYER_UID).get()).data()?.balanceCents).toBe(1_500);
     expect((await ledgerCol().where("studentUid", "==", REPLAY_BUYER_UID).get()).size).toBe(3);
+  });
+
+  it("attributes the ledger entry to the actor document the transaction authorized", async () => {
+    const gate = pauseNextTransaction();
+    try {
+      const pending = topupRoute(
+        post(
+          "/api/sac/topup",
+          NAME_MEMBER_UID,
+          { buyer: { paymentCode: `fp1-${NAME_BUYER_UID}` }, amountCents: 500, method: "cash" },
+          "f47ac10b-58cc-4372-a567-000000000003",
+        ),
+      );
+
+      await gate.started;
+      await usersCol()
+        .doc(NAME_MEMBER_UID)
+        .update({ displayName: "Renamed Mid Transaction", updatedAt: Timestamp.now() });
+      gate.release();
+
+      const res = await pending;
+      expect(res.status).toBe(200);
+
+      const entries = await ledgerCol().where("studentUid", "==", NAME_BUYER_UID).get();
+      expect(entries.size).toBe(1);
+      expect(entries.docs[0]!.data()).toMatchObject({
+        actorUid: NAME_MEMBER_UID,
+        actorName: "Renamed Mid Transaction",
+      });
+    } finally {
+      gate.release();
+      gate.restore();
+    }
+  });
+
+  it("reports a re-registration by an actor suspended mid-request rather than replaying it", async () => {
+    const body = {
+      name: "Race Registration",
+      description: "test",
+      items: [{ name: "Item", priceCents: 100 }],
+    };
+    const first = await registerRoute(post("/api/booths/register", REGISTER_UID, body));
+    expect(first.status).toBe(200);
+
+    const gate = pauseNextTransaction();
+    try {
+      const pending = registerRoute(post("/api/booths/register", REGISTER_UID, body));
+
+      await gate.started;
+      await usersCol().doc(REGISTER_UID).update({ suspended: true, updatedAt: Timestamp.now() });
+      gate.release();
+
+      const res = await pending;
+      expect(res.status).toBe(403);
+      expect(await errorCode(res)).toBe("SUSPENDED");
+    } finally {
+      gate.release();
+      gate.restore();
+      await usersCol().doc(REGISTER_UID).update({ suspended: false, updatedAt: Timestamp.now() });
+    }
   });
 });

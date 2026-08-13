@@ -68,12 +68,14 @@ describe("buildIdempotencyContext", () => {
     const ctx = buildIdempotencyContext({
       request: reqWith(KEY),
       actorUid: "actor-1",
+      role: "sacMember",
       endpoint: "/api/sac/topup",
       body: { amountCents: 5000 },
     });
     expect(ctx).toEqual({
       key: KEY,
       actorUid: "actor-1",
+      role: "sacMember",
       endpoint: "/api/sac/topup",
       docId: `actor-1_${KEY}`,
       requestHash: requestHash({ amountCents: 5000 }),
@@ -86,6 +88,7 @@ describe("buildIdempotencyContext", () => {
       buildIdempotencyContext({
         request: reqWith(),
         actorUid: "actor-1",
+        role: "sacMember",
         endpoint: "/api/sac/topup",
         body: {},
       }),

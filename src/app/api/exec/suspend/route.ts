@@ -14,10 +14,10 @@ const suspendSchema = z
 
 export const POST = defineHandler(
   { role: "sacExec", schema: suspendSchema, rateLimit: "exec-mutations" },
-  async ({ input, session }) => {
+  async ({ input, authorization }) => {
     const userRef = usersCol().doc(input.studentUid);
 
-    return runAuthorizedTransaction({ actorUid: session!.uid, role: "sacExec" }, async (t) => {
+    return runAuthorizedTransaction(authorization, async (t, actor) => {
       const user = (await t.get(userRef)).data();
       if (!user) throw new NotFoundError("Student not found.");
       if (user.suspended === input.suspended) {
@@ -36,12 +36,11 @@ export const POST = defineHandler(
 
       t.update(userRef, { suspended: input.suspended, updatedAt: Timestamp.now() });
 
-      writeAudit(
-        t,
-        input.suspended ? "user.suspend" : "user.unsuspend",
-        { uid: session!.uid, displayName: session!.displayName },
-        { type: "user", id: input.studentUid, label: user.displayName },
-      );
+      writeAudit(t, input.suspended ? "user.suspend" : "user.unsuspend", actor, {
+        type: "user",
+        id: input.studentUid,
+        label: user.displayName,
+      });
 
       return { studentUid: input.studentUid, suspended: input.suspended };
     });

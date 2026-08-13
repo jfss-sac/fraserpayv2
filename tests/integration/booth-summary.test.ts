@@ -149,12 +149,12 @@ async function refund(
   const idempotency = buildIdempotencyContext({
     request,
     actorUid: OPERATOR.uid,
+    role: "sacExec",
     endpoint: "/api/exec/refund",
     body,
   });
   await refundPurchase({
     input: body,
-    actor: { uid: OPERATOR.uid, displayName: OPERATOR.name },
     idempotency,
   });
 }

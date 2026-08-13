@@ -213,6 +213,28 @@ async function freshBuyer(
 }
 
 describe("POST /api/booth/charge", () => {
+  it("charges an operator who is also the buyer, reading one document for both roles", async () => {
+    await usersCol().doc(OPERATOR.uid).update({ balanceCents: 1000, updatedAt: Timestamp.now() });
+    const res = await chargeRoute(
+      post(OPERATOR.uid, {
+        boothId: BOOTH_ID,
+        buyer: { paymentCode: "fp1-OPERAT" },
+        items: [{ itemId: "coffee", qty: 1 }],
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect((await usersCol().doc(OPERATOR.uid).get()).data()?.balanceCents).toBe(750);
+    const entries = await ledgerFor(OPERATOR.uid);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      studentUid: OPERATOR.uid,
+      actorUid: OPERATOR.uid,
+      actorName: OPERATOR.name,
+      balanceAfterCents: 750,
+    });
+    await usersCol().doc(OPERATOR.uid).update({ balanceCents: 0, updatedAt: Timestamp.now() });
+  });
+
   it("charges a multi-line cart with custom items and prices from the booth doc", async () => {
     const buyer = await freshBuyer(2000);
     const res = await chargeRoute(
@@ -496,7 +518,7 @@ describe("charge concurrency (money module)", () => {
       method: "POST",
       headers: { "idempotency-key": key },
     });
-    return buildIdempotencyContext({ request, actorUid, endpoint: ENDPOINT, body });
+    return buildIdempotencyContext({ request, actorUid, role: "active", endpoint: ENDPOINT, body });
   }
 
   it("executes exactly once under a concurrent double-submit (loop)", async () => {
@@ -508,11 +530,10 @@ describe("charge concurrency (money module)", () => {
         buyer: { paymentCode: buyer.paymentCode },
         items: [{ itemId: "coffee", qty: 2 }],
       };
-      const actor = { uid: OPERATOR.uid, displayName: OPERATOR.name };
       const ctx = ctxFor(OPERATOR.uid, key, body);
       const [a, b] = await Promise.all([
-        charge({ input: body, actor, idempotency: ctx }),
-        charge({ input: body, actor, idempotency: ctx }),
+        charge({ input: body, idempotency: ctx }),
+        charge({ input: body, idempotency: ctx }),
       ]);
       expect(a).toEqual(b);
       expect((await usersCol().doc(buyer.uid).get()).data()?.balanceCents).toBe(1500);

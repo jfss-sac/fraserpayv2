@@ -1,6 +1,7 @@
 import { type Firestore, Timestamp } from "firebase-admin/firestore";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { boothsCol, membersCol, usersCol } from "../../src/lib/server/db";
+import type { TransactionRole } from "../../src/lib/server/dal";
 import { getAdminFirestore } from "../../src/lib/server/firebase-admin";
 import { type IdempotencyContext, requestHash } from "../../src/lib/server/idempotency";
 import { adjustBalance } from "../../src/lib/server/money/adjust";
@@ -19,6 +20,13 @@ const ITEMS: BoothItem[] = [
   { id: "cookie", name: "Cookie", priceCents: 150, isCustom: false },
 ];
 
+const ROLE_BY_ENDPOINT: Record<string, TransactionRole> = {
+  "/api/sac/topup": "sacMember",
+  "/api/booth/charge": "active",
+  "/api/exec/refund": "sacExec",
+  "/api/exec/adjust": "sacExec",
+};
+
 let keySeq = 0;
 function idempotency(actorUid: string, endpoint: string, body: unknown): IdempotencyContext {
   keySeq += 1;
@@ -26,6 +34,7 @@ function idempotency(actorUid: string, endpoint: string, body: unknown): Idempot
   return {
     key,
     actorUid,
+    role: ROLE_BY_ENDPOINT[endpoint]!,
     endpoint,
     docId: `${actorUid}_${key}`,
     requestHash: requestHash(body),
@@ -184,12 +193,10 @@ describe("verify-ledger", () => {
 
     await topUp({
       input: { buyer: { studentNumber: student.studentNumber }, amountCents: 5000, method: "cash" },
-      actor: { uid: EXEC.uid, displayName: EXEC.name },
       idempotency: idempotency(EXEC.uid, "/api/sac/topup", { s: student.uid, a: 5000 }),
     });
     const topupOther = await topUp({
       input: { buyer: { studentNumber: other.studentNumber }, amountCents: 1050, method: "card" },
-      actor: { uid: EXEC.uid, displayName: EXEC.name },
       idempotency: idempotency(EXEC.uid, "/api/sac/topup", { s: other.uid, a: 1050 }),
     });
 
@@ -202,13 +209,11 @@ describe("verify-ledger", () => {
           { itemId: "cookie", qty: 1 },
         ],
       },
-      actor: { uid: OPERATOR.uid, displayName: OPERATOR.name },
       idempotency: idempotency(OPERATOR.uid, "/api/booth/charge", { s: student.uid }),
     });
 
     await refundPurchase({
       input: { originalEntryId: purchase.entryId, reason: "verify-ledger refund" },
-      actor: { uid: EXEC.uid, displayName: EXEC.name },
       idempotency: idempotency(EXEC.uid, "/api/exec/refund", { e: purchase.entryId }),
     });
 
@@ -219,12 +224,10 @@ describe("verify-ledger", () => {
         reason: "verify-ledger reversal",
         originalEntryId: topupOther.entryId,
       },
-      actor: { uid: EXEC.uid, displayName: EXEC.name },
       idempotency: idempotency(EXEC.uid, "/api/exec/adjust", { s: other.uid, linked: true }),
     });
     await adjustBalance({
       input: { studentUid: student.uid, amountCents: 100, reason: "verify-ledger credit" },
-      actor: { uid: EXEC.uid, displayName: EXEC.name },
       idempotency: idempotency(EXEC.uid, "/api/exec/adjust", { s: student.uid, linked: false }),
     });
 
@@ -241,7 +244,6 @@ describe("verify-ledger", () => {
     const student = await freshStudent();
     await topUp({
       input: { buyer: { studentNumber: student.studentNumber }, amountCents: 2000, method: "cash" },
-      actor: { uid: EXEC.uid, displayName: EXEC.name },
       idempotency: idempotency(EXEC.uid, "/api/sac/topup", { s: student.uid, a: 2000 }),
     });
 
@@ -267,7 +269,6 @@ describe("verify-ledger", () => {
     const student = await freshStudent();
     await topUp({
       input: { buyer: { studentNumber: student.studentNumber }, amountCents: 1050, method: "cash" },
-      actor: { uid: EXEC.uid, displayName: EXEC.name },
       idempotency: idempotency(EXEC.uid, "/api/sac/topup", { s: student.uid, a: 1050 }),
     });
 

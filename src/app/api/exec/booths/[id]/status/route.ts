@@ -10,10 +10,10 @@ const statusSchema = z.object({ active: z.boolean() }).strict();
 
 export const POST = defineHandler<typeof statusSchema, { id: string }>(
   { role: "sacExec", schema: statusSchema, rateLimit: "exec-mutations" },
-  async ({ input, params, session }) => {
+  async ({ input, params, authorization }) => {
     const boothRef = boothsCol().doc(params.id);
 
-    return runAuthorizedTransaction({ actorUid: session!.uid, role: "sacExec" }, async (t) => {
+    return runAuthorizedTransaction(authorization, async (t, actor) => {
       const booth = (await t.get(boothRef)).data();
       if (!booth) throw new NotFoundError("Booth not found.");
 
@@ -32,7 +32,7 @@ export const POST = defineHandler<typeof statusSchema, { id: string }>(
       writeAudit(
         t,
         input.active ? "booth.reactivate" : "booth.deactivate",
-        { uid: session!.uid, displayName: session!.displayName },
+        actor,
         { type: "booth", id: params.id, label: booth.name },
         {},
       );

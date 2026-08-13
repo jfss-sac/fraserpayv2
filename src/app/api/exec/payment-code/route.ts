@@ -14,10 +14,10 @@ const regenSchema = z.object({ studentUid: z.string().trim().min(1) }).strict();
 
 export const POST = defineHandler(
   { role: "sacExec", schema: regenSchema, rateLimit: "exec-mutations" },
-  async ({ input, session }) => {
+  async ({ input, authorization }) => {
     const userRef = usersCol().doc(input.studentUid);
 
-    return runAuthorizedTransaction({ actorUid: session!.uid, role: "sacExec" }, async (t) => {
+    return runAuthorizedTransaction(authorization, async (t, actor) => {
       const user = (await t.get(userRef)).data();
       if (!user) throw new NotFoundError("Student not found.");
 
@@ -34,12 +34,11 @@ export const POST = defineHandler(
 
       t.update(userRef, { paymentCode, updatedAt: Timestamp.now() });
 
-      writeAudit(
-        t,
-        "user.paymentCodeRegen",
-        { uid: session!.uid, displayName: session!.displayName },
-        { type: "user", id: input.studentUid, label: user.displayName },
-      );
+      writeAudit(t, "user.paymentCodeRegen", actor, {
+        type: "user",
+        id: input.studentUid,
+        label: user.displayName,
+      });
 
       return { studentUid: input.studentUid };
     });

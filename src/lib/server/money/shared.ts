@@ -51,11 +51,15 @@ export interface ActiveBuyer {
   data: UserDoc;
 }
 
+export function assertActiveBuyer(data: UserDoc | undefined): UserDoc {
+  const buyer = requireUser(data, "No student found for that code or number.");
+  if (buyer.suspended) throw new SuspendedError();
+  return buyer;
+}
+
 export async function readActiveBuyer(t: Transaction, uid: string): Promise<ActiveBuyer> {
   const ref = usersCol().doc(uid);
-  const data = requireUser((await t.get(ref)).data(), "No student found for that code or number.");
-  if (data.suspended) throw new SuspendedError();
-  return { ref, data };
+  return { ref, data: assertActiveBuyer((await t.get(ref)).data()) };
 }
 
 export async function readUser(t: Transaction, uid: string): Promise<ActiveBuyer> {

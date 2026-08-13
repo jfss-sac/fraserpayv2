@@ -370,10 +370,14 @@ describe("refundPurchase concurrency (money module)", () => {
       method: "POST",
       headers: { "idempotency-key": key },
     });
-    return buildIdempotencyContext({ request, actorUid, endpoint: ENDPOINT, body });
+    return buildIdempotencyContext({
+      request,
+      actorUid,
+      role: "sacExec",
+      endpoint: ENDPOINT,
+      body,
+    });
   }
-
-  const actor = { uid: EXEC.uid, displayName: EXEC.name };
 
   it("executes exactly once under a concurrent double-submit (loop)", async () => {
     for (let i = 0; i < 25; i += 1) {
@@ -383,8 +387,8 @@ describe("refundPurchase concurrency (money module)", () => {
       const body = { originalEntryId: purchaseId, reason: "concurrent replay" };
       const ctx = ctxFor(EXEC.uid, key, body);
       const [a, b] = await Promise.all([
-        refundPurchase({ input: body, actor, idempotency: ctx }),
-        refundPurchase({ input: body, actor, idempotency: ctx }),
+        refundPurchase({ input: body, idempotency: ctx }),
+        refundPurchase({ input: body, idempotency: ctx }),
       ]);
       expect(a).toEqual(b);
       expect((await usersCol().doc(student.uid).get()).data()?.balanceCents).toBe(500);
@@ -400,12 +404,10 @@ describe("refundPurchase concurrency (money module)", () => {
       const results = await Promise.allSettled([
         refundPurchase({
           input: body,
-          actor,
           idempotency: ctxFor(EXEC.uid, nextKey(), body),
         }),
         refundPurchase({
           input: body,
-          actor,
           idempotency: ctxFor(EXEC.uid, nextKey(), body),
         }),
       ]);

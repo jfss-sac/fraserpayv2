@@ -13,10 +13,10 @@ const rotateSchema = z.object({}).strict();
 
 export const POST = defineHandler<typeof rotateSchema, { id: string }>(
   { role: "sacExec", schema: rotateSchema, rateLimit: "exec-mutations" },
-  async ({ params, session }) => {
+  async ({ params, authorization }) => {
     const boothRef = boothsCol().doc(params.id);
 
-    return runAuthorizedTransaction({ actorUid: session!.uid, role: "sacExec" }, async (t) => {
+    return runAuthorizedTransaction(authorization, async (t, actor) => {
       const booth = (await t.get(boothRef)).data();
       if (!booth) throw new NotFoundError("Booth not found.");
       if (booth.status !== "approved") {
@@ -39,7 +39,7 @@ export const POST = defineHandler<typeof rotateSchema, { id: string }>(
       writeAudit(
         t,
         "booth.codeRotate",
-        { uid: session!.uid, displayName: session!.displayName },
+        actor,
         { type: "booth", id: params.id, label: booth.name },
         { previousJoinCode: booth.joinCode, joinCode },
       );

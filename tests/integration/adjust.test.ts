@@ -472,7 +472,13 @@ describe("adjustBalance concurrency (money module)", () => {
       method: "POST",
       headers: { "idempotency-key": key },
     });
-    return buildIdempotencyContext({ request, actorUid, endpoint: ENDPOINT, body });
+    return buildIdempotencyContext({
+      request,
+      actorUid,
+      role: "sacExec",
+      endpoint: ENDPOINT,
+      body,
+    });
   }
 
   it("executes exactly once under a concurrent double-submit (loop)", async () => {
@@ -480,11 +486,10 @@ describe("adjustBalance concurrency (money module)", () => {
       const student = await freshStudent({ balanceCents: 500 });
       const key = nextKey();
       const body = { studentUid: student.uid, amountCents: 500, reason: "concurrent" };
-      const actor = { uid: EXEC.uid, displayName: EXEC.name };
       const ctx = ctxFor(EXEC.uid, key, body);
       const [a, b] = await Promise.all([
-        adjustBalance({ input: body, actor, idempotency: ctx }),
-        adjustBalance({ input: body, actor, idempotency: ctx }),
+        adjustBalance({ input: body, idempotency: ctx }),
+        adjustBalance({ input: body, idempotency: ctx }),
       ]);
       expect(a).toEqual(b);
       expect((await usersCol().doc(student.uid).get()).data()?.balanceCents).toBe(1000);
@@ -502,16 +507,13 @@ describe("adjustBalance concurrency (money module)", () => {
         reason: "concurrent reversal",
         originalEntryId: topupId,
       };
-      const actor = { uid: EXEC.uid, displayName: EXEC.name };
       const results = await Promise.allSettled([
         adjustBalance({
           input: body,
-          actor,
           idempotency: ctxFor(EXEC.uid, nextKey(), body),
         }),
         adjustBalance({
           input: body,
-          actor,
           idempotency: ctxFor(EXEC.uid, nextKey(), body),
         }),
       ]);

@@ -8,19 +8,19 @@ import { boothJoinSchema } from "@/lib/shared/booth";
 
 export const POST = defineHandler(
   { role: "active", schema: boothJoinSchema, rateLimit: "join" },
-  async ({ input, session }) => {
-    return runAuthorizedTransaction({ actorUid: session!.uid, role: "active" }, async (t) => {
+  async ({ input, authorization }) => {
+    return runAuthorizedTransaction(authorization, async (t, actor) => {
       const snap = await t.get(boothsCol().where("joinCode", "==", input.code).limit(1));
       const boothDoc = snap.docs[0];
       if (!boothDoc || boothDoc.data().status !== "approved") {
         throw new NotFoundError("That join code isn't valid.");
       }
 
-      const memberRef = membersCol(boothDoc.id).doc(session!.uid);
+      const memberRef = membersCol(boothDoc.id).doc(actor.uid);
       if (!(await t.get(memberRef)).exists) {
         t.set(memberRef, {
-          uid: session!.uid,
-          displayName: session!.displayName,
+          uid: actor.uid,
+          displayName: actor.displayName,
           joinedAt: Timestamp.now(),
         });
       }

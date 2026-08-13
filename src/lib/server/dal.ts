@@ -24,6 +24,15 @@ export interface TransactionAuthorization {
   role: TransactionRole;
 }
 
+export interface AuthorizedActor {
+  uid: string;
+  displayName: string;
+}
+
+export function transactionRoleFor(role: Role): TransactionRole | undefined {
+  return role === "active" || role === "sacMember" || role === "sacExec" ? role : undefined;
+}
+
 export interface BoothLedgerTotals {
   grossCents: number;
   purchaseCount: number;
@@ -238,15 +247,11 @@ function assertSacExec(session: Session | null): asserts session is Session {
   if (!session.roles.sacExec) throw new ForbiddenError();
 }
 
-export async function assertTransactionAuthorized(
-  transaction: Transaction,
-  authorization: TransactionAuthorization,
-): Promise<UserDoc> {
-  const actor = (await transaction.get(usersCol().doc(authorization.actorUid))).data();
+export function assertActorAuthorized(actor: UserDoc | undefined, role: TransactionRole): UserDoc {
   if (!actor) throw new UnauthorizedError();
   if (actor.suspended) throw new SuspendedError();
 
-  switch (authorization.role) {
+  switch (role) {
     case "active":
       break;
     case "sacMember":
@@ -261,12 +266,19 @@ export async function assertTransactionAuthorized(
 }
 
 export async function runAuthorizedTransaction<T>(
-  authorization: TransactionAuthorization,
-  updateFunction: (transaction: Transaction) => Promise<T>,
+  authorization: TransactionAuthorization | undefined,
+  updateFunction: (transaction: Transaction, actor: AuthorizedActor) => Promise<T>,
 ): Promise<T> {
+  if (!authorization) throw new InternalError();
   return getAdminFirestore().runTransaction(async (transaction) => {
-    await assertTransactionAuthorized(transaction, authorization);
-    return updateFunction(transaction);
+    const doc = assertActorAuthorized(
+      (await transaction.get(usersCol().doc(authorization.actorUid))).data(),
+      authorization.role,
+    );
+    return updateFunction(transaction, {
+      uid: authorization.actorUid,
+      displayName: doc.displayName,
+    });
   });
 }
 

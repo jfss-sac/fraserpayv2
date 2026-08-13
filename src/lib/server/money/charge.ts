@@ -1,13 +1,13 @@
 import "server-only";
 import { Timestamp } from "firebase-admin/firestore";
 import { z } from "zod";
-import { type LedgerEntryDoc, boothsCol, ledgerCol, membersCol } from "../db";
+import { type LedgerEntryDoc, boothsCol, ledgerCol, membersCol, usersCol } from "../db";
 import { BoothNotSellableError, ForbiddenError, InsufficientFundsError } from "../errors";
-import { type IdempotencyContext, runIdempotent } from "../idempotency";
+import { type IdempotencyContext, type IdempotentOutcome, runIdempotent } from "../idempotency";
 import { isHighAmount } from "@/lib/shared/money";
 import type { ChargeResult, LedgerLineItem } from "@/lib/shared/types";
 import { assertNonNegative } from "./invariants";
-import { boothBuyerSchema, readActiveBuyer, resolveBuyerUid, torontoDate } from "./shared";
+import { assertActiveBuyer, boothBuyerSchema, resolveBuyerUid, torontoDate } from "./shared";
 
 export const chargeSchema = z
   .object({
@@ -23,73 +23,76 @@ export const chargeSchema = z
 
 export type ChargeInput = z.infer<typeof chargeSchema>;
 
-export interface ChargeActor {
-  uid: string;
-  displayName: string;
-}
-
 export async function charge(args: {
   input: ChargeInput;
-  actor: ChargeActor;
   idempotency: IdempotencyContext;
 }): Promise<ChargeResult> {
-  const { input, actor, idempotency } = args;
+  const { input, idempotency } = args;
+  const actorUid = idempotency.actorUid;
   const buyerUid = await resolveBuyerUid(input.buyer);
   const createdDate = torontoDate(new Date());
 
-  const { response } = await runIdempotent<ChargeResult>(idempotency, "active", async (t) => {
-    const boothRef = boothsCol().doc(input.boothId);
-    const booth = (await t.get(boothRef)).data();
-    if (!booth || booth.status !== "approved") throw new BoothNotSellableError();
+  const boothRef = boothsCol().doc(input.boothId);
+  const memberRef = membersCol(input.boothId).doc(actorUid);
+  const buyerRef = usersCol().doc(buyerUid);
 
-    const member = await t.get(membersCol(input.boothId).doc(actor.uid));
-    if (!member.exists) throw new ForbiddenError("You are not a member of this booth.");
+  const { response }: IdempotentOutcome<ChargeResult> = await runIdempotent(
+    idempotency,
+    [boothRef, memberRef, buyerRef],
+    async (t, actor, [boothSnapshot, memberSnapshot, buyerSnapshot]) => {
+      const booth = boothSnapshot.data();
+      if (!booth || booth.status !== "approved") throw new BoothNotSellableError();
 
-    const { ref, data } = await readActiveBuyer(t, buyerUid);
+      if (!memberSnapshot.exists) {
+        throw new ForbiddenError("You are not a member of this booth.");
+      }
 
-    const lineItems: LedgerLineItem[] = input.items.map(({ itemId, qty }) => {
-      const item = booth.items.find((i) => i.id === itemId);
-      if (!item) throw new BoothNotSellableError("That item is not sold at this booth.");
-      return { itemId, name: item.name, qty, unitPriceCents: item.priceCents };
-    });
+      const data = assertActiveBuyer(buyerSnapshot.data());
 
-    const amountCents = lineItems.reduce((sum, li) => sum + li.qty * li.unitPriceCents, 0);
+      const lineItems: LedgerLineItem[] = input.items.map(({ itemId, qty }) => {
+        const item = booth.items.find((i) => i.id === itemId);
+        if (!item) throw new BoothNotSellableError("That item is not sold at this booth.");
+        return { itemId, name: item.name, qty, unitPriceCents: item.priceCents };
+      });
 
-    if (data.balanceCents < amountCents) throw new InsufficientFundsError();
-    const balanceAfterCents = data.balanceCents - amountCents;
-    assertNonNegative(balanceAfterCents);
+      const amountCents = lineItems.reduce((sum, li) => sum + li.qty * li.unitPriceCents, 0);
 
-    const tags = isHighAmount(amountCents) ? ["high-amount"] : [];
-    const now = Timestamp.now();
+      if (data.balanceCents < amountCents) throw new InsufficientFundsError();
+      const balanceAfterCents = data.balanceCents - amountCents;
+      assertNonNegative(balanceAfterCents);
 
-    const entry: LedgerEntryDoc = {
-      type: "purchase",
-      amountCents,
-      direction: "debit",
-      balanceAfterCents,
-      studentUid: buyerUid,
-      studentNumber: data.studentNumber,
-      studentName: data.displayName,
-      actorUid: actor.uid,
-      actorName: actor.displayName,
-      boothId: input.boothId,
-      boothName: booth.name,
-      lineItems,
-      tags,
-      idempotencyKey: idempotency.key,
-      createdAt: now,
-      createdDate,
-    };
+      const tags = isHighAmount(amountCents) ? ["high-amount"] : [];
+      const now = Timestamp.now();
 
-    const entryRef = ledgerCol().doc();
-    t.create(entryRef, entry);
-    t.update(ref, { balanceCents: balanceAfterCents, updatedAt: now });
+      const entry: LedgerEntryDoc = {
+        type: "purchase",
+        amountCents,
+        direction: "debit",
+        balanceAfterCents,
+        studentUid: buyerUid,
+        studentNumber: data.studentNumber,
+        studentName: data.displayName,
+        actorUid,
+        actorName: actor.displayName,
+        boothId: input.boothId,
+        boothName: booth.name,
+        lineItems,
+        tags,
+        idempotencyKey: idempotency.key,
+        createdAt: now,
+        createdDate,
+      };
 
-    return {
-      response: { entryId: entryRef.id, amountCents },
-      ledgerEntryId: entryRef.id,
-    };
-  });
+      const entryRef = ledgerCol().doc();
+      t.create(entryRef, entry);
+      t.update(buyerRef, { balanceCents: balanceAfterCents, updatedAt: now });
+
+      return {
+        response: { entryId: entryRef.id, amountCents },
+        ledgerEntryId: entryRef.id,
+      };
+    },
+  );
 
   return response;
 }

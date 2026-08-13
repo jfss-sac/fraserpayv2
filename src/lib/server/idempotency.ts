@@ -1,8 +1,14 @@
 import "server-only";
 import { createHash } from "node:crypto";
-import { type DocumentReference, type Transaction, Timestamp } from "firebase-admin/firestore";
-import { type IdempotencyDoc, type UserDoc, idempotencyCol } from "./db";
-import { assertTransactionAuthorized, type TransactionRole } from "./dal";
+import {
+  type DocumentData,
+  type DocumentReference,
+  type DocumentSnapshot,
+  type Transaction,
+  Timestamp,
+} from "firebase-admin/firestore";
+import { type IdempotencyDoc, type UserDoc, idempotencyCol, usersCol } from "./db";
+import { assertActorAuthorized, type TransactionRole } from "./dal";
 import { IdempotencyConflictError, ValidationError } from "./errors";
 import { getAdminFirestore } from "./firebase-admin";
 import { UUID_V4_RE } from "@/lib/shared/uuid";
@@ -16,6 +22,7 @@ export const IDEMPOTENCY_TTL_MS = 72 * 60 * 60 * 1000;
 export interface IdempotencyContext {
   key: string;
   actorUid: string;
+  role: TransactionRole;
   endpoint: string;
   docId: string;
   requestHash: string;
@@ -56,6 +63,7 @@ export function requestHash(body: unknown): string {
 export function buildIdempotencyContext(args: {
   request: Request;
   actorUid: string;
+  role: TransactionRole;
   endpoint: string;
   body: unknown;
 }): IdempotencyContext {
@@ -63,6 +71,7 @@ export function buildIdempotencyContext(args: {
   return {
     key,
     actorUid: args.actorUid,
+    role: args.role,
     endpoint: args.endpoint,
     docId: `${args.actorUid}_${key}`,
     requestHash: requestHash(args.body),
@@ -100,20 +109,35 @@ export function recordResult(
   t.create(idempotencyRef(ctx), doc);
 }
 
-export async function runIdempotent<R>(
+type PrefetchRefs = readonly DocumentReference<DocumentData>[];
+
+type SnapshotsFor<P extends PrefetchRefs> = {
+  [K in keyof P]: P[K] extends DocumentReference<infer T> ? DocumentSnapshot<T> : never;
+};
+
+export async function runIdempotent<R, const P extends PrefetchRefs = []>(
   ctx: IdempotencyContext,
-  role: TransactionRole,
-  execute: (t: Transaction, actor: UserDoc) => Promise<{ response: R; ledgerEntryId?: string }>,
+  prefetch: P,
+  execute: (
+    t: Transaction,
+    actor: UserDoc,
+    prefetched: SnapshotsFor<P>,
+  ) => Promise<{ response: R; ledgerEntryId?: string }>,
 ): Promise<IdempotentOutcome<R>> {
   const outcome = await getAdminFirestore().runTransaction(async (transaction) => {
     const replay = await readReplay<R>(transaction, ctx);
     if (replay !== null) return { response: replay, replayed: true };
 
-    const actor = await assertTransactionAuthorized(transaction, {
-      actorUid: ctx.actorUid,
-      role,
-    });
-    const { response, ledgerEntryId } = await execute(transaction, actor);
+    const [actorSnapshot, ...prefetched] = await transaction.getAll<DocumentData, DocumentData>(
+      usersCol().doc(ctx.actorUid),
+      ...prefetch,
+    );
+    const actor = assertActorAuthorized(actorSnapshot?.data() as UserDoc | undefined, ctx.role);
+    const { response, ledgerEntryId } = await execute(
+      transaction,
+      actor,
+      prefetched as SnapshotsFor<P>,
+    );
     recordResult(transaction, ctx, response, ledgerEntryId);
     return { response, replayed: false };
   });

@@ -3,7 +3,7 @@ import { Timestamp } from "firebase-admin/firestore";
 import { z } from "zod";
 import { type LedgerEntryDoc, ledgerCol } from "../db";
 import { CapExceededError } from "../errors";
-import { type IdempotencyContext, runIdempotent } from "../idempotency";
+import { type IdempotencyContext, type IdempotentOutcome, runIdempotent } from "../idempotency";
 import { assertNonNegative, assertNotSelf } from "./invariants";
 import { CENT_STEP } from "@/lib/shared/constants";
 import { exceedsBalanceCap, exceedsTopupCap, pointsFor } from "@/lib/shared/money";
@@ -21,29 +21,24 @@ export const topUpSchema = z
 
 export type TopUpInput = z.infer<typeof topUpSchema>;
 
-export interface TopUpActor {
-  uid: string;
-  displayName: string;
-}
-
 export async function topUp(args: {
   input: TopUpInput;
-  actor: TopUpActor;
   idempotency: IdempotencyContext;
 }): Promise<TopUpResult> {
-  const { input, actor, idempotency } = args;
+  const { input, idempotency } = args;
+  const actorUid = idempotency.actorUid;
   const buyerUid = await resolveBuyerUid(input.buyer);
   assertNotSelf(
-    actor.uid,
+    actorUid,
     buyerUid,
     "You can't top up your own account, another SAC member must do it.",
   );
   const createdDate = torontoDate(new Date());
 
-  const { response } = await runIdempotent<TopUpResult>(
+  const { response }: IdempotentOutcome<TopUpResult> = await runIdempotent(
     idempotency,
-    "sacMember",
-    async (t, authorizedActor) => {
+    [],
+    async (t, actor) => {
       const { ref, data } = await readActiveBuyer(t, buyerUid);
 
       const balanceAfterCents = data.balanceCents + input.amountCents;
@@ -52,7 +47,7 @@ export async function topUp(args: {
       let reason: string | undefined;
       if (exceedsTopupCap(input.amountCents) || exceedsBalanceCap(balanceAfterCents)) {
         reason = input.overrideReason;
-        if (!authorizedActor.roles.sacExec || !reason) {
+        if (!actor.roles.sacExec || !reason) {
           throw new CapExceededError(
             "This exceeds the $100 top-up or $200 balance cap. An exec must override with a reason.",
           );
@@ -74,7 +69,7 @@ export async function topUp(args: {
         studentUid: buyerUid,
         studentNumber: data.studentNumber,
         studentName: data.displayName,
-        actorUid: actor.uid,
+        actorUid,
         actorName: actor.displayName,
         tags,
         idempotencyKey: idempotency.key,

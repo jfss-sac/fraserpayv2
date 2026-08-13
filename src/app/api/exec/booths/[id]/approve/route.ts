@@ -48,10 +48,10 @@ function applyPriceEdits(items: BoothItem[], edits: PriceEdit): BoothItem[] {
 
 export const POST = defineHandler<typeof approveSchema, { id: string }>(
   { role: "sacExec", schema: approveSchema, rateLimit: "exec-mutations" },
-  async ({ input, params, session }) => {
+  async ({ input, params, authorization }) => {
     const boothRef = boothsCol().doc(params.id);
 
-    return runAuthorizedTransaction({ actorUid: session!.uid, role: "sacExec" }, async (t) => {
+    return runAuthorizedTransaction(authorization, async (t, actor) => {
       const booth = (await t.get(boothRef)).data();
       if (!booth) throw new NotFoundError("Booth not found.");
       if (booth.status !== "pending") {
@@ -76,13 +76,13 @@ export const POST = defineHandler<typeof approveSchema, { id: string }>(
         joinCode,
         items,
         approvedAt: Timestamp.now(),
-        approvedByUid: session!.uid,
+        approvedByUid: actor.uid,
       });
 
       writeAudit(
         t,
         "booth.approve",
-        { uid: session!.uid, displayName: session!.displayName },
+        actor,
         { type: "booth", id: params.id, label: booth.name },
         { joinCode, priceEdits: input.priceEdits ?? [] },
       );

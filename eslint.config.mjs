@@ -3,6 +3,9 @@ import nextVitals from "eslint-config-next/core-web-vitals";
 import nextTs from "eslint-config-next/typescript";
 import prettier from "eslint-config-prettier";
 
+const TRANSACTION_GUARD_MESSAGE =
+  "Route handlers must open transactions through runAuthorizedTransaction/runIdempotent so authorization is re-checked against a fresh actor document at commit.";
+
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
@@ -21,6 +24,24 @@ const eslintConfig = defineConfig([
         cacheName: "readonly",
         isStaleCache: "readonly",
       },
+    },
+  },
+  {
+    files: ["src/app/api/**/*.ts"],
+    ignores: ["src/app/api/auth/session/route.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["**/firebase-admin", "firebase-admin/firestore"],
+              importNames: ["getAdminFirestore", "getAdminApp", "getFirestore"],
+              message: TRANSACTION_GUARD_MESSAGE,
+            },
+          ],
+        },
+      ],
     },
   },
   // Turn off ESLint rules that conflict with Prettier formatting. Must come last.

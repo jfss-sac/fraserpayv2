@@ -10,11 +10,11 @@ const removeSchema = z.object({ uid: z.string().trim().min(1) }).strict();
 
 export const POST = defineHandler<typeof removeSchema, { id: string }>(
   { role: "sacExec", schema: removeSchema, rateLimit: "exec-mutations" },
-  async ({ input, params, session }) => {
+  async ({ input, params, authorization }) => {
     const boothRef = boothsCol().doc(params.id);
     const memberRef = membersCol(params.id).doc(input.uid);
 
-    return runAuthorizedTransaction({ actorUid: session!.uid, role: "sacExec" }, async (t) => {
+    return runAuthorizedTransaction(authorization, async (t, actor) => {
       const booth = (await t.get(boothRef)).data();
       if (!booth) throw new NotFoundError("Booth not found.");
 
@@ -26,7 +26,7 @@ export const POST = defineHandler<typeof removeSchema, { id: string }>(
       writeAudit(
         t,
         "booth.memberRemove",
-        { uid: session!.uid, displayName: session!.displayName },
+        actor,
         { type: "booth", id: params.id, label: booth.name },
         { uid: input.uid, displayName: member.displayName },
       );

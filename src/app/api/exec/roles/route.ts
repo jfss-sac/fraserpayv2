@@ -18,10 +18,10 @@ const rolesSchema = z
 
 export const POST = defineHandler(
   { role: "sacExec", schema: rolesSchema, rateLimit: "exec-mutations" },
-  async ({ input, session }) => {
+  async ({ input, authorization }) => {
     const userRef = usersCol().doc(input.targetUid);
 
-    return runAuthorizedTransaction({ actorUid: session!.uid, role: "sacExec" }, async (t) => {
+    return runAuthorizedTransaction(authorization, async (t, actor) => {
       const user = (await t.get(userRef)).data();
       if (!user) throw new NotFoundError("User not found.");
       if (user.roles[input.role] === input.grant) {
@@ -44,7 +44,7 @@ export const POST = defineHandler(
       writeAudit(
         t,
         input.grant ? "user.roleGrant" : "user.roleRevoke",
-        { uid: session!.uid, displayName: session!.displayName },
+        actor,
         { type: "user", id: input.targetUid, label: user.displayName },
         { role: input.role },
       );

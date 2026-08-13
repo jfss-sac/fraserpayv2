@@ -408,7 +408,13 @@ describe("topUp concurrency (money module)", () => {
       method: "POST",
       headers: { "idempotency-key": key },
     });
-    return buildIdempotencyContext({ request, actorUid, endpoint: ENDPOINT, body });
+    return buildIdempotencyContext({
+      request,
+      actorUid,
+      role: "sacMember",
+      endpoint: ENDPOINT,
+      body,
+    });
   }
 
   it("executes exactly once under a concurrent double-submit (loop)", async () => {
@@ -420,11 +426,10 @@ describe("topUp concurrency (money module)", () => {
         amountCents: 500,
         method: "cash" as const,
       };
-      const actor = { uid: MEMBER.uid, displayName: MEMBER.name };
       const ctx = ctxFor(MEMBER.uid, key, body);
       const [a, b] = await Promise.all([
-        topUp({ input: body, actor, idempotency: ctx }),
-        topUp({ input: body, actor, idempotency: ctx }),
+        topUp({ input: body, idempotency: ctx }),
+        topUp({ input: body, idempotency: ctx }),
       ]);
       expect(a).toEqual(b);
       expect((await usersCol().doc(buyer.uid).get()).data()?.balanceCents).toBe(500);

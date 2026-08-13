@@ -4,13 +4,9 @@ import { topUp, topUpSchema } from "@/lib/server/money/topup";
 
 export const POST = defineHandler(
   { role: "sacMember", schema: topUpSchema, rateLimit: "topup", idempotent: true },
-  async ({ input, session, idempotency }) => {
+  async ({ input, idempotency }) => {
     const result = await topUp({
       input,
-      actor: {
-        uid: session!.uid,
-        displayName: session!.displayName,
-      },
       idempotency: idempotency!,
     });
     return { ...result };

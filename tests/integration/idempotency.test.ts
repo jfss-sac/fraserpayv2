@@ -41,7 +41,7 @@ function ledgerEntry(key: string, amountCents: number): LedgerEntryDoc {
 }
 
 function chargeOnce(ctx: IdempotencyContext, amountCents: number) {
-  return runIdempotent<ChargeResponse>(ctx, "sacMember", async (t) => {
+  return runIdempotent<ChargeResponse>(ctx, [], async (t) => {
     const ref = ledgerCol().doc();
     t.create(ref, ledgerEntry(ctx.key, amountCents));
     return { response: { entryId: ref.id, amountCents }, ledgerEntryId: ref.id };
@@ -53,7 +53,13 @@ function ctxFor(key: string, body: unknown): IdempotencyContext {
     method: "POST",
     headers: { "idempotency-key": key },
   });
-  return buildIdempotencyContext({ request, actorUid: ACTOR_UID, endpoint: ENDPOINT, body });
+  return buildIdempotencyContext({
+    request,
+    actorUid: ACTOR_UID,
+    role: "sacMember",
+    endpoint: ENDPOINT,
+    body,
+  });
 }
 
 async function countEntriesForKey(key: string): Promise<number> {
@@ -171,18 +177,14 @@ describe("defineHandler idempotent slot wiring", () => {
   const chargeHandler = defineHandler(
     { role: "sacMember", schema: z.object({ amountCents: z.number() }), idempotent: true },
     async ({ input, idempotency }) => {
-      const { response } = await runIdempotent<ChargeResponse>(
-        idempotency!,
-        "sacMember",
-        async (t) => {
-          const ref = ledgerCol().doc();
-          t.create(ref, ledgerEntry(idempotency!.key, input.amountCents));
-          return {
-            response: { entryId: ref.id, amountCents: input.amountCents },
-            ledgerEntryId: ref.id,
-          };
-        },
-      );
+      const { response } = await runIdempotent<ChargeResponse>(idempotency!, [], async (t) => {
+        const ref = ledgerCol().doc();
+        t.create(ref, ledgerEntry(idempotency!.key, input.amountCents));
+        return {
+          response: { entryId: ref.id, amountCents: input.amountCents },
+          ledgerEntryId: ref.id,
+        };
+      });
       return { entryId: response.entryId, amountCents: response.amountCents };
     },
   );

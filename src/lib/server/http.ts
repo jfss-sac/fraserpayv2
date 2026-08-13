@@ -1,6 +1,12 @@
 import "server-only";
 import { z } from "zod";
-import { type Role, type Session, authorizeRequest } from "./dal";
+import {
+  type Role,
+  type Session,
+  type TransactionAuthorization,
+  authorizeRequest,
+  transactionRoleFor,
+} from "./dal";
 import { AppError, ForbiddenError, InternalError, toAppError, ValidationError } from "./errors";
 import {
   type IdempotencyContext,
@@ -34,6 +40,7 @@ export interface HandlerContext<TInput, TParams> {
   requestId: string;
   request: Request;
   idempotency?: IdempotencyContext;
+  authorization?: TransactionAuthorization;
 }
 
 export type HandlerResult = Response | Record<string, unknown> | null | void;
@@ -157,18 +164,31 @@ export function defineHandler<
 
       const input = (await parseInput(request, config.schema)) as HandlerInput<S>;
 
+      const transactionRole = transactionRoleFor(config.role ?? "public");
+      const authorization: TransactionAuthorization | undefined =
+        session && transactionRole ? { actorUid: session.uid, role: transactionRole } : undefined;
+
       let idempotency: IdempotencyContext | undefined;
       if (config.idempotent) {
-        if (!session) throw new InternalError();
+        if (!authorization) throw new InternalError();
         idempotency = buildIdempotencyContext({
           request,
-          actorUid: session.uid,
+          actorUid: authorization.actorUid,
+          role: authorization.role,
           endpoint: route,
           body: input,
         });
       }
 
-      const result = await fn({ input, params, session, requestId, request, idempotency });
+      const result = await fn({
+        input,
+        params,
+        session,
+        requestId,
+        request,
+        idempotency,
+        authorization,
+      });
       if (idempotency?.replayed) await releaseRateLimit(rateLimitTicket);
       const response = toResponse(result);
       response.headers.set("x-request-id", requestId);
