@@ -6,7 +6,14 @@ import { Button } from "@/lib/ui/vendor/button";
 import { cn } from "@/lib/ui/vendor/utils";
 import { REPEAT_BUYER_WINDOW_MS } from "@/lib/shared/constants";
 import { FeedRow, type RowActions } from "./feed-row";
-import { ALL_FILTER, FEED_POLL_MS, type FeedFilter, filtersEqual, useFeed } from "./use-feed";
+import {
+  ALL_FILTER,
+  FEED_POLL_MS,
+  type FeedFilter,
+  feedEntryKey,
+  filtersEqual,
+  useFeed,
+} from "./use-feed";
 
 const POLL_MINUTES = FEED_POLL_MS / 60_000;
 
@@ -164,7 +171,7 @@ export function FeedView({
         <Button type="button" onClick={feed.applyPending}>
           {feed.pending.length === 1
             ? "1 new transaction — show"
-            : `${feed.pending.length} new transactions — show`}
+            : `${feed.pending.length}${feed.pendingTruncated ? "+" : ""} new transactions — show`}
         </Button>
       ) : null}
 
@@ -175,7 +182,7 @@ export function FeedView({
       ) : (
         <ul aria-label="Transactions" className="-ml-3 flex flex-col divide-y divide-border">
           {feed.entries.map((entry) => (
-            <FeedRow key={`${entry.kind}-${entry.id}`} entry={entry} actions={actions} />
+            <FeedRow key={feedEntryKey(entry)} entry={entry} actions={actions} />
           ))}
         </ul>
       )}

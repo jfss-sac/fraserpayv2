@@ -1,6 +1,6 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import type { FeedDTO, FeedLedgerEntry } from "@/lib/shared/types";
+import type { FeedAuditEntry, FeedDTO, FeedLedgerEntry } from "@/lib/shared/types";
 import { ApiError } from "@/lib/ui/api-client";
 import { requestFeed } from "./api";
 import { FEED_POLL_MS, useFeed } from "./use-feed";
@@ -28,6 +28,21 @@ function ledger(id: string, overrides: Partial<FeedLedgerEntry> = {}): FeedLedge
     actorName: "Ada Actor",
     tags: [],
     ...overrides,
+  };
+}
+
+function audit(id: string): FeedAuditEntry {
+  return {
+    kind: "audit",
+    id,
+    createdAt: "2026-07-26T12:00:00.000Z",
+    action: "user.suspend",
+    actorUid: "x1",
+    actorName: "Xavi Exec",
+    targetType: "user",
+    targetId: "u9",
+    targetLabel: "Some Student",
+    details: {},
   };
 }
 
@@ -129,6 +144,191 @@ describe("filters and pagination", () => {
     await flush();
 
     expect(result.current.entries.map((e) => e.id)).toEqual(["b", "a"]);
+  });
+
+  test("a refresh that still overlaps the loaded head keeps the pagination cursor", async () => {
+    mockRequestFeed.mockResolvedValue({
+      entries: [ledger("b"), ledger("a")],
+      nextCursor: "head",
+      repeatBuyers: [],
+      repeatBuyersTruncated: false,
+    });
+    const { result } = renderHook(() =>
+      useFeed({ initialEntries: [ledger("a"), ledger("old")], initialCursor: "deep" }),
+    );
+
+    act(() => {
+      result.current.refresh();
+    });
+    await flush();
+
+    expect(result.current.entries.map((e) => e.id)).toEqual(["b", "a", "old"]);
+    expect(result.current.cursor).toBe("deep");
+  });
+});
+
+describe("bursts larger than one page", () => {
+  const HEAD_PAGE = 25;
+  const burst = Array.from({ length: HEAD_PAGE }, (_, i) => ledger(`n${i + 1}`));
+
+  function headOnlyResponse(): FeedDTO {
+    return {
+      entries: burst,
+      nextCursor: "head",
+      repeatBuyers: [],
+      repeatBuyersTruncated: false,
+    };
+  }
+
+  test("a refresh whose head page no longer overlaps resets the list onto the head cursor", async () => {
+    mockRequestFeed.mockResolvedValue(headOnlyResponse());
+    const { result } = renderHook(() =>
+      useFeed({ initialEntries: [ledger("a"), ledger("b")], initialCursor: "deep" }),
+    );
+
+    act(() => {
+      result.current.refresh();
+    });
+    await flush();
+
+    expect(result.current.entries.map((e) => e.id)).toEqual(burst.map((e) => e.id));
+    expect(result.current.cursor).toBe("head");
+  });
+
+  test("paging older after such a refresh reaches the entries the burst skipped", async () => {
+    mockRequestFeed.mockResolvedValue(headOnlyResponse());
+    const { result } = renderHook(() =>
+      useFeed({ initialEntries: [ledger("a"), ledger("b")], initialCursor: "deep" }),
+    );
+
+    act(() => {
+      result.current.refresh();
+    });
+    await flush();
+
+    mockRequestFeed.mockResolvedValue({
+      entries: [ledger("gap1"), ledger("gap2")],
+      nextCursor: null,
+      repeatBuyers: [],
+      repeatBuyersTruncated: false,
+    });
+    act(() => {
+      result.current.loadOlder();
+    });
+    await flush();
+
+    expect(mockRequestFeed).toHaveBeenLastCalledWith({ cursor: "head" });
+    expect(result.current.entries.map((e) => e.id)).toEqual([
+      ...burst.map((e) => e.id),
+      "gap1",
+      "gap2",
+    ]);
+  });
+
+  test("a refresh onto an empty feed adopts the cursor so older entries stay reachable", async () => {
+    mockRequestFeed.mockResolvedValue(headOnlyResponse());
+    const { result } = renderHook(() => useFeed({ initialEntries: [], initialCursor: null }));
+
+    act(() => {
+      result.current.refresh();
+    });
+    await flush();
+
+    expect(result.current.entries.map((e) => e.id)).toEqual(burst.map((e) => e.id));
+    expect(result.current.cursor).toBe("head");
+  });
+
+  test("applying a poll's burst resets the list onto the head cursor", async () => {
+    vi.useFakeTimers();
+    try {
+      mockRequestFeed.mockResolvedValue(headOnlyResponse());
+      const { result } = renderHook(() =>
+        useFeed({ initialEntries: [ledger("a"), ledger("b")], initialCursor: "deep" }),
+      );
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(FEED_POLL_MS);
+      });
+
+      expect(result.current.pending).toHaveLength(HEAD_PAGE);
+      expect(result.current.entries.map((e) => e.id)).toEqual(["a", "b"]);
+
+      act(() => {
+        result.current.applyPending();
+      });
+
+      expect(result.current.pending).toHaveLength(0);
+      expect(result.current.entries.map((e) => e.id)).toEqual(burst.map((e) => e.id));
+      expect(result.current.cursor).toBe("head");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("reports a burst's pending count as a lower bound, since more may sit below the head page", async () => {
+    vi.useFakeTimers();
+    try {
+      mockRequestFeed.mockResolvedValue(headOnlyResponse());
+      const { result } = renderHook(() =>
+        useFeed({ initialEntries: [ledger("a")], initialCursor: "deep" }),
+      );
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(FEED_POLL_MS);
+      });
+
+      expect(result.current.pendingTruncated).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("reports an overlapping poll's pending count as exact", async () => {
+    vi.useFakeTimers();
+    try {
+      mockRequestFeed.mockResolvedValue({
+        entries: [ledger("newer"), ledger("a")],
+        nextCursor: "head",
+        repeatBuyers: [],
+        repeatBuyersTruncated: false,
+      });
+      const { result } = renderHook(() =>
+        useFeed({ initialEntries: [ledger("a")], initialCursor: "deep" }),
+      );
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(FEED_POLL_MS);
+      });
+
+      expect(result.current.pending.map((e) => e.id)).toEqual(["newer"]);
+      expect(result.current.pendingTruncated).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("ledger and audit rows sharing an id", () => {
+  test("a refresh keeps both rows and does not treat one as already seen", async () => {
+    mockRequestFeed.mockResolvedValue({
+      entries: [audit("dup"), ledger("dup")],
+      nextCursor: null,
+      repeatBuyers: [],
+      repeatBuyersTruncated: false,
+    });
+    const { result } = renderHook(() =>
+      useFeed({ initialEntries: [ledger("dup")], initialCursor: null }),
+    );
+
+    act(() => {
+      result.current.refresh();
+    });
+    await flush();
+
+    expect(result.current.entries.map((e) => `${e.kind}-${e.id}`)).toEqual([
+      "audit-dup",
+      "ledger-dup",
+    ]);
   });
 });
 

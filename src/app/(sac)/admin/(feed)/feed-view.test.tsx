@@ -231,6 +231,28 @@ test("surfaces a repeat-charge truncation warning raised by a later refresh", as
   expect(await screen.findByText(/a repeat buyer may be missing/)).toBeVisible();
 });
 
+test("labels a burst's new-transaction count as a lower bound", async () => {
+  vi.useFakeTimers();
+  try {
+    stubFetch(() => ({
+      entries: Array.from({ length: 25 }, (_, i) => ledger(`n${i + 1}`)),
+      nextCursor: "head",
+      repeatBuyers: [],
+      repeatBuyersTruncated: false,
+    }));
+
+    render(<FeedView initialEntries={[ledger("p1")]} initialCursor="deep" pollMs={1000} />);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+
+    expect(screen.getByRole("button", { name: "25+ new transactions — show" })).toBeVisible();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 test("offers load-older only while a cursor remains", () => {
   render(<FeedView initialEntries={[ledger("p1")]} initialCursor="c1" />);
   expect(screen.getByRole("button", { name: "Load older" })).toBeInTheDocument();
