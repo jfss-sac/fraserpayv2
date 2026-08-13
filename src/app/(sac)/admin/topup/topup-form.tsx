@@ -17,6 +17,7 @@ import { useToast } from "@/lib/ui/toast";
 import { Button } from "@/lib/ui/vendor/button";
 import { Card, CardContent } from "@/lib/ui/vendor/card";
 import { ReconfirmDialog } from "./reconfirm-dialog";
+import { TopUpRecoveryCard } from "./topup-recovery-card";
 import { lookupErrorMessage, requestSacLookup, topUpErrorMessage, useTopUp } from "./use-topup";
 
 const QUICK_AMOUNTS = [500, 1000, 2000, 5000];
@@ -47,18 +48,37 @@ function StudentSummary({ student }: { student: SacLookupResult }) {
 function SuccessPanel({
   result,
   name,
+  replayed,
+  recovered,
   onReset,
 }: {
   result: TopUpResult;
-  name: string | null;
+  name: string;
+  replayed: boolean;
+  recovered: boolean;
   onReset: () => void;
 }) {
   return (
     <Card>
       <CardContent className="gap-4">
         <p role="status" className="text-lg font-semibold text-foreground">
-          Topped up {name ?? "student"}
+          {replayed
+            ? `Already processed — no new top-up for ${name}`
+            : recovered
+              ? `Unfinished top-up resolved — ${name} is topped up`
+              : `Topped up ${name}`}
         </p>
+        {replayed && (
+          <p className="text-sm font-medium text-warning">
+            This top-up had already gone through. No money was added just now — don&apos;t take
+            payment for it a second time.
+          </p>
+        )}
+        {!replayed && recovered && (
+          <p className="text-sm font-medium text-warning">
+            It went through just now, once. No second top-up was made.
+          </p>
+        )}
         <dl className="flex flex-col gap-2">
           <div className="flex items-baseline justify-between">
             <dt className="text-sm text-muted">Added</dt>
@@ -87,7 +107,7 @@ function SuccessPanel({
   );
 }
 
-export function TopUpForm({ isExec }: { isExec: boolean }) {
+export function TopUpForm({ isExec, actorUid }: { isExec: boolean; actorUid: string }) {
   const { push } = useToast();
   const [buyer, setBuyer] = useState<BuyerId | null>(null);
   const [student, setStudent] = useState<SacLookupResult | null>(null);
@@ -101,7 +121,11 @@ export function TopUpForm({ isExec }: { isExec: boolean }) {
     state,
     submit,
     reset: resetTopUp,
+    recovered,
+    retryRecovered,
+    dismissRecovered,
   } = useTopUp({
+    actorUid,
     onSuccess: () => setDialogOpen(false),
     onError: (code, serverMessage) => {
       setDialogOpen(false);
@@ -153,14 +177,15 @@ export function TopUpForm({ isExec }: { isExec: boolean }) {
     (!capsExceeded || (isExec && overrideReason.trim().length > 0));
 
   const doSubmit = useCallback(() => {
-    if (!buyer || amountCents === null) return;
+    if (!buyer || !student || amountCents === null) return;
     submit({
       buyer,
+      studentName: student.name,
       amountCents,
       method,
       ...(showOverride && overrideReason.trim() ? { overrideReason: overrideReason.trim() } : {}),
     });
-  }, [buyer, amountCents, method, showOverride, overrideReason, submit]);
+  }, [buyer, student, amountCents, method, showOverride, overrideReason, submit]);
 
   const beginSubmit = useCallback(() => {
     if (!canSubmit || amountCents === null) return;
@@ -184,8 +209,23 @@ export function TopUpForm({ isExec }: { isExec: boolean }) {
     <div className="flex flex-col gap-6">
       <h1 className="text-2xl font-bold text-foreground">Top-up</h1>
 
+      {recovered && (
+        <TopUpRecoveryCard
+          pending={recovered}
+          busy={submitting}
+          onRetry={retryRecovered}
+          onDismiss={dismissRecovered}
+        />
+      )}
+
       {state.status === "success" ? (
-        <SuccessPanel result={state.result} name={student?.name ?? null} onReset={reset} />
+        <SuccessPanel
+          result={state.result}
+          name={state.studentName}
+          replayed={state.replayed}
+          recovered={state.recovered}
+          onReset={reset}
+        />
       ) : stage === "identify" ? (
         <Scanner onIdentify={handleIdentify} manualEntry="studentNumber" />
       ) : stage === "looking-up" ? (

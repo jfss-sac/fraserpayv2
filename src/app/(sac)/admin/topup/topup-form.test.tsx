@@ -2,10 +2,12 @@ import { render as testingRender, screen, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import type { SacLookupResult, TopUpResult } from "@/lib/shared/types";
+import { writePendingTopUp } from "@/lib/ui/pending-topup";
 import { ToastProvider } from "@/lib/ui/toast";
 import { TopUpForm, parseAmountCents } from "./topup-form";
 
 const STUDENT: SacLookupResult = { name: "Ben Carter", balanceCents: 2000, points: 100 };
+const ACTOR = "sac-1";
 
 function render(ui: React.ReactNode) {
   return testingRender(ui, { wrapper: ToastProvider });
@@ -19,22 +21,26 @@ interface FetchStub {
   topupErrorMessage?: string;
 }
 
+function okResponse(result: unknown, opts: { replayed?: boolean } = {}): Response {
+  const headers = new Headers(opts.replayed ? { "idempotent-replay": "true" } : {});
+  return { ok: true, headers, json: async () => result } as Response;
+}
+
+function errorResponse(body: unknown): Response {
+  return { ok: false, headers: new Headers(), json: async () => body } as Response;
+}
+
 function stubFetch(opts: FetchStub) {
   const fetchMock = vi.fn(async (url: string) => {
     if (url === "/api/sac/lookup") {
       return opts.lookupError
-        ? ({ ok: false, json: async () => ({ error: { code: opts.lookupError } }) } as Response)
-        : ({ ok: true, json: async () => opts.lookup } as Response);
+        ? errorResponse({ error: { code: opts.lookupError } })
+        : okResponse(opts.lookup);
     }
     if (url === "/api/sac/topup") {
       return opts.topupError
-        ? ({
-            ok: false,
-            json: async () => ({
-              error: { code: opts.topupError, message: opts.topupErrorMessage },
-            }),
-          } as Response)
-        : ({ ok: true, json: async () => opts.topup } as Response);
+        ? errorResponse({ error: { code: opts.topupError, message: opts.topupErrorMessage } })
+        : okResponse(opts.topup);
     }
     throw new Error(`unexpected fetch to ${url}`);
   });
@@ -42,12 +48,24 @@ function stubFetch(opts: FetchStub) {
   return fetchMock;
 }
 
-async function gotoAmountStage(isExec: boolean, student: SacLookupResult = STUDENT): Promise<void> {
-  render(<TopUpForm isExec={isExec} />);
+async function identifyAndConfirm(student: SacLookupResult = STUDENT): Promise<void> {
   await userEvent.type(screen.getByLabelText("Student number"), "843902");
   await userEvent.click(screen.getByRole("button", { name: "Look up student" }));
   await userEvent.click(await screen.findByRole("button", { name: "Yes, top up" }));
   expect(screen.getByText(`Topping up ${student.name}`)).toBeInTheDocument();
+}
+
+async function gotoAmountStage(isExec: boolean, student: SacLookupResult = STUDENT): Promise<void> {
+  render(<TopUpForm isExec={isExec} actorUid={ACTOR} />);
+  await identifyAndConfirm(student);
+}
+
+function topUpKeys(fetchMock: { mock: { calls: unknown[][] } }): Set<string | null> {
+  return new Set(
+    fetchMock.mock.calls
+      .filter((call) => call[0] === "/api/sac/topup")
+      .map((call) => new Headers((call[1] as RequestInit).headers).get("idempotency-key")),
+  );
 }
 
 async function setAmount(value: string): Promise<void> {
@@ -58,6 +76,7 @@ async function setAmount(value: string): Promise<void> {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  localStorage.clear();
 });
 
 describe("parseAmountCents", () => {
@@ -78,7 +97,7 @@ describe("parseAmountCents", () => {
 describe("identify → confirm", () => {
   test("looks up the student and asks to confirm the name", async () => {
     stubFetch({ lookup: STUDENT });
-    render(<TopUpForm isExec={false} />);
+    render(<TopUpForm isExec={false} actorUid={ACTOR} />);
 
     await userEvent.type(screen.getByLabelText("Student number"), "843902");
     await userEvent.click(screen.getByRole("button", { name: "Look up student" }));
@@ -89,7 +108,7 @@ describe("identify → confirm", () => {
 
   test("a failed lookup toasts and returns to the scanner", async () => {
     stubFetch({ lookupError: "NOT_FOUND" });
-    render(<TopUpForm isExec={false} />);
+    render(<TopUpForm isExec={false} actorUid={ACTOR} />);
 
     await userEvent.type(screen.getByLabelText("Student number"), "843902");
     await userEvent.click(screen.getByRole("button", { name: "Look up student" }));
@@ -239,6 +258,83 @@ describe("submit outcomes", () => {
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("You do not have permission to do that.");
     expect(alert).not.toHaveTextContent("your own account");
+  });
+
+  test("Start over then re-ringing the same top-up reuses the key and reports the replay", async () => {
+    let topUpCalls = 0;
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url === "/api/sac/lookup") return okResponse(STUDENT);
+      if (url !== "/api/sac/topup") throw new Error(`unexpected fetch to ${url}`);
+      topUpCalls += 1;
+      if (topUpCalls <= 3) throw new TypeError("network");
+      return okResponse(
+        { entryId: "e1", amountCents: 1000, balanceAfterCents: 3000, points: 150 },
+        { replayed: true },
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await gotoAmountStage(false);
+    await userEvent.click(screen.getByRole("button", { name: "$10.00" }));
+    await userEvent.click(screen.getByRole("button", { name: "Top up $10.00" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Couldn't reach the server");
+
+    await userEvent.click(screen.getByRole("button", { name: "Start over" }));
+    await identifyAndConfirm();
+    await userEvent.click(screen.getByRole("button", { name: "$10.00" }));
+    await userEvent.click(screen.getByRole("button", { name: "Top up $10.00" }));
+
+    expect(
+      await screen.findByText("Already processed — no new top-up for Ben Carter"),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/don't take payment for it a second time/i)).toBeInTheDocument();
+    expect(topUpKeys(fetchMock).size).toBe(1);
+  });
+
+  test("a top-up stranded by a reload comes back as a card that retries its own key", async () => {
+    const stranded = {
+      key: "8f1d4a2e-6b3c-4a7d-9e2f-0c5b8a1d3e6f",
+      sessionId: "an-earlier-page-load",
+      buyer: { studentNumber: "843902" },
+      studentName: "Ben Carter",
+      amountCents: 1000,
+      method: "cash" as const,
+      startedAt: Date.now(),
+    };
+    writePendingTopUp(ACTOR, stranded);
+    const fetchMock = stubFetch({
+      lookup: STUDENT,
+      topup: { entryId: "e1", amountCents: 1000, balanceAfterCents: 3000, points: 150 },
+    });
+    render(<TopUpForm isExec={false} actorUid={ACTOR} />);
+
+    expect(screen.getByRole("alert", { name: "Unfinished top-up" })).toHaveTextContent(
+      "$10.00 for Ben Carter",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Retry top-up" }));
+
+    expect(await screen.findByText(/Unfinished top-up resolved/)).toBeInTheDocument();
+    expect(topUpKeys(fetchMock)).toEqual(new Set([stranded.key]));
+    expect(screen.queryByRole("alert", { name: "Unfinished top-up" })).not.toBeInTheDocument();
+  });
+
+  test("dismissing a stranded top-up clears the card without touching the ledger", async () => {
+    writePendingTopUp(ACTOR, {
+      key: "8f1d4a2e-6b3c-4a7d-9e2f-0c5b8a1d3e6f",
+      sessionId: "an-earlier-page-load",
+      buyer: { studentNumber: "843902" },
+      studentName: "Ben Carter",
+      amountCents: 1000,
+      method: "cash",
+      startedAt: Date.now(),
+    });
+    const fetchMock = stubFetch({ lookup: STUDENT });
+    render(<TopUpForm isExec={false} actorUid={ACTOR} />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+
+    expect(screen.queryByRole("alert", { name: "Unfinished top-up" })).not.toBeInTheDocument();
+    expect(fetchMock.mock.calls.some((call) => call[0] === "/api/sac/topup")).toBe(false);
   });
 
   test("a FORBIDDEN with no server reason falls back to the self-dealing copy", async () => {

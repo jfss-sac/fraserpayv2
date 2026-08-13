@@ -13,5 +13,5 @@ export default async function TopUpPage() {
     notFound();
   }
 
-  return <TopUpForm isExec={session.roles.sacExec} />;
+  return <TopUpForm isExec={session.roles.sacExec} actorUid={session.uid} />;
 }

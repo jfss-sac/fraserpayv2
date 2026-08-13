@@ -3,6 +3,12 @@
 import { useCallback, useRef, useState } from "react";
 import type { PaymentMethod, SacLookupResult, TopUpResult } from "@/lib/shared/types";
 import { ApiError, NETWORK_ERROR_MESSAGE, apiErrorOf } from "@/lib/ui/api-client";
+import {
+  type PendingTopUp,
+  clearPendingTopUp,
+  usePendingTopUps,
+  writePendingTopUp,
+} from "@/lib/ui/pending-topup";
 import type { BuyerId } from "@/lib/ui/scanner";
 import { useIdempotencyKey } from "@/lib/ui/use-idempotency-key";
 
@@ -48,6 +54,7 @@ export async function requestSacLookup(buyer: BuyerId): Promise<SacLookupResult>
 
 export interface TopUpSubmission {
   buyer: BuyerId;
+  studentName: string;
   amountCents: number;
   method: PaymentMethod;
   overrideReason?: string;
@@ -62,9 +69,13 @@ function topUpBody({ buyer, amountCents, method, overrideReason }: TopUpSubmissi
   };
 }
 
+export interface TopUpOutcome extends TopUpResult {
+  replayed: boolean;
+}
+
 async function requestTopUp(
   submission: TopUpSubmission & { idempotencyKey: string; signal: AbortSignal },
-): Promise<TopUpResult> {
+): Promise<TopUpOutcome> {
   const { idempotencyKey, signal } = submission;
   const res = await fetch("/api/sac/topup", {
     method: "POST",
@@ -73,13 +84,14 @@ async function requestTopUp(
     signal,
   });
   if (!res.ok) throw await apiErrorOf(res);
-  return (await res.json()) as TopUpResult;
+  const replayed = res.headers.get("idempotent-replay") === "true";
+  return { ...((await res.json()) as TopUpResult), replayed };
 }
 
 export async function topUpWithRetry(
   submission: TopUpSubmission & { idempotencyKey: string },
   opts: { attempts?: number; timeoutMs?: number } = {},
-): Promise<TopUpResult> {
+): Promise<TopUpOutcome> {
   const attempts = opts.attempts ?? TOPUP_MAX_ATTEMPTS;
   const timeoutMs = opts.timeoutMs ?? TOPUP_TIMEOUT_MS;
   for (let i = 0; i < attempts; i += 1) {
@@ -99,46 +111,110 @@ export async function topUpWithRetry(
 export type TopUpState =
   | { status: "idle" }
   | { status: "pending" }
-  | { status: "success"; result: TopUpResult }
+  | {
+      status: "success";
+      result: TopUpResult;
+      studentName: string;
+      replayed: boolean;
+      recovered: boolean;
+    }
   | { status: "error"; code: string };
 
+export function submissionOf(pending: PendingTopUp): TopUpSubmission {
+  return {
+    buyer: pending.buyer,
+    studentName: pending.studentName,
+    amountCents: pending.amountCents,
+    method: pending.method,
+    ...(pending.overrideReason ? { overrideReason: pending.overrideReason } : {}),
+  };
+}
+
+// Only a code that can be raised nowhere but inside the transaction, at or after
+// the replay read, proves the original never committed (arch §9.2). For topUp
+// that is CAP_EXCEEDED alone: NOT_FOUND and FORBIDDEN are raised while resolving
+// the buyer beforehand, and SUSPENDED can come from the actor's own session
+// guard — none of them say anything about the first attempt.
+const SETTLED_TOPUP_CODES = new Set(["CAP_EXCEEDED"]);
+
 export function useTopUp(args: {
+  actorUid: string;
   onSuccess?: (result: TopUpResult) => void;
   onError?: (code: string, serverMessage: string) => void;
 }) {
-  const { onSuccess, onError } = args;
+  const { actorUid, onSuccess, onError } = args;
   const [state, setState] = useState<TopUpState>({ status: "idle" });
+  const [sessionId] = useState(() => crypto.randomUUID());
   const inFlight = useRef(false);
-  const { keyFor, release, releaseAll } = useIdempotencyKey();
+  const { keyFor, hold, isHeld, release } = useIdempotencyKey();
+  const persisted = usePendingTopUps(actorUid);
+  const recovered = persisted.find((record) => record.sessionId !== sessionId) ?? null;
 
-  const submit = useCallback(
-    async (submission: TopUpSubmission) => {
+  const run = useCallback(
+    async (submission: TopUpSubmission, replay: PendingTopUp | null) => {
       if (inFlight.current) return;
       inFlight.current = true;
       setState({ status: "pending" });
       const body = topUpBody(submission);
+      if (replay) hold("/api/sac/topup", body, replay.key);
+      const reusedKey = isHeld("/api/sac/topup", body);
       const idempotencyKey = keyFor("/api/sac/topup", body);
+      writePendingTopUp(actorUid, {
+        key: idempotencyKey,
+        sessionId: replay?.sessionId ?? sessionId,
+        buyer: submission.buyer,
+        studentName: submission.studentName,
+        amountCents: submission.amountCents,
+        method: submission.method,
+        ...(submission.overrideReason ? { overrideReason: submission.overrideReason } : {}),
+        startedAt: replay?.startedAt ?? Date.now(),
+      });
       try {
-        const result = await topUpWithRetry({ ...submission, idempotencyKey });
+        const { replayed, ...result } = await topUpWithRetry({ ...submission, idempotencyKey });
         release("/api/sac/topup", body);
-        setState({ status: "success", result });
+        clearPendingTopUp(actorUid, idempotencyKey);
+        setState({
+          status: "success",
+          result,
+          studentName: submission.studentName,
+          replayed: replayed && reusedKey,
+          recovered: replay !== null,
+        });
         onSuccess?.(result);
       } catch (err) {
         const apiError = err instanceof ApiError ? err : null;
         const code = apiError?.code ?? "NETWORK";
+        if (SETTLED_TOPUP_CODES.has(code)) clearPendingTopUp(actorUid, idempotencyKey);
         setState({ status: "error", code });
         onError?.(code, apiError?.serverMessage ?? "");
       } finally {
         inFlight.current = false;
       }
     },
-    [onSuccess, onError, keyFor, release],
+    [actorUid, sessionId, onSuccess, onError, keyFor, hold, isHeld, release],
   );
 
-  const reset = useCallback(() => {
-    releaseAll();
-    setState({ status: "idle" });
-  }, [releaseAll]);
+  const submit = useCallback((submission: TopUpSubmission) => run(submission, null), [run]);
 
-  return { state, submit, reset };
+  const retryRecovered = useCallback(
+    (pending: PendingTopUp) => run(submissionOf(pending), pending),
+    [run],
+  );
+
+  // Dismiss drops the record only. If Retry seeded the key into memory, it stays
+  // held, so a re-rung identical top-up replays instead of crediting twice; if
+  // Retry was never pressed the key was never reachable at all — re-entering by
+  // hand executes for real, which is why the card says to use Retry (arch §9.2).
+  const dismissRecovered = useCallback(() => {
+    if (!recovered) return;
+    clearPendingTopUp(actorUid, recovered.key);
+  }, [recovered, actorUid]);
+
+  // Start over must not retire an unresolved key: the same physical top-up rung
+  // again would then mint a fresh key and credit the student twice (I5).
+  const reset = useCallback(() => {
+    setState({ status: "idle" });
+  }, []);
+
+  return { state, submit, reset, recovered, retryRecovered, dismissRecovered };
 }
