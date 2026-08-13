@@ -74,7 +74,7 @@ Error codes are a stable enum (`VALIDATION`, `UNAUTHORIZED`, `FORBIDDEN`, `SUSPE
 1. `/login` is the **only** page that loads the Firebase client SDK. `signInWithPopup` (Google) yields an ID token.
 2. `POST /api/auth/session` verifies the token server-side (`email_verified` and an `@pdsb.net` address are required; the OAuth `hd` hint is never trusted), provisions the user document on first sign-in, and mints an `httpOnly; Secure; SameSite=Lax` session cookie (7-day TTL).
 3. Student numbers are **derived from the email** (`studentnumber@pdsb.net`), never self-entered; they arrive pre-verified through Google OAuth. Non-numeric local parts (teachers) get accounts with no student number and no special powers.
-4. Sign-out clears the cookie, revokes refresh tokens, and returns `Clear-Site-Data` so a shared device retains nothing personal.
+4. Sign-out clears the cookie, revokes refresh tokens, and returns `Clear-Site-Data` so a shared device retains nothing personal. Reaching `/login` purges the cached wallet too — a session that lapses by expiry never passes through sign-out.
 
 Roles **stack on one account** and live on the Firestore user document, read fresh by the DAL each request, so revocation and suspension are instant (no stale custom claims):
 
@@ -202,7 +202,7 @@ The wallet must survive a gym full of phones on saturated WiFi:
 - A hand-rolled ~150-line service worker (Serwist needs webpack; Next 16 is Turbopack) precaches shell assets and serves `/wallet` and `/sell/*` HTML **cache-first with background revalidation**; after the first visit, the wallet opens with zero network requests, QR included.
 - `/api/*` is **never cached**. The POS must hit the network to charge: that online-required stance is the anti-double-spend design, not a limitation. A connectivity probe drives an unmistakable offline banner that disables Charge.
 - The wallet page ships no client components: just a server-rendered inline-SVG QR and a ~1 KB inline refresh script that updates balance/history opportunistically and styles the "as of" stamp stale when offline.
-- Cached wallet HTML is personal, so sign-out sends `Clear-Site-Data` _and_ messages the worker to purge its caches.
+- Cached wallet HTML is personal — and the QR and payment code inside it are exactly what the online refresh cannot replace — so both ends of a session purge it: sign-out sends `Clear-Site-Data` _and_ messages the worker, and arriving at `/login` messages the worker as well, since expiry ends sessions without anyone pressing sign out. As a backstop, a shell revalidation the server bounces to `/login` evicts that cached copy instead of quietly discarding the response.
 
 Performance is enforced, not hoped for: the first-visit wallet transfer budget (≤ 170 KB compressed; ≈ 157 KB measured, sitting just above Next 16's ~113 KB App Router framework floor) is asserted by a CI test that sums real transfer sizes. Route groups `(student)` / `(booth)` / `(sac)` split code by role, so a student never downloads booth or admin JavaScript, and the Firebase SDK chunk exists only on `/login`.
 

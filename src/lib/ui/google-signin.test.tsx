@@ -4,11 +4,21 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { GoogleSignIn } from "@/lib/ui/google-signin";
 
 const getGoogleIdToken = vi.fn();
-const replace = vi.fn();
+const calls: string[] = [];
+const purgeServiceWorkerCaches = vi.fn(async () => {
+  calls.push("purge");
+});
+const replace = vi.fn(() => {
+  calls.push("replace");
+});
 let nextParam: string | null = null;
 
 vi.mock("@/lib/ui/firebase-client", () => ({
   getGoogleIdToken: () => getGoogleIdToken(),
+}));
+
+vi.mock("@/lib/ui/purge-caches", () => ({
+  purgeServiceWorkerCaches: () => purgeServiceWorkerCaches(),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -18,7 +28,9 @@ vi.mock("next/navigation", () => ({
 
 beforeEach(() => {
   getGoogleIdToken.mockReset();
-  replace.mockReset();
+  replace.mockClear();
+  purgeServiceWorkerCaches.mockClear();
+  calls.length = 0;
   nextParam = null;
   vi.stubGlobal("fetch", vi.fn());
 });
@@ -42,6 +54,11 @@ function errorResponse(code: string, message: string, status = 403) {
 test("renders the sign-in button", () => {
   render(<GoogleSignIn />);
   expect(screen.getByRole("button", { name: "Continue with Google" })).toBeInTheDocument();
+});
+
+test("purges the previous student's cached wallet as soon as sign-in is reachable", async () => {
+  render(<GoogleSignIn />);
+  await waitFor(() => expect(purgeServiceWorkerCaches).toHaveBeenCalled());
 });
 
 test("wrong-domain account shows a friendly error and never calls the server", async () => {
@@ -101,6 +118,8 @@ test("valid school account posts the token and redirects", async () => {
     }),
   );
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  expect(calls.at(-2)).toBe("purge");
+  expect(calls.at(-1)).toBe("replace");
 });
 
 test("open-redirect next values fall back to root", async () => {

@@ -6,6 +6,7 @@ import {
   cacheName,
   cachesToPurge,
   isManagedCache,
+  isSessionBounce,
   isShellRoute,
   isStaleCache,
   isStaticAsset,
@@ -113,5 +114,25 @@ describe("sign-out purge", () => {
 
   test("exposes a stable message-type contract for the sign-out belt", () => {
     expect(PURGE_CACHES_MESSAGE).toBe("fraserpay/purge-caches");
+  });
+});
+
+describe("isSessionBounce", () => {
+  test("recognises a navigation bounced to the login page", () => {
+    expect(isSessionBounce({ ok: false, status: 0, type: "opaqueredirect" })).toBe(true);
+    expect(isSessionBounce({ ok: true, status: 200, type: "basic", redirected: true })).toBe(true);
+  });
+
+  test("leaves the offline shell alone for anything that is not a bounce", () => {
+    expect(isSessionBounce({ ok: true, status: 200, type: "basic", redirected: false })).toBe(
+      false,
+    );
+    expect(isSessionBounce({ ok: false, status: 500, type: "basic", redirected: false })).toBe(
+      false,
+    );
+    expect(isSessionBounce({ ok: false, status: 404, type: "basic", redirected: false })).toBe(
+      false,
+    );
+    expect(isSessionBounce(undefined)).toBe(false);
   });
 });

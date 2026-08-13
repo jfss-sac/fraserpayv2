@@ -19,6 +19,7 @@ function serviceWorkerHarness(cached: object, fresh: object) {
   const listeners = new Map<string, (event: FetchEventLike) => void>();
   const cache = {
     add: vi.fn(async () => undefined),
+    delete: vi.fn(async () => true),
     match: vi.fn(async () => cached),
     put: vi.fn(async () => undefined),
   };
@@ -80,4 +81,45 @@ describe("service worker mutable public assets", () => {
       expect(cache.put).toHaveBeenCalledWith(request, clone);
     },
   );
+});
+
+describe("service worker shell HTML after the session ends", () => {
+  async function openWallet(fresh: object) {
+    const harness = serviceWorkerHarness({ source: "cache" }, fresh);
+    const request = { method: "GET", mode: "navigate", url: "https://fraserpay.test/wallet" };
+    const background: Promise<unknown>[] = [];
+    let response: Promise<unknown> | undefined;
+
+    harness.listener({
+      request,
+      respondWith(value) {
+        response = value;
+      },
+      waitUntil(work) {
+        background.push(work);
+      },
+    });
+
+    await response;
+    await Promise.all(background);
+    return { ...harness, request };
+  }
+
+  test("evicts the cached wallet when its revalidation is bounced to sign-in", async () => {
+    const { cache, request } = await openWallet({ ok: false, status: 0, type: "opaqueredirect" });
+
+    expect(cache.delete).toHaveBeenCalledWith(request);
+    expect(cache.put).not.toHaveBeenCalled();
+  });
+
+  test("keeps the cached wallet when revalidation merely fails", async () => {
+    const { cache } = await openWallet({
+      ok: false,
+      status: 500,
+      type: "basic",
+      redirected: false,
+    });
+
+    expect(cache.delete).not.toHaveBeenCalled();
+  });
 });

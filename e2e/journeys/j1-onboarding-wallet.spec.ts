@@ -1,8 +1,14 @@
 import { expect, test } from "@playwright/test";
-import { BUYER_UID } from "../fixtures";
+import { BUYER_UID, OPERATOR_UID } from "../fixtures";
 import { SIGNED_OUT_STATE, provisionViaSignIn, signInAs } from "../helpers/auth";
 import { db } from "../helpers/firebase";
-import { isCached, managedCacheKeys, warmShell, waitForServiceWorker } from "../helpers/sw";
+import {
+  cachedBodyContains,
+  isCached,
+  managedCacheKeys,
+  warmShell,
+  waitForServiceWorker,
+} from "../helpers/sw";
 
 const REGENERATED_CODE = "fp1-Z9Y8X7W6V5T4S3R2Q1P0NMKJHG";
 
@@ -105,7 +111,7 @@ test.describe("J1 · onboarding → wallet → offline reopen", () => {
     });
   });
 
-  test.describe("shared-device sign-out privacy", () => {
+  test.describe("shared-device privacy", () => {
     test.use({ storageState: SIGNED_OUT_STATE });
 
     test("sign out purges the wallet cache and blocks stale personal HTML", async ({ page }) => {
@@ -125,23 +131,57 @@ test.describe("J1 · onboarding → wallet → offline reopen", () => {
       await expect(page).toHaveURL(/\/login/);
     });
 
-    test("a regenerated payment code appears on the next online wallet open", async ({ page }) => {
+    test("the next student to sign in never receives the previous one's payment code", async ({
+      page,
+    }) => {
       await signInAs(page, BUYER_UID);
+      await warmShell(page, "/wallet");
+      const buyerCode = await page.locator("code").innerText();
+
+      await page.context().clearCookies();
+      await page.goto("/login");
+      await expect.poll(() => managedCacheKeys(page), { timeout: 20_000 }).toEqual([]);
+
+      await signInAs(page, OPERATOR_UID);
+      await page.goto("/wallet");
+
+      const operatorCode = (await db().collection("users").doc(OPERATOR_UID).get()).data()
+        ?.paymentCode as string;
+      expect(operatorCode).not.toBe(buyerCode);
+      await expect(page.locator("code")).toHaveText(operatorCode);
+    });
+
+    test("an ended session's cached wallet is evicted rather than served again", async ({
+      page,
+    }) => {
+      await signInAs(page, BUYER_UID);
+      await warmShell(page, "/wallet");
+
+      await page.context().clearCookies();
+      await page.goto("/wallet");
+      await expect.poll(() => isCached(page, "/wallet"), { timeout: 20_000 }).toBe(false);
 
       await page.goto("/wallet");
-      await waitForServiceWorker(page);
-      await page.goto("/wallet");
-      await expect.poll(() => isCached(page, "/wallet"), { timeout: 20_000 }).toBe(true);
+      await expect(page).toHaveURL(/\/login/);
+    });
 
-      const before = await page.locator("svg[role='img']").evaluate((el) => el.outerHTML);
+    test("a regenerated payment code appears on the reload after the next online open", async ({
+      page,
+    }) => {
+      await signInAs(page, BUYER_UID);
+      await warmShell(page, "/wallet");
+      const before = await page.locator("code").innerText();
 
       await db().collection("users").doc(BUYER_UID).update({ paymentCode: REGENERATED_CODE });
 
-      await expect(async () => {
-        await page.goto("/wallet");
-        const after = await page.locator("svg[role='img']").evaluate((el) => el.outerHTML);
-        expect(after).not.toBe(before);
-      }).toPass({ timeout: 20_000 });
+      await page.goto("/wallet");
+      await expect(page.locator("code")).toHaveText(before);
+      await expect
+        .poll(() => cachedBodyContains(page, "/wallet", REGENERATED_CODE), { timeout: 20_000 })
+        .toBe(true);
+
+      await page.goto("/wallet");
+      await expect(page.locator("code")).toHaveText(REGENERATED_CODE);
     });
   });
 });

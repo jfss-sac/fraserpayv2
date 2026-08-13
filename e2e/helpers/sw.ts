@@ -22,6 +22,20 @@ export function isCached(page: Page, path: string): Promise<boolean> {
   }, path);
 }
 
+export function cachedBodyContains(page: Page, path: string, needle: string): Promise<boolean> {
+  return page.evaluate(
+    async ([url, text]) => {
+      for (const name of await caches.keys()) {
+        if (!name.startsWith("fraserpay-cache-")) continue;
+        const hit = await (await caches.open(name)).match(url!);
+        if (hit && (await hit.text()).includes(text!)) return true;
+      }
+      return false;
+    },
+    [path, needle],
+  );
+}
+
 export function managedCacheKeys(page: Page): Promise<string[]> {
   return page.evaluate(async () =>
     (await caches.keys()).filter((name) => name.startsWith("fraserpay-cache-")),

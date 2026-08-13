@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { SCHOOL_DOMAIN } from "@/lib/shared/constants";
+import { purgeServiceWorkerCaches } from "@/lib/ui/purge-caches";
 import { safeRedirectPath } from "@/lib/shared/safe-redirect";
 
 const WRONG_DOMAIN_MESSAGE = `Use your @${SCHOOL_DOMAIN} school Google account — personal accounts can't sign in.`;
@@ -21,6 +22,10 @@ export function GoogleSignIn() {
   const searchParams = useSearchParams();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    void purgeServiceWorkerCaches();
+  }, []);
 
   async function handleSignIn() {
     setPending(true);
@@ -48,6 +53,7 @@ export function GoogleSignIn() {
         setPending(false);
         return;
       }
+      await purgeServiceWorkerCaches();
       router.replace(safeRedirectPath(searchParams.get("next"), "/"));
     } catch {
       setError("Sign-in didn't complete. Please try again.");

@@ -69,6 +69,8 @@ async function fetchAndStore(event, cache) {
   const response = await fetch(event.request);
   if (response && response.ok && !response.redirected) {
     event.waitUntil(cache.put(event.request, response.clone()));
+  } else if (isSessionBounce(response)) {
+    event.waitUntil(cache.delete(event.request));
   }
   return response;
 }
