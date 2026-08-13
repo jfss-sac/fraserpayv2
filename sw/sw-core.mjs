@@ -50,7 +50,6 @@ export function cachesToPurge(names) {
   return names.filter(isManagedCache);
 }
 
-// Navigations carry `redirect: "manual"`, so a bounce to /login arrives opaque, not followed.
 export function isSessionBounce(response) {
   if (!response) return false;
   return response.redirected === true || response.type === "opaqueredirect";

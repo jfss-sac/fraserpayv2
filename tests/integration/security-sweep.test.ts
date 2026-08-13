@@ -439,10 +439,18 @@ describe("API surface coverage (arch §10)", () => {
   it.each([
     { NODE_ENV: "production", NEXT_PUBLIC_USE_EMULATORS: "true" },
     { NODE_ENV: "development", NEXT_PUBLIC_USE_EMULATORS: "false" },
+    { NODE_ENV: "development", NEXT_PUBLIC_USE_EMULATORS: "true", FIRESTORE_EMULATOR_HOST: "" },
+    {
+      NODE_ENV: "development",
+      NEXT_PUBLIC_USE_EMULATORS: "true",
+      FIREBASE_AUTH_EMULATOR_HOST: "",
+    },
   ])("keeps the dev-login shortcut dead under %s", async (env) => {
     const { GET } = await import("../../src/app/api/auth/dev-login/route");
     vi.stubEnv("NODE_ENV", env.NODE_ENV as "production" | "development");
     vi.stubEnv("NEXT_PUBLIC_USE_EMULATORS", env.NEXT_PUBLIC_USE_EMULATORS);
+    if ("FIRESTORE_EMULATOR_HOST" in env) vi.stubEnv("FIRESTORE_EMULATOR_HOST", "");
+    if ("FIREBASE_AUTH_EMULATOR_HOST" in env) vi.stubEnv("FIREBASE_AUTH_EMULATOR_HOST", "");
     try {
       await expect(GET(new NextRequest(`${ORIGIN}/api/auth/dev-login`))).rejects.toMatchObject({
         digest: expect.stringContaining("NEXT_HTTP_ERROR_FALLBACK;404"),

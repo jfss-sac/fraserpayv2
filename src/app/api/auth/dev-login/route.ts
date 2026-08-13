@@ -10,7 +10,8 @@ function devLoginEnabled(): boolean {
   return (
     process.env.NODE_ENV !== "production" &&
     process.env.NEXT_PUBLIC_USE_EMULATORS === "true" &&
-    Boolean(process.env.FIREBASE_AUTH_EMULATOR_HOST)
+    Boolean(process.env.FIREBASE_AUTH_EMULATOR_HOST) &&
+    Boolean(process.env.FIRESTORE_EMULATOR_HOST)
   );
 }
 

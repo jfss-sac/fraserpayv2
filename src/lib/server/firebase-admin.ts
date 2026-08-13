@@ -2,18 +2,15 @@ import "server-only";
 import { type App, cert, getApps, initializeApp } from "firebase-admin/app";
 import { type Auth, getAuth } from "firebase-admin/auth";
 import { type Firestore, getFirestore } from "firebase-admin/firestore";
+import { usingEmulators } from "@/lib/shared/emulator-mode";
 
 let cached: App | undefined;
-
-function usingEmulators(): boolean {
-  return Boolean(process.env.FIRESTORE_EMULATOR_HOST || process.env.FIREBASE_AUTH_EMULATOR_HOST);
-}
 
 function createApp(): App {
   const existing = getApps();
   if (existing.length > 0) return existing[0]!;
 
-  if (usingEmulators()) {
+  if (usingEmulators(["auth", "firestore"])) {
     const projectId =
       process.env.FIREBASE_PROJECT_ID || process.env.GCLOUD_PROJECT || "demo-fraserpay";
     // No credentials exist against the emulators; without this the google-auth

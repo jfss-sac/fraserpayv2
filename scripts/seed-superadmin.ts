@@ -3,6 +3,7 @@ import { createInterface } from "node:readline/promises";
 import { pathToFileURL } from "node:url";
 import { type App, cert, getApps, initializeApp } from "firebase-admin/app";
 import { FieldValue, type Firestore, getFirestore } from "firebase-admin/firestore";
+import { usingEmulators } from "../src/lib/shared/emulator-mode";
 
 export type SeedSuperadminOutcome = "granted" | "already-exec" | "pending";
 
@@ -48,15 +49,11 @@ export async function seedSuperadmin(db: Firestore, email: string): Promise<Seed
   return { email: normalized, outcome: "pending", uid: null };
 }
 
-function usingEmulators(): boolean {
-  return Boolean(process.env.FIRESTORE_EMULATOR_HOST || process.env.FIREBASE_AUTH_EMULATOR_HOST);
-}
-
 function resolveApp(project: string | undefined): App {
   const existing = getApps();
   if (existing.length > 0) return existing[0]!;
 
-  if (usingEmulators()) {
+  if (usingEmulators(["firestore"])) {
     const projectId =
       project || process.env.FIREBASE_PROJECT_ID || process.env.GCLOUD_PROJECT || "demo-fraserpay";
     return initializeApp({ projectId });
@@ -115,7 +112,7 @@ async function main(): Promise<void> {
     throw new Error("Set SEED_SUPERADMIN_EMAIL (or pass --email <address>).");
   }
 
-  const emulator = usingEmulators();
+  const emulator = usingEmulators(["firestore"]);
 
   if (emulator && project && !project.startsWith("demo-")) {
     throw new Error(

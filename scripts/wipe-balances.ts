@@ -4,6 +4,7 @@ import { pathToFileURL } from "node:url";
 import { randomUUID } from "node:crypto";
 import { type App, cert, getApps, initializeApp } from "firebase-admin/app";
 import { FieldValue, type Firestore, getFirestore } from "firebase-admin/firestore";
+import { usingEmulators } from "../src/lib/shared/emulator-mode";
 
 const BATCH_LIMIT = 450;
 const WIPE_STATE_PATH = "operations/balanceWipe";
@@ -134,15 +135,11 @@ export function resolveWipePlan(args: Args, emulator: boolean): WipePlan {
   return { proceed: true, project: args.project };
 }
 
-function usingEmulators(): boolean {
-  return Boolean(process.env.FIRESTORE_EMULATOR_HOST || process.env.FIREBASE_AUTH_EMULATOR_HOST);
-}
-
 function resolveApp(project: string): App {
   const existing = getApps();
   if (existing.length > 0) return existing[0]!;
 
-  if (usingEmulators()) {
+  if (usingEmulators(["firestore"])) {
     process.env.METADATA_SERVER_DETECTION ??= "none";
     return initializeApp({ projectId: project });
   }
@@ -172,7 +169,7 @@ async function confirmCloud(project: string): Promise<boolean> {
 
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
-  const emulator = usingEmulators();
+  const emulator = usingEmulators(["firestore"]);
   const plan = resolveWipePlan(args, emulator);
   if (!plan.proceed) {
     console.error(plan.reason);

@@ -1,6 +1,7 @@
 import { pathToFileURL } from "node:url";
 import { type App, cert, getApps, initializeApp } from "firebase-admin/app";
 import { type Firestore, getFirestore } from "firebase-admin/firestore";
+import { usingEmulators } from "../src/lib/shared/emulator-mode";
 
 const POINTS_EPSILON = 1e-6;
 
@@ -133,15 +134,11 @@ export function formatReport(report: VerifyLedgerReport): string {
   return lines.join("\n");
 }
 
-function usingEmulators(): boolean {
-  return Boolean(process.env.FIRESTORE_EMULATOR_HOST || process.env.FIREBASE_AUTH_EMULATOR_HOST);
-}
-
 function resolveApp(project: string | undefined): App {
   const existing = getApps();
   if (existing.length > 0) return existing[0]!;
 
-  if (usingEmulators()) {
+  if (usingEmulators(["firestore"])) {
     const projectId =
       project || process.env.FIREBASE_PROJECT_ID || process.env.GCLOUD_PROJECT || "demo-fraserpay";
     return initializeApp({ projectId });
