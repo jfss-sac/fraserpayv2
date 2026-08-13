@@ -365,6 +365,34 @@ describe("POST /api/sac/topup", () => {
     expect(await ledgerFor(buyer.uid)).toHaveLength(1);
   });
 
+  it("replays a committed top-up after the buyer's payment code is regenerated (I5)", async () => {
+    const buyer = await freshBuyer();
+    const key = nextKey();
+    const body = {
+      buyer: { paymentCode: buyer.paymentCode },
+      amountCents: 500,
+      method: "cash" as const,
+    };
+    const firstRes = await topupRoute(post(MEMBER.uid, body, { key }));
+    expect(firstRes.status).toBe(200);
+
+    await usersCol()
+      .doc(buyer.uid)
+      .update({ paymentCode: `${buyer.paymentCode}-R`, updatedAt: Timestamp.now() });
+
+    const replayRes = await topupRoute(post(MEMBER.uid, body, { key }));
+    expect(replayRes.status).toBe(200);
+    expect(replayRes.headers.get("idempotent-replay")).toBe("true");
+    expect(await replayRes.text()).toBe(await firstRes.text());
+
+    const freshRes = await topupRoute(post(MEMBER.uid, body));
+    expect(freshRes.status).toBe(404);
+    expect(await errorCode(freshRes)).toBe("NOT_FOUND");
+
+    expect(await ledgerFor(buyer.uid)).toHaveLength(1);
+    expect((await usersCol().doc(buyer.uid).get()).data()?.balanceCents).toBe(500);
+  });
+
   it("stores the full ledger entry shape", async () => {
     const buyer = await freshBuyer();
     const key = nextKey();

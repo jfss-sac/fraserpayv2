@@ -454,6 +454,34 @@ describe("POST /api/booth/charge", () => {
     expect(await ledgerFor(buyer.uid)).toHaveLength(1);
   });
 
+  it("replays a committed charge after the buyer's payment code is regenerated (I5)", async () => {
+    const buyer = await freshBuyer(2000);
+    const key = nextKey();
+    const body = {
+      boothId: BOOTH_ID,
+      buyer: { paymentCode: buyer.paymentCode },
+      items: [{ itemId: "coffee", qty: 2 }],
+    };
+    const firstRes = await chargeRoute(post(OPERATOR.uid, body, { key }));
+    expect(firstRes.status).toBe(200);
+
+    await usersCol()
+      .doc(buyer.uid)
+      .update({ paymentCode: `${buyer.paymentCode}-R`, updatedAt: Timestamp.now() });
+
+    const replayRes = await chargeRoute(post(OPERATOR.uid, body, { key }));
+    expect(replayRes.status).toBe(200);
+    expect(replayRes.headers.get("idempotent-replay")).toBe("true");
+    expect(await replayRes.text()).toBe(await firstRes.text());
+
+    const freshRes = await chargeRoute(post(OPERATOR.uid, body));
+    expect(freshRes.status).toBe(404);
+    expect(await errorCode(freshRes)).toBe("NOT_FOUND");
+
+    expect(await ledgerFor(buyer.uid)).toHaveLength(1);
+    expect((await usersCol().doc(buyer.uid).get()).data()?.balanceCents).toBe(1500);
+  });
+
   it("flags the replay with Idempotent-Replay and leaves the body identical (§9.2)", async () => {
     const buyer = await freshBuyer(2000);
     const key = nextKey();

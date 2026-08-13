@@ -32,40 +32,43 @@ export interface ResolvedBuyer {
   data: UserDoc;
 }
 
+const BUYER_NOT_FOUND = "No student found for that code or number.";
+
 export async function resolveBuyer(buyer: BuyerRef): Promise<ResolvedBuyer> {
   const query =
     "paymentCode" in buyer
       ? usersCol().where("paymentCode", "==", buyer.paymentCode)
       : usersCol().where("studentNumber", "==", buyer.studentNumber);
   const doc = (await query.limit(1).get()).docs[0];
-  if (!doc) throw new NotFoundError("No student found for that code or number.");
+  if (!doc) throw new NotFoundError(BUYER_NOT_FOUND);
   return { uid: doc.id, data: doc.data() };
 }
 
-export async function resolveBuyerUid(buyer: BuyerRef): Promise<string> {
-  return (await resolveBuyer(buyer)).uid;
-}
-
 export interface ActiveBuyer {
+  uid: string;
   ref: DocumentReference<UserDoc>;
   data: UserDoc;
 }
 
-export function assertActiveBuyer(data: UserDoc | undefined): UserDoc {
-  const buyer = requireUser(data, "No student found for that code or number.");
-  if (buyer.suspended) throw new SuspendedError();
-  return buyer;
+function stillIdentifies(buyer: BuyerRef, data: UserDoc): boolean {
+  return "paymentCode" in buyer
+    ? data.paymentCode === buyer.paymentCode
+    : data.studentNumber === buyer.studentNumber;
 }
 
-export async function readActiveBuyer(t: Transaction, uid: string): Promise<ActiveBuyer> {
+export async function resolveActiveBuyer(t: Transaction, buyer: BuyerRef): Promise<ActiveBuyer> {
+  const { uid } = await resolveBuyer(buyer);
   const ref = usersCol().doc(uid);
-  return { ref, data: assertActiveBuyer((await t.get(ref)).data()) };
+  const data = requireUser((await t.get(ref)).data(), BUYER_NOT_FOUND);
+  if (!stillIdentifies(buyer, data)) throw new NotFoundError(BUYER_NOT_FOUND);
+  if (data.suspended) throw new SuspendedError();
+  return { uid, ref, data };
 }
 
 export async function readUser(t: Transaction, uid: string): Promise<ActiveBuyer> {
   const ref = usersCol().doc(uid);
   const data = requireUser((await t.get(ref)).data(), "Student not found.");
-  return { ref, data };
+  return { uid, ref, data };
 }
 
 const dateFormatter = new Intl.DateTimeFormat("en-CA", {

@@ -8,7 +8,7 @@ import { assertNonNegative, assertNotSelf } from "./invariants";
 import { CENT_STEP } from "@/lib/shared/constants";
 import { exceedsBalanceCap, exceedsTopupCap, pointsFor } from "@/lib/shared/money";
 import type { TopUpResult } from "@/lib/shared/types";
-import { buyerSchema, readActiveBuyer, resolveBuyerUid, torontoDate } from "./shared";
+import { buyerSchema, resolveActiveBuyer, torontoDate } from "./shared";
 
 export const topUpSchema = z
   .object({
@@ -27,19 +27,18 @@ export async function topUp(args: {
 }): Promise<TopUpResult> {
   const { input, idempotency } = args;
   const actorUid = idempotency.actorUid;
-  const buyerUid = await resolveBuyerUid(input.buyer);
-  assertNotSelf(
-    actorUid,
-    buyerUid,
-    "You can't top up your own account, another SAC member must do it.",
-  );
   const createdDate = torontoDate(new Date());
 
   const { response }: IdempotentOutcome<TopUpResult> = await runIdempotent(
     idempotency,
     [],
     async (t, actor) => {
-      const { ref, data } = await readActiveBuyer(t, buyerUid);
+      const { uid: buyerUid, ref, data } = await resolveActiveBuyer(t, input.buyer);
+      assertNotSelf(
+        actorUid,
+        buyerUid,
+        "You can't top up your own account, another SAC member must do it.",
+      );
 
       const balanceAfterCents = data.balanceCents + input.amountCents;
 

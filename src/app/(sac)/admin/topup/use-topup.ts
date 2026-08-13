@@ -132,9 +132,9 @@ export function submissionOf(pending: PendingTopUp): TopUpSubmission {
 
 // Only a code that can be raised nowhere but inside the transaction, at or after
 // the replay read, proves the original never committed (arch §9.2). For topUp
-// that is CAP_EXCEEDED alone: NOT_FOUND and FORBIDDEN are raised while resolving
-// the buyer beforehand, and SUSPENDED can come from the actor's own session
-// guard — none of them say anything about the first attempt.
+// that is CAP_EXCEEDED alone: FORBIDDEN and SUSPENDED can come from the actor's
+// own authorization before the handler body runs, and NOT_FOUND names a student
+// who cannot be credited at all, so retaining that key costs nothing.
 const SETTLED_TOPUP_CODES = new Set(["CAP_EXCEEDED"]);
 
 export function useTopUp(args: {

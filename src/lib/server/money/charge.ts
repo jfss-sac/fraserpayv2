@@ -1,13 +1,13 @@
 import "server-only";
 import { Timestamp } from "firebase-admin/firestore";
 import { z } from "zod";
-import { type LedgerEntryDoc, boothsCol, ledgerCol, membersCol, usersCol } from "../db";
+import { type LedgerEntryDoc, boothsCol, ledgerCol, membersCol } from "../db";
 import { BoothNotSellableError, ForbiddenError, InsufficientFundsError } from "../errors";
 import { type IdempotencyContext, type IdempotentOutcome, runIdempotent } from "../idempotency";
 import { isHighAmount } from "@/lib/shared/money";
 import type { ChargeResult, LedgerLineItem } from "@/lib/shared/types";
 import { assertNonNegative } from "./invariants";
-import { assertActiveBuyer, boothBuyerSchema, resolveBuyerUid, torontoDate } from "./shared";
+import { boothBuyerSchema, resolveActiveBuyer, torontoDate } from "./shared";
 
 export const chargeSchema = z
   .object({
@@ -29,17 +29,15 @@ export async function charge(args: {
 }): Promise<ChargeResult> {
   const { input, idempotency } = args;
   const actorUid = idempotency.actorUid;
-  const buyerUid = await resolveBuyerUid(input.buyer);
   const createdDate = torontoDate(new Date());
 
   const boothRef = boothsCol().doc(input.boothId);
   const memberRef = membersCol(input.boothId).doc(actorUid);
-  const buyerRef = usersCol().doc(buyerUid);
 
   const { response }: IdempotentOutcome<ChargeResult> = await runIdempotent(
     idempotency,
-    [boothRef, memberRef, buyerRef],
-    async (t, actor, [boothSnapshot, memberSnapshot, buyerSnapshot]) => {
+    [boothRef, memberRef],
+    async (t, actor, [boothSnapshot, memberSnapshot]) => {
       const booth = boothSnapshot.data();
       if (!booth || booth.status !== "approved") throw new BoothNotSellableError();
 
@@ -47,7 +45,7 @@ export async function charge(args: {
         throw new ForbiddenError("You are not a member of this booth.");
       }
 
-      const data = assertActiveBuyer(buyerSnapshot.data());
+      const { uid: buyerUid, ref: buyerRef, data } = await resolveActiveBuyer(t, input.buyer);
 
       const lineItems: LedgerLineItem[] = input.items.map(({ itemId, qty }) => {
         const item = booth.items.find((i) => i.id === itemId);
