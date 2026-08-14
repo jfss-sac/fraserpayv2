@@ -57,6 +57,7 @@ test("cartToItems drops zero quantities and maps the rest", () => {
 
 test("chargeErrorMessage maps known codes and falls back", () => {
   expect(chargeErrorMessage("INSUFFICIENT_FUNDS")).toBe("Balance can't cover this cart.");
+  expect(chargeErrorMessage("CATALOG_CHANGED")).toContain("refresh");
   expect(chargeErrorMessage("NETWORK")).toContain("connection");
   expect(chargeErrorMessage("WHATEVER")).toBe("Charge failed. Try again.");
 });
@@ -463,7 +464,7 @@ test("keeps the record for every code that cannot prove the original never lande
 });
 
 test("clears the record only for codes raised inside the transaction", async () => {
-  for (const code of ["INSUFFICIENT_FUNDS", "BOOTH_NOT_SELLABLE"]) {
+  for (const code of ["INSUFFICIENT_FUNDS", "BOOTH_NOT_SELLABLE", "CATALOG_CHANGED"]) {
     const fetchMock = vi.fn().mockResolvedValue(errorResponse(code));
     vi.stubGlobal("fetch", fetchMock);
 

@@ -2,8 +2,14 @@ import "server-only";
 import { Timestamp } from "firebase-admin/firestore";
 import { z } from "zod";
 import { type LedgerEntryDoc, boothsCol, ledgerCol, membersCol } from "../db";
-import { BoothNotSellableError, ForbiddenError, InsufficientFundsError } from "../errors";
+import {
+  BoothNotSellableError,
+  CatalogChangedError,
+  ForbiddenError,
+  InsufficientFundsError,
+} from "../errors";
 import { type IdempotencyContext, type IdempotentOutcome, runIdempotent } from "../idempotency";
+import { CENT_STEP } from "@/lib/shared/constants";
 import { isHighAmount } from "@/lib/shared/money";
 import type { ChargeResult, LedgerLineItem } from "@/lib/shared/types";
 import { assertNonNegative } from "./invariants";
@@ -18,6 +24,7 @@ export const chargeSchema = z
         z.object({ itemId: z.string().trim().min(1), qty: z.number().int().positive() }).strict(),
       )
       .min(1),
+    expectedAmountCents: z.number().int().positive().multipleOf(CENT_STEP).optional(),
   })
   .strict();
 
@@ -50,10 +57,17 @@ export async function charge(args: {
       const lineItems: LedgerLineItem[] = input.items.map(({ itemId, qty }) => {
         const item = booth.items.find((i) => i.id === itemId);
         if (!item) throw new BoothNotSellableError("That item is not sold at this booth.");
+        if (item.archived === true) {
+          throw new CatalogChangedError(`${item.name} is no longer sold at this booth.`);
+        }
         return { itemId, name: item.name, qty, unitPriceCents: item.priceCents };
       });
 
       const amountCents = lineItems.reduce((sum, li) => sum + li.qty * li.unitPriceCents, 0);
+
+      if (input.expectedAmountCents !== undefined && input.expectedAmountCents !== amountCents) {
+        throw new CatalogChangedError();
+      }
 
       if (data.balanceCents < amountCents) throw new InsufficientFundsError();
       const balanceAfterCents = data.balanceCents - amountCents;

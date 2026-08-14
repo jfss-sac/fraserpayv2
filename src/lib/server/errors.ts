@@ -12,6 +12,7 @@ export const ERROR_CODES = [
   "IDEMPOTENCY_CONFLICT",
   "RATE_LIMITED",
   "BOOTH_NOT_SELLABLE",
+  "CATALOG_CHANGED",
   "CONFLICT",
   "INTERNAL",
 ] as const;
@@ -115,6 +116,15 @@ export class BoothNotSellableError extends AppError {
   readonly status = 409;
 
   constructor(message = "This booth cannot sell right now.") {
+    super(message);
+  }
+}
+
+export class CatalogChangedError extends AppError {
+  readonly code = "CATALOG_CHANGED" as const;
+  readonly status = 409;
+
+  constructor(message = "Prices changed — refresh the menu and confirm the new total.") {
     super(message);
   }
 }
