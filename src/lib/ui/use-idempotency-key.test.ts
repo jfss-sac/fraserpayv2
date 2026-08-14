@@ -35,13 +35,6 @@ test("release frees only the released scope", () => {
   expect(result.current.keyFor("/api/x", { a: 2 })).toBe(other);
 });
 
-test("releaseAll frees every held scope", () => {
-  const { result } = renderHook(() => useIdempotencyKey());
-  const first = result.current.keyFor("/api/x", { a: 1 });
-  result.current.releaseAll();
-  expect(result.current.keyFor("/api/x", { a: 1 })).not.toBe(first);
-});
-
 test("scope ignores key order and dropped undefined fields like JSON serialization", () => {
   expect(idempotencyScope("/api/x", { a: 1, b: undefined })).toBe(
     idempotencyScope("/api/x", { a: 1 }),

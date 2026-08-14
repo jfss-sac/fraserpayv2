@@ -377,27 +377,6 @@ test("scopes the recovered charge to the operator who rang it", async () => {
   expect(other.result.current.recovered).toBeNull();
 });
 
-test("reset forgets the gesture entirely — held key and persisted charge alike", async () => {
-  const fetchMock = vi.fn().mockRejectedValue(new TypeError("network"));
-  vi.stubGlobal("fetch", fetchMock);
-
-  const { result } = renderHook(() => useCharge({ boothId: "b1", actorUid: ACTOR }));
-  await act(async () => {
-    await result.current.submit({ buyer: BUYER, buyerName: "Ada", items: ITEMS, amountCents: 500 });
-  });
-  expect(persisted()).not.toBeNull();
-
-  act(() => {
-    result.current.reset();
-  });
-  expect(persisted()).toBeNull();
-
-  await act(async () => {
-    await result.current.submit({ buyer: BUYER, buyerName: "Ada", items: ITEMS, amountCents: 500 });
-  });
-  expect(keyOf(fetchMock.mock.calls[0]!)).not.toBe(keyOf(fetchMock.mock.calls[3]!));
-});
-
 test("a recovered charge that fails again stays recoverable and holds its key", async () => {
   const fetchMock = vi.fn().mockImplementation(neverResolves);
   vi.stubGlobal("fetch", fetchMock);
@@ -576,7 +555,50 @@ test("never claims a replay when its own internal retry replays a freshly minted
   expect(onSuccess).toHaveBeenCalledWith(expect.objectContaining({ replayed: false }));
 });
 
-test("dismissing a recovered charge releases its held key so the next identical sale charges fresh", async () => {
+test("dismissing after an ambiguous retry keeps the held key so a re-ring replays instead of charging twice", async () => {
+  const fetchMock = vi.fn().mockImplementation(neverResolves);
+  vi.stubGlobal("fetch", fetchMock);
+  const onSuccess = vi.fn();
+
+  const crashed = renderHook(() => useCharge({ boothId: "b1", actorUid: ACTOR }));
+  await act(async () => {
+    void crashed.result.current.submit({
+      buyer: BUYER,
+      buyerName: "Ada",
+      items: ITEMS,
+      amountCents: 500,
+    });
+  });
+  const sentKey = keyOf(fetchMock.mock.calls[0]!);
+  crashed.unmount();
+
+  fetchMock.mockRejectedValue(new TypeError("network"));
+  const reopened = renderHook(() => useCharge({ boothId: "b1", actorUid: ACTOR, onSuccess }));
+  await act(async () => {
+    await reopened.result.current.retryRecovered(reopened.result.current.recovered!);
+  });
+  expect(reopened.result.current.recovered).not.toBeNull();
+
+  act(() => {
+    reopened.result.current.dismissRecovered();
+  });
+  expect(reopened.result.current.recovered).toBeNull();
+
+  fetchMock.mockResolvedValue(okResponse({ entryId: "e1", amountCents: 500 }, { replayed: true }));
+  await act(async () => {
+    await reopened.result.current.submit({
+      buyer: BUYER,
+      buyerName: "Ada",
+      items: ITEMS,
+      amountCents: 500,
+    });
+  });
+
+  expect(keyOf(fetchMock.mock.calls.at(-1)!)).toBe(sentKey);
+  expect(onSuccess).toHaveBeenCalledWith(expect.objectContaining({ replayed: true }));
+});
+
+test("dismissing a charge that was never retried leaves no key to reuse", async () => {
   const fetchMock = vi.fn().mockImplementation(neverResolves);
   vi.stubGlobal("fetch", fetchMock);
 
@@ -592,17 +614,12 @@ test("dismissing a recovered charge releases its held key so the next identical 
   const sentKey = keyOf(fetchMock.mock.calls[0]!);
   crashed.unmount();
 
-  fetchMock.mockRejectedValue(new TypeError("network"));
   const reopened = renderHook(() => useCharge({ boothId: "b1", actorUid: ACTOR }));
-  await act(async () => {
-    await reopened.result.current.retryRecovered(reopened.result.current.recovered!);
-  });
-  expect(reopened.result.current.recovered).not.toBeNull();
-
   act(() => {
     reopened.result.current.dismissRecovered();
   });
   expect(reopened.result.current.recovered).toBeNull();
+  expect(allPersisted()).toHaveLength(0);
 
   fetchMock.mockResolvedValue(okResponse({ entryId: "e2", amountCents: 500 }));
   await act(async () => {

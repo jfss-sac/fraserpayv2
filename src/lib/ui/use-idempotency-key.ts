@@ -46,9 +46,5 @@ export function useIdempotencyKey() {
     held.current?.delete(idempotencyScope(endpoint, body));
   }, []);
 
-  const releaseAll = useCallback(() => {
-    held.current?.clear();
-  }, []);
-
-  return { keyFor, hold, isHeld, release, releaseAll };
+  return { keyFor, hold, isHeld, release };
 }

@@ -143,8 +143,7 @@ export function useCharge(args: {
   const [state, setState] = useState<ChargeState>({ status: "idle" });
   const [sessionId] = useState(() => crypto.randomUUID());
   const inFlight = useRef(false);
-  const lastKey = useRef<string | null>(null);
-  const { keyFor, hold, isHeld, release, releaseAll } = useIdempotencyKey();
+  const { keyFor, hold, isHeld, release } = useIdempotencyKey();
   const scope = useMemo(() => ({ actorUid, boothId }), [actorUid, boothId]);
   const persisted = usePendingCharges(scope);
   const recovered = persisted.find((record) => record.sessionId !== sessionId) ?? null;
@@ -161,7 +160,6 @@ export function useCharge(args: {
       if (replay) hold("/api/booth/charge", body, replay.key);
       const reusedKey = isHeld("/api/booth/charge", body);
       const idempotencyKey = keyFor("/api/booth/charge", body);
-      lastKey.current = idempotencyKey;
       writePendingCharge(scope, {
         key: idempotencyKey,
         sessionId: replay?.sessionId ?? sessionId,
@@ -215,21 +213,14 @@ export function useCharge(args: {
     [run],
   );
 
+  // Dismiss drops the record only. A held key exists here only because Retry seeded
+  // it, and that Retry may itself have committed — the buyer panel's "Already charged"
+  // note is a snapshot from the scan before it, so it cannot flag that sale. Releasing
+  // would let an identical re-ring mint a fresh key and charge twice (I5).
   const dismissRecovered = useCallback(() => {
     if (!recovered) return;
-    release(
-      "/api/booth/charge",
-      chargeBody({ boothId, buyer: recovered.buyer, items: recovered.items }),
-    );
     clearPendingCharge(scope, recovered.key);
-  }, [recovered, boothId, release, scope]);
+  }, [recovered, scope]);
 
-  const reset = useCallback(() => {
-    releaseAll();
-    if (lastKey.current !== null) clearPendingCharge(scope, lastKey.current);
-    lastKey.current = null;
-    setState({ status: "idle" });
-  }, [releaseAll, scope]);
-
-  return { state, submit, reset, recovered, retryRecovered, dismissRecovered };
+  return { state, submit, recovered, retryRecovered, dismissRecovered };
 }
