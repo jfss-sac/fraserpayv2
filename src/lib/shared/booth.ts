@@ -4,6 +4,8 @@ import type { BoothItem } from "./types";
 
 export const CUSTOM_ITEM_ID = "custom";
 
+export const MAX_BOOTH_ITEMS = 50;
+
 export const CUSTOM_ITEM: BoothItem = {
   id: CUSTOM_ITEM_ID,
   name: "Custom",
@@ -25,7 +27,7 @@ export const boothRegistrationSchema = z
   .object({
     name: z.string().trim().min(1).max(80),
     description: z.string().trim().min(1).max(500),
-    items: z.array(boothItemInputSchema).min(1).max(50),
+    items: z.array(boothItemInputSchema).min(1).max(MAX_BOOTH_ITEMS),
   })
   .strict();
 

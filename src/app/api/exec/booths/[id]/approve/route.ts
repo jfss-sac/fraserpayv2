@@ -41,6 +41,7 @@ function applyPriceEdits(items: BoothItem[], edits: PriceEdit): BoothItem[] {
     const item = byId.get(edit.id);
     if (!item) throw new ValidationError("That item is not part of this booth.");
     if (item.isCustom) throw new ValidationError("The custom item's price is locked.");
+    if (item.archived) throw new ValidationError("Restore that item before changing its price.");
     item.priceCents = edit.priceCents;
   }
   return next;

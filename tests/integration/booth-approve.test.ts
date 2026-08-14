@@ -235,6 +235,40 @@ describe("POST /api/exec/booths/[id]/approve", () => {
     expect((await boothDoc(id)).status).toBe("pending");
   });
 
+  it("rejects a price edit targeting an archived item", async () => {
+    const id = await makePendingBooth();
+    await boothsCol()
+      .doc(id)
+      .update({ items: [{ ...ITEMS[0]!, archived: true }, { ...ITEMS[1]! }] });
+
+    const res = await route(
+      id,
+      post(EXEC.uid, id, { priceEdits: [{ id: "coffee", priceCents: 300 }] }),
+    );
+    expect(res.status).toBe(400);
+    expect(await errorCode(res)).toBe("VALIDATION");
+
+    const booth = await boothDoc(id);
+    expect(booth.status).toBe("pending");
+    expect(booth.joinCode).toBeNull();
+    expect(booth.items[0]!.priceCents).toBe(250);
+    expect(await approveAudits(id)).toHaveLength(0);
+  });
+
+  it("still approves a booth that carries an archived item when no edit names it", async () => {
+    const id = await makePendingBooth();
+    await boothsCol()
+      .doc(id)
+      .update({ items: [{ ...ITEMS[0]!, archived: true }, { ...ITEMS[1]! }] });
+
+    const res = await route(id, post(EXEC.uid, id));
+    expect(res.status).toBe(200);
+
+    const booth = await boothDoc(id);
+    expect(booth.status).toBe("approved");
+    expect(booth.items[0]).toEqual({ ...ITEMS[0]!, archived: true });
+  });
+
   it("rejects a price edit for an unknown item", async () => {
     const id = await makePendingBooth();
     const res = await route(

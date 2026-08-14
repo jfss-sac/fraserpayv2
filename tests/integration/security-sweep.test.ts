@@ -13,6 +13,8 @@ import { POST as boothsRegister } from "../../src/app/api/booths/register/route"
 import { POST as execAdjust } from "../../src/app/api/exec/adjust/route";
 import { POST as execBoothApprove } from "../../src/app/api/exec/booths/[id]/approve/route";
 import { POST as execBoothItems } from "../../src/app/api/exec/booths/[id]/items/route";
+import { POST as execBoothItemAdd } from "../../src/app/api/exec/booths/[id]/items/add/route";
+import { POST as execBoothItemArchive } from "../../src/app/api/exec/booths/[id]/items/archive/route";
 import { POST as execBoothMemberRemove } from "../../src/app/api/exec/booths/[id]/members/remove/route";
 import { POST as execBoothRotateCode } from "../../src/app/api/exec/booths/[id]/rotate-code/route";
 import { POST as execBoothStatus } from "../../src/app/api/exec/booths/[id]/status/route";
@@ -246,6 +248,24 @@ const ENDPOINTS: Endpoint[] = [
     rateLimit: "exec-mutations",
     params: { id: BOOTH_ID },
     body: { items: [] },
+  },
+  {
+    path: "/api/exec/booths/[id]/items/add",
+    method: "POST",
+    handler: execBoothItemAdd as AnyHandler,
+    role: "sacExec",
+    rateLimit: "exec-mutations",
+    params: { id: BOOTH_ID },
+    body: { name: "Sweep Item", priceCents: 100 },
+  },
+  {
+    path: "/api/exec/booths/[id]/items/archive",
+    method: "POST",
+    handler: execBoothItemArchive as AnyHandler,
+    role: "sacExec",
+    rateLimit: "exec-mutations",
+    params: { id: BOOTH_ID },
+    body: { itemId: "x", archived: true },
   },
   {
     path: "/api/exec/booths/[id]/rotate-code",

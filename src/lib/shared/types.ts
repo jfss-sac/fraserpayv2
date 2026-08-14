@@ -14,6 +14,9 @@ export interface SacRoles {
 export type AuditAction =
   | "booth.approve"
   | "booth.priceEdit"
+  | "booth.itemAdd"
+  | "booth.itemArchive"
+  | "booth.itemUnarchive"
   | "booth.codeRotate"
   | "booth.memberRemove"
   | "booth.deactivate"
@@ -29,6 +32,7 @@ export interface BoothItem {
   name: string;
   priceCents: number;
   isCustom: boolean;
+  archived?: boolean;
 }
 
 export interface LedgerLineItem {

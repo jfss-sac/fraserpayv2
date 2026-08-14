@@ -144,7 +144,7 @@ export const getBoothForSale = cache(async (boothId: string): Promise<BoothDTO |
     name: data.name,
     description: data.description,
     status: data.status,
-    items: data.items,
+    items: data.items.filter((item) => item.archived !== true),
   };
 });
 
