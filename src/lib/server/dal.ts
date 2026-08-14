@@ -136,7 +136,7 @@ export const listMemberBooths = cache(async (uid: string): Promise<MemberBooth[]
     .sort((a, b) => a.name.localeCompare(b.name));
 });
 
-export const getBoothForSale = cache(async (boothId: string): Promise<BoothDTO | null> => {
+export const getBoothCatalog = cache(async (boothId: string): Promise<BoothDTO | null> => {
   const data = (await boothsCol().doc(boothId).get()).data();
   if (!data) return null;
   return {
@@ -144,7 +144,9 @@ export const getBoothForSale = cache(async (boothId: string): Promise<BoothDTO |
     name: data.name,
     description: data.description,
     status: data.status,
-    items: data.items.filter((item) => item.archived !== true),
+    items: data.items
+      .filter((item) => item.archived !== true)
+      .map(({ id, name, priceCents, isCustom }) => ({ id, name, priceCents, isCustom })),
   };
 });
 

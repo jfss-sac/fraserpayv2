@@ -5,7 +5,7 @@ import { POST as archiveRoute } from "../../src/app/api/exec/booths/[id]/items/a
 import { POST as repriceRoute } from "../../src/app/api/exec/booths/[id]/items/route";
 import { POST as chargeRoute } from "../../src/app/api/booth/charge/route";
 import { POST as refundRoute } from "../../src/app/api/exec/refund/route";
-import { getBoothForSale, getBoothSummary } from "../../src/lib/server/dal";
+import { getBoothCatalog, getBoothSummary } from "../../src/lib/server/dal";
 import {
   type AuditLogDoc,
   type BoothDoc,
@@ -371,7 +371,7 @@ describe("POST /api/exec/booths/[id]/items/archive", () => {
     expect(booth.items.map((i) => i.id)).toEqual(["coffee", "tea", "custom"]);
     expect(booth.items[0]).toEqual({ ...ITEMS[0], archived: true });
 
-    const catalog = await getBoothForSale(id);
+    const catalog = await getBoothCatalog(id);
     expect(catalog!.items.map((i) => i.id)).toEqual(["tea", "custom"]);
 
     const rows = await audits(id);
@@ -392,7 +392,7 @@ describe("POST /api/exec/booths/[id]/items/archive", () => {
     expect(booth.items[0]).toEqual(ITEMS[0]);
     expect(Object.keys(booth.items[0]!)).not.toContain("archived");
 
-    const catalog = await getBoothForSale(id);
+    const catalog = await getBoothCatalog(id);
     expect(catalog!.items.map((i) => i.id)).toEqual(["coffee", "tea", "custom"]);
 
     const rows = await audits(id);

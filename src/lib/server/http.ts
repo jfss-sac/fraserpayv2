@@ -151,7 +151,8 @@ export function defineHandler<
       if (isMutation(request.method)) assertSameOrigin(request);
 
       const params = (routeContext ? await routeContext.params : ({} as TParams)) as TParams;
-      const boothId = (params as Record<string, unknown>)?.boothId;
+      const routeParams = params as Record<string, unknown> | undefined;
+      const boothId = routeParams?.boothId ?? routeParams?.id;
 
       const session = await authorizeRequest(
         config.role ?? "public",

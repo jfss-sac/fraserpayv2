@@ -5,6 +5,7 @@ import { NextRequest } from "next/server";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { POST as authSession } from "../../src/app/api/auth/session/route";
 import { POST as authSignout } from "../../src/app/api/auth/signout/route";
+import { GET as boothCatalog } from "../../src/app/api/booth/[id]/catalog/route";
 import { GET as boothSummary } from "../../src/app/api/booth/[id]/summary/route";
 import { POST as boothCharge } from "../../src/app/api/booth/charge/route";
 import { POST as boothLookup } from "../../src/app/api/booth/lookup/route";
@@ -125,6 +126,14 @@ const ENDPOINTS: Endpoint[] = [
     method: "GET",
     handler: boothSummary as AnyHandler,
     role: "active",
+    rateLimit: "reads",
+    params: { id: BOOTH_ID },
+  },
+  {
+    path: "/api/booth/[id]/catalog",
+    method: "GET",
+    handler: boothCatalog as AnyHandler,
+    role: "boothMember",
     rateLimit: "reads",
     params: { id: BOOTH_ID },
   },
@@ -596,7 +605,12 @@ describe("role sweep (arch §7)", () => {
 
 describe("IDOR sweep", () => {
   const boothScoped = ENDPOINTS.filter((e) =>
-    ["/api/booth/lookup", "/api/booth/charge", "/api/booth/[id]/summary"].includes(e.path),
+    [
+      "/api/booth/lookup",
+      "/api/booth/charge",
+      "/api/booth/[id]/summary",
+      "/api/booth/[id]/catalog",
+    ].includes(e.path),
   );
 
   it.each(boothScoped)("$path re-checks booth membership for $method", async (endpoint) => {
@@ -605,21 +619,29 @@ describe("IDOR sweep", () => {
     expect(await errorCode(res)).toBe("FORBIDDEN");
   });
 
-  it("admits the same calls for an actual member of that booth", async () => {
-    const summary = ENDPOINTS.find((e) => e.path === "/api/booth/[id]/summary")!;
-    const res = await call(summary, { uid: "sweep-seller" });
-    expect(res.status).toBe(200);
-  });
+  it.each(["/api/booth/[id]/summary", "/api/booth/[id]/catalog"])(
+    "admits %s for an actual member of that booth",
+    async (path) => {
+      const res = await call(
+        ENDPOINTS.find((e) => e.path === path)!,
+        { uid: "sweep-seller" },
+      );
+      expect(res.status).toBe(200);
+    },
+  );
 
-  it("does not let a booth member read another booth's summary", async () => {
-    const summary = ENDPOINTS.find((e) => e.path === "/api/booth/[id]/summary")!;
-    const res = await call(
-      { ...summary, params: { id: "some-other-booth" } },
-      { uid: "sweep-seller" },
-    );
-    expect(res.status).toBe(403);
-    expect(await errorCode(res)).toBe("FORBIDDEN");
-  });
+  it.each(["/api/booth/[id]/summary", "/api/booth/[id]/catalog"])(
+    "does not let a booth member read %s of another booth",
+    async (path) => {
+      const endpoint = ENDPOINTS.find((e) => e.path === path)!;
+      const res = await call(
+        { ...endpoint, params: { id: "some-other-booth" } },
+        { uid: "sweep-seller" },
+      );
+      expect(res.status).toBe(403);
+      expect(await errorCode(res)).toBe("FORBIDDEN");
+    },
+  );
 });
 
 describe("enumeration sweep (NFR-9, I10)", () => {
