@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, type SetStateAction } from "react";
 import { formatCents } from "@/lib/shared/money";
 import type { BoothItem } from "@/lib/shared/types";
 import { Button } from "@/lib/ui/vendor/button";
@@ -16,30 +16,45 @@ export function cartItemCount(quantities: CartQuantities): number {
   return Object.values(quantities).reduce((sum, qty) => sum + qty, 0);
 }
 
-export function PosCart({
-  items,
-  onCharge,
-  onTotalChange,
-  busy = false,
-}: {
+export interface PosCartProps {
   items: BoothItem[];
+  quantities: CartQuantities;
+  onQuantitiesChange: (update: SetStateAction<CartQuantities>) => void;
   onCharge?: (quantities: CartQuantities) => void;
   onTotalChange?: (totalCents: number) => void;
   busy?: boolean;
-}) {
-  const [quantities, setQuantities] = useState<CartQuantities>({});
+}
 
-  const total = cartTotalCents(items, quantities);
-  const count = cartItemCount(quantities);
+export function PosCart({
+  items,
+  quantities,
+  onQuantitiesChange,
+  onCharge,
+  onTotalChange,
+  busy = false,
+}: PosCartProps) {
+  const visibleQuantities = useMemo(() => {
+    const activeIds = new Set(items.map((item) => item.id));
+    return Object.fromEntries(
+      Object.entries(quantities).filter(([itemId]) => activeIds.has(itemId)),
+    );
+  }, [items, quantities]);
+
+  const total = cartTotalCents(items, visibleQuantities);
+  const count = cartItemCount(visibleQuantities);
 
   useEffect(() => {
     onTotalChange?.(total);
   }, [total, onTotalChange]);
 
   function step(id: string, delta: number) {
-    setQuantities((current) => {
-      const next = Math.max(0, (current[id] ?? 0) + delta);
-      return { ...current, [id]: next };
+    onQuantitiesChange((current) => {
+      const activeIds = new Set(items.map((item) => item.id));
+      const visibleCurrent = Object.fromEntries(
+        Object.entries(current).filter(([itemId]) => activeIds.has(itemId)),
+      );
+      const nextQuantity = Math.max(0, (visibleCurrent[id] ?? 0) + delta);
+      return { ...visibleCurrent, [id]: nextQuantity };
     });
   }
 
@@ -47,7 +62,7 @@ export function PosCart({
     <div className="flex flex-col gap-6">
       <ul className="grid grid-cols-2 gap-3">
         {items.map((item) => {
-          const qty = quantities[item.id] ?? 0;
+          const qty = visibleQuantities[item.id] ?? 0;
           return (
             <li key={item.id}>
               <Card>
@@ -107,7 +122,7 @@ export function PosCart({
         <Button
           type="button"
           size="lg"
-          onClick={() => onCharge?.(quantities)}
+          onClick={() => onCharge?.(visibleQuantities)}
           disabled={count === 0 || !onCharge || busy}
         >
           {busy ? "Charging…" : "Charge"}

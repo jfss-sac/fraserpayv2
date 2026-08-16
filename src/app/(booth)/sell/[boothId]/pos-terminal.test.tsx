@@ -441,6 +441,124 @@ test("re-reads the balance after a charge is rejected for insufficient funds", a
   expect(lookups).toBe(2);
 });
 
+test("refreshes the catalog, applies reprices, and removes archived cart lines", async () => {
+  const items: BoothItem[] = [
+    { id: "poutine", name: "Poutine", priceCents: 400, isCustom: false },
+    { id: "drink", name: "Drink", priceCents: 200, isCustom: false },
+  ];
+  const fetchMock = vi.fn(async (url: string | URL | Request) => {
+    if (String(url) === "/") {
+      return { ok: true, headers: new Headers(), json: async () => ({}) } as Response;
+    }
+    expect(String(url)).toBe("/api/booth/b1/catalog");
+    return {
+      ok: true,
+      headers: new Headers(),
+      json: async () => ({
+        id: "b1",
+        name: "Lunch",
+        description: "",
+        status: "approved",
+        items: [{ ...items[0], priceCents: 450 }],
+      }),
+    } as Response;
+  });
+  vi.stubGlobal("fetch", fetchMock);
+
+  render(<PosTerminal boothId="b1" actorUid="op-1" items={items} />);
+  await userEvent.click(screen.getByRole("button", { name: "Add Poutine" }));
+  await userEvent.click(screen.getByRole("button", { name: "Add Drink" }));
+
+  await userEvent.click(screen.getByRole("button", { name: "Refresh catalog" }));
+
+  expect(await screen.findByText("Poutine $4.00 → $4.50")).toBeInTheDocument();
+  expect(screen.getByText("Drink — no longer sold (removed from cart)")).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Add Drink" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Confirm price changes" })).not.toBeInTheDocument();
+  expect(screen.getByLabelText("Poutine quantity")).toHaveTextContent("1");
+  expect(screen.getByLabelText("Cart total")).toHaveTextContent("$4.50");
+  expect(
+    fetchMock.mock.calls.filter(([url]) => String(url) === "/api/booth/b1/catalog"),
+  ).toHaveLength(1);
+});
+
+test("auto-refreshes once after CATALOG_CHANGED and requires a fresh price confirmation", async () => {
+  const items: BoothItem[] = [{ id: "poutine", name: "Poutine", priceCents: 400, isCustom: false }];
+  let chargeAttempts = 0;
+  const fetchMock = vi.fn(async (url: string | URL | Request) => {
+    const target = String(url);
+    if (target === "/") {
+      return { ok: true, headers: new Headers(), json: async () => ({}) } as Response;
+    }
+    if (target.includes("/api/booth/lookup")) {
+      return {
+        ok: true,
+        headers: new Headers(),
+        json: async () => ({ name: "Ada", balanceCents: 10_000, lastPurchase: null }),
+      } as Response;
+    }
+    if (target.includes("/api/booth/b1/catalog")) {
+      return {
+        ok: true,
+        headers: new Headers(),
+        json: async () => ({
+          id: "b1",
+          name: "Lunch",
+          description: "",
+          status: "approved",
+          items: [{ ...items[0], priceCents: 450 }],
+        }),
+      } as Response;
+    }
+    chargeAttempts += 1;
+    if (chargeAttempts === 1) {
+      return {
+        ok: false,
+        headers: new Headers(),
+        json: async () => ({ error: { code: "CATALOG_CHANGED" } }),
+      } as Response;
+    }
+    return {
+      ok: true,
+      headers: new Headers(),
+      json: async () => ({ entryId: "entry-1", amountCents: 450 }),
+    } as Response;
+  });
+  vi.stubGlobal("fetch", fetchMock);
+
+  render(<PosTerminal boothId="b1" actorUid="op-1" items={items} />);
+  await userEvent.click(screen.getByRole("button", { name: "Add Poutine" }));
+  await identifyByCode(CODE_ADA);
+  await screen.findByText("Is this Ada?");
+
+  await userEvent.click(screen.getByRole("button", { name: "Charge" }));
+
+  expect(await screen.findByText("Poutine $4.00 → $4.50")).toBeInTheDocument();
+  expect(
+    fetchMock.mock.calls.filter(([url]) => String(url).includes("/api/booth/b1/catalog")),
+  ).toHaveLength(1);
+  expect(screen.getByRole("button", { name: "Refresh catalog" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Charge" })).toBeDisabled();
+  expect(screen.getByLabelText("Poutine quantity")).toHaveTextContent("1");
+  expect(screen.getByLabelText("Cart total")).toHaveTextContent("$4.50");
+
+  await userEvent.click(screen.getByRole("button", { name: "Confirm price changes" }));
+  expect(screen.queryByText("Poutine $4.00 → $4.50")).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Charge" })).toBeEnabled();
+  await userEvent.click(screen.getByRole("button", { name: "Charge" }));
+  expect(await screen.findByText(/Charged \$4\.50 to Ada/)).toBeInTheDocument();
+
+  const chargeCalls = fetchMock.mock.calls.filter(([url]) =>
+    String(url).includes("/api/booth/charge"),
+  ) as unknown as Array<[unknown, RequestInit]>;
+  expect(chargeCalls).toHaveLength(2);
+  expect(new Headers(chargeCalls[0]![1].headers).get("idempotency-key")).not.toBe(
+    new Headers(chargeCalls[1]![1].headers).get("idempotency-key"),
+  );
+  expect(JSON.parse(String(chargeCalls[0]![1].body))).toMatchObject({ expectedAmountCents: 400 });
+  expect(JSON.parse(String(chargeCalls[1]![1].body))).toMatchObject({ expectedAmountCents: 450 });
+});
+
 test("formatAge reads in seconds under a minute and minutes above it", () => {
   expect(formatAge(8_000)).toBe("8s ago");
   expect(formatAge(59_400)).toBe("59s ago");

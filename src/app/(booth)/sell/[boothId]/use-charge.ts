@@ -52,12 +52,14 @@ function chargeBody({
   boothId,
   buyer,
   items,
+  expectedAmountCents,
 }: {
   boothId: string;
   buyer: BuyerId;
   items: ChargeItem[];
+  expectedAmountCents: number;
 }) {
-  return { boothId, buyer, items };
+  return { boothId, buyer, items, expectedAmountCents };
 }
 
 export interface ChargeOutcome extends ChargeResult {
@@ -68,6 +70,7 @@ async function requestCharge(args: {
   boothId: string;
   buyer: BuyerId;
   items: ChargeItem[];
+  expectedAmountCents: number;
   idempotencyKey: string;
   signal: AbortSignal;
 }): Promise<ChargeOutcome> {
@@ -94,7 +97,13 @@ async function requestCharge(args: {
 }
 
 export async function chargeWithRetry(
-  args: { boothId: string; buyer: BuyerId; items: ChargeItem[]; idempotencyKey: string },
+  args: {
+    boothId: string;
+    buyer: BuyerId;
+    items: ChargeItem[];
+    expectedAmountCents: number;
+    idempotencyKey: string;
+  },
   opts: { attempts?: number; timeoutMs?: number } = {},
 ): Promise<ChargeOutcome> {
   const attempts = opts.attempts ?? CHARGE_MAX_ATTEMPTS;
@@ -161,7 +170,7 @@ export function useCharge(args: {
       if (inFlight.current || items.length === 0) return;
       inFlight.current = true;
       setState({ status: "pending" });
-      const body = chargeBody({ boothId, buyer, items });
+      const body = chargeBody({ boothId, buyer, items, expectedAmountCents: amountCents });
       if (replay) hold("/api/booth/charge", body, replay.key);
       const reusedKey = isHeld("/api/booth/charge", body);
       const idempotencyKey = keyFor("/api/booth/charge", body);
@@ -179,6 +188,7 @@ export function useCharge(args: {
           boothId,
           buyer,
           items,
+          expectedAmountCents: amountCents,
           idempotencyKey,
         });
         release("/api/booth/charge", body);
