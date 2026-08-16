@@ -37,9 +37,15 @@ test.describe.serial("J2 · booth lifecycle: register → approve → join → s
   test.describe("registration", () => {
     test.use({ storageState: TEACHER_STATE });
 
+    test("the retired registration route permanently redirects", async ({ page }) => {
+      const response = await page.request.get("/booths/register", { maxRedirects: 0 });
+      expect(response.status()).toBe(308);
+      expect(response.headers().location).toBe("/request-booth");
+    });
+
     test("a teacher registers a booth and it lands pending", async ({ page }) => {
-      await page.goto("/booths/register");
-      await expect(page.getByRole("heading", { name: "Register a booth" })).toBeVisible();
+      await page.goto("/request-booth");
+      await expect(page.getByRole("heading", { name: "Request a booth" })).toBeVisible();
 
       await page.locator("#booth-name").fill(RELAY_NAME);
       await page.locator("#booth-description").fill("End-to-end lifecycle booth.");

@@ -20,7 +20,16 @@ function nonceOf(res: Response): string | null {
 }
 
 describe("proxy matcher", () => {
-  const guarded = ["/", "/wallet", "/leaderboard", "/sell", "/admin", "/booths/register", "/login"];
+  const guarded = [
+    "/",
+    "/wallet",
+    "/leaderboard",
+    "/sell",
+    "/admin",
+    "/request-booth",
+    "/booths/register",
+    "/login",
+  ];
   for (const path of guarded) {
     it(`runs on app page ${path}`, () => {
       expect(matches(path)).toBe(true);

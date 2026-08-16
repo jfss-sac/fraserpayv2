@@ -6,7 +6,7 @@ const OPERATOR_ROUTES = [
   "/wallet",
   "/leaderboard",
   "/booths/join",
-  "/booths/register",
+  "/request-booth",
   "/sell",
   `/sell/${APPROVED_BOOTH_ID}`,
   `/booth/${APPROVED_BOOTH_ID}`,

@@ -1,7 +1,7 @@
 import { type Page, expect, test } from "@playwright/test";
 import { APPROVED_BOOTH_ID, BUYER_UID, SAC_MEMBER_STATE } from "../fixtures";
 
-const OPERATOR_ROUTES = ["/wallet", "/leaderboard", "/booths/join", "/booths/register", "/sell"];
+const OPERATOR_ROUTES = ["/wallet", "/leaderboard", "/booths/join", "/request-booth", "/sell"];
 const BOOTH_ROUTES = [`/sell/${APPROVED_BOOTH_ID}`, `/booth/${APPROVED_BOOTH_ID}`];
 const SAC_ROUTES = [
   "/admin",
@@ -71,6 +71,12 @@ test.describe("Document head — SAC routes", () => {
 });
 
 test.describe("Document head — public and error surfaces", () => {
+  test("requesting a booth requires a session and lands on login", async ({ page }) => {
+    await page.context().clearCookies();
+    await page.goto("/request-booth");
+    await expect(page).toHaveURL(/\/login\?next=%2Frequest-booth/);
+  });
+
   test("the sign-in page is the only indexable route and carries a full share card", async ({
     page,
   }) => {
