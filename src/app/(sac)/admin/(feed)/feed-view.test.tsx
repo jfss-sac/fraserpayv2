@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, test, vi } from "vitest";
 import type { FeedAuditEntry, FeedDTO, FeedLedgerEntry } from "@/lib/shared/types";
@@ -117,6 +117,69 @@ test("selecting a type chip refetches with that filter", async () => {
   expect(await screen.findByText("Top-up · Cash")).toBeInTheDocument();
   const url = new URL(fetchMock.mock.calls[0]![0] as string, "http://test");
   expect(url.searchParams.get("type")).toBe("topup");
+});
+
+test("preset chips send the selected time range and can clear it", async () => {
+  vi.useFakeTimers();
+  try {
+    vi.setSystemTime(new Date("2026-08-16T12:00:00.000Z"));
+    const fetchMock = stubFetch(() => ({
+      entries: [ledger("filtered")],
+      nextCursor: null,
+      repeatBuyers: [],
+      repeatBuyersTruncated: false,
+    }));
+
+    render(<FeedView initialEntries={[ledger("p1")]} initialCursor={null} pollMs={60_000} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Last 15 min" }));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const presetUrl = new URL(fetchMock.mock.calls[0]![0] as string, "http://test");
+    expect(presetUrl.searchParams.get("from")).toBe("2026-08-16T11:45:00.000Z");
+    expect(presetUrl.searchParams.get("to")).toBe("2026-08-16T12:00:00.000Z");
+    expect(screen.getByRole("button", { name: /Clear time range Last 15 min/ })).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: /Clear time range Last 15 min/ }));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const clearedUrl = new URL(fetchMock.mock.calls[1]![0] as string, "http://test");
+    expect(clearedUrl.searchParams.has("from")).toBe(false);
+    expect(clearedUrl.searchParams.has("to")).toBe(false);
+    expect(screen.queryByRole("button", { name: /Clear time range/ })).not.toBeInTheDocument();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test("custom absolute range sends normalized instants", async () => {
+  const fetchMock = stubFetch(() => ({
+    entries: [ledger("filtered")],
+    nextCursor: null,
+    repeatBuyers: [],
+    repeatBuyersTruncated: false,
+  }));
+
+  render(<FeedView initialEntries={[ledger("p1")]} initialCursor={null} pollMs={60_000} />);
+
+  fireEvent.change(screen.getByLabelText("From"), {
+    target: { value: "2026-08-16T10:00" },
+  });
+  fireEvent.change(screen.getByLabelText("To"), {
+    target: { value: "2026-08-16T11:00" },
+  });
+  await userEvent.click(screen.getByRole("button", { name: "Apply custom range" }));
+
+  expect(await screen.findByRole("button", { name: /Clear time range Custom/ })).toBeVisible();
+  const url = new URL(fetchMock.mock.calls[0]![0] as string, "http://test");
+  expect(url.searchParams.get("from")).toBe("2026-08-16T10:00:00.000Z");
+  expect(url.searchParams.get("to")).toBe("2026-08-16T11:00:00.000Z");
 });
 
 test("clicking a SAC member filters the feed to that actor and shows a removable pill", async () => {

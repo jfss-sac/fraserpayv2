@@ -17,6 +17,8 @@ export interface FeedQueryParams {
   boothId?: string;
   actorUid?: string;
   tag?: string;
+  from?: string;
+  to?: string;
   cursor?: string;
 }
 

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { FeedDTO, FeedEntry, LedgerType, RepeatBuyerAlert } from "@/lib/shared/types";
 import { ApiError } from "@/lib/ui/api-client";
 import { type FeedQueryParams, feedErrorMessage, requestFeed } from "./api";
+import type { FeedTimeRange } from "./feed-time-range";
 
 export const FEED_POLL_MS = 5 * 60_000;
 
@@ -16,19 +17,29 @@ export type FeedFilter =
 
 export const ALL_FILTER: FeedFilter = { kind: "all" };
 
-export function filterToQuery(filter: FeedFilter): FeedQueryParams {
-  switch (filter.kind) {
-    case "all":
-      return {};
-    case "type":
-      return { type: filter.type };
-    case "tag":
-      return { tag: "high-amount" };
-    case "booth":
-      return { boothId: filter.boothId };
-    case "actor":
-      return { actorUid: filter.actorUid };
-  }
+export function filterToQuery(
+  filter: FeedFilter,
+  range: FeedTimeRange | null = null,
+): FeedQueryParams {
+  const filterQuery = (() => {
+    switch (filter.kind) {
+      case "all":
+        return {};
+      case "type":
+        return { type: filter.type };
+      case "tag":
+        return { tag: "high-amount" };
+      case "booth":
+        return { boothId: filter.boothId };
+      case "actor":
+        return { actorUid: filter.actorUid };
+    }
+  })();
+
+  return {
+    ...filterQuery,
+    ...(range ? { from: range.from, to: range.to } : {}),
+  };
 }
 
 export function filtersEqual(a: FeedFilter, b: FeedFilter): boolean {
@@ -37,6 +48,19 @@ export function filtersEqual(a: FeedFilter, b: FeedFilter): boolean {
   if (a.kind === "booth" && b.kind === "booth") return a.boothId === b.boothId;
   if (a.kind === "actor" && b.kind === "actor") return a.actorUid === b.actorUid;
   return true;
+}
+
+export function rangesEqual(a: FeedTimeRange | null, b: FeedTimeRange | null): boolean {
+  return a?.from === b?.from && a?.to === b?.to;
+}
+
+function scopeMatches(
+  filter: FeedFilter,
+  range: FeedTimeRange | null,
+  targetFilter: FeedFilter,
+  targetRange: FeedTimeRange | null,
+): boolean {
+  return filtersEqual(filter, targetFilter) && rangesEqual(range, targetRange);
 }
 
 const NO_ENTRIES: FeedEntry[] = [];
@@ -75,6 +99,7 @@ export interface UseFeed {
   repeatBuyers: RepeatBuyerAlert[];
   repeatBuyersTruncated: boolean;
   filter: FeedFilter;
+  range: FeedTimeRange | null;
   pending: FeedEntry[];
   pendingTruncated: boolean;
   cursor: string | null;
@@ -83,6 +108,7 @@ export interface UseFeed {
   refreshing: boolean;
   error: string | null;
   setFilter: (next: FeedFilter) => void;
+  setRange: (next: FeedTimeRange | null) => void;
   refresh: () => void;
   applyPending: () => void;
   loadOlder: () => void;
@@ -106,6 +132,7 @@ export function useFeed({
   const [repeatBuyersTruncated, setRepeatBuyersTruncated] = useState(initialRepeatBuyersTruncated);
   const [cursor, setCursor] = useState<string | null>(initialCursor);
   const [filter, setFilterState] = useState<FeedFilter>(ALL_FILTER);
+  const [range, setRangeState] = useState<FeedTimeRange | null>(null);
   const [pendingUpdate, setPendingUpdate] = useState<FeedUpdate | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
@@ -114,8 +141,9 @@ export function useFeed({
 
   const entriesRef = useRef(entries);
   const filterRef = useRef(filter);
+  const rangeRef = useRef(range);
   const pendingRef = useRef<FeedUpdate | null>(null);
-  const filterSeq = useRef(0);
+  const scopeSeq = useRef(0);
   const refreshSeq = useRef(0);
 
   useEffect(() => {
@@ -124,6 +152,9 @@ export function useFeed({
   useEffect(() => {
     filterRef.current = filter;
   }, [filter]);
+  useEffect(() => {
+    rangeRef.current = range;
+  }, [range]);
 
   const stashPending = useCallback((next: FeedUpdate | null) => {
     pendingRef.current = next;
@@ -142,16 +173,17 @@ export function useFeed({
   const setFilter = useCallback(
     (next: FeedFilter) => {
       if (filtersEqual(filterRef.current, next)) return;
-      const id = filterSeq.current + 1;
-      filterSeq.current = id;
+      const id = scopeSeq.current + 1;
+      scopeSeq.current = id;
       filterRef.current = next;
       setFilterState(next);
       stashPending(null);
       setError(null);
       setLoading(true);
-      requestFeed(filterToQuery(next))
+      const targetRange = rangeRef.current;
+      requestFeed(filterToQuery(next, targetRange))
         .then((dto) => {
-          if (filterSeq.current !== id) return;
+          if (scopeSeq.current !== id) return;
           setEntries(dto.entries);
           setCursor(dto.nextCursor);
           setRepeatBuyers(dto.repeatBuyers);
@@ -159,7 +191,36 @@ export function useFeed({
           setLoading(false);
         })
         .catch((err) => {
-          if (filterSeq.current !== id) return;
+          if (scopeSeq.current !== id) return;
+          setError(feedErrorMessage(codeOf(err)));
+          setLoading(false);
+        });
+    },
+    [stashPending],
+  );
+
+  const setRange = useCallback(
+    (next: FeedTimeRange | null) => {
+      if (rangesEqual(rangeRef.current, next)) return;
+      const id = scopeSeq.current + 1;
+      scopeSeq.current = id;
+      rangeRef.current = next;
+      setRangeState(next);
+      stashPending(null);
+      setError(null);
+      setLoading(true);
+      const targetFilter = filterRef.current;
+      requestFeed(filterToQuery(targetFilter, next))
+        .then((dto) => {
+          if (scopeSeq.current !== id) return;
+          setEntries(dto.entries);
+          setCursor(dto.nextCursor);
+          setRepeatBuyers(dto.repeatBuyers);
+          setRepeatBuyersTruncated(dto.repeatBuyersTruncated);
+          setLoading(false);
+        })
+        .catch((err) => {
+          if (scopeSeq.current !== id) return;
           setError(feedErrorMessage(codeOf(err)));
           setLoading(false);
         });
@@ -171,13 +232,14 @@ export function useFeed({
     const id = refreshSeq.current + 1;
     refreshSeq.current = id;
     const target = filterRef.current;
+    const targetRange = rangeRef.current;
     setError(null);
     setRefreshing(true);
-    requestFeed(filterToQuery(target))
+    requestFeed(filterToQuery(target, targetRange))
       .then((dto) => {
         if (refreshSeq.current !== id) return;
         setRefreshing(false);
-        if (!filtersEqual(filterRef.current, target)) return;
+        if (!scopeMatches(filterRef.current, rangeRef.current, target, targetRange)) return;
         const update = headUpdate(entriesRef.current, dto);
         if (update) applyUpdate(update);
         setRepeatBuyers(dto.repeatBuyers);
@@ -187,7 +249,7 @@ export function useFeed({
       .catch((err) => {
         if (refreshSeq.current !== id) return;
         setRefreshing(false);
-        if (!filtersEqual(filterRef.current, target)) return;
+        if (!scopeMatches(filterRef.current, rangeRef.current, target, targetRange)) return;
         setError(feedErrorMessage(codeOf(err)));
       });
   }, [applyUpdate, stashPending]);
@@ -204,16 +266,17 @@ export function useFeed({
     setLoadingOlder(true);
     setError(null);
     const target = filterRef.current;
-    requestFeed({ ...filterToQuery(target), cursor })
+    const targetRange = rangeRef.current;
+    requestFeed({ ...filterToQuery(target, targetRange), cursor })
       .then((dto) => {
         setLoadingOlder(false);
-        if (!filtersEqual(filterRef.current, target)) return;
+        if (!scopeMatches(filterRef.current, rangeRef.current, target, targetRange)) return;
         setEntries((prev) => [...prev, ...newSince(prev, dto.entries)]);
         setCursor(dto.nextCursor);
       })
       .catch((err) => {
         setLoadingOlder(false);
-        if (!filtersEqual(filterRef.current, target)) return;
+        if (!scopeMatches(filterRef.current, rangeRef.current, target, targetRange)) return;
         setError(feedErrorMessage(codeOf(err)));
       });
   }, [loadingOlder, cursor]);
@@ -221,9 +284,10 @@ export function useFeed({
   useEffect(() => {
     const timer = setInterval(() => {
       const target = filterRef.current;
-      requestFeed(filterToQuery(target))
+      const targetRange = rangeRef.current;
+      requestFeed(filterToQuery(target, targetRange))
         .then((dto) => {
-          if (!filtersEqual(filterRef.current, target)) return;
+          if (!scopeMatches(filterRef.current, rangeRef.current, target, targetRange)) return;
           const update = headUpdate(entriesRef.current, dto);
           setRepeatBuyers(dto.repeatBuyers);
           setRepeatBuyersTruncated(dto.repeatBuyersTruncated);
@@ -239,6 +303,7 @@ export function useFeed({
     repeatBuyers,
     repeatBuyersTruncated,
     filter,
+    range,
     pending: pendingUpdate?.entries ?? NO_ENTRIES,
     pendingTruncated: pendingUpdate?.kind === "reset" && pendingUpdate.cursor !== null,
     cursor,
@@ -247,6 +312,7 @@ export function useFeed({
     refreshing,
     error,
     setFilter,
+    setRange,
     refresh,
     applyPending,
     loadOlder,

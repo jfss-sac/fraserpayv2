@@ -1,11 +1,17 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { FeedEntry, RepeatBuyerAlert } from "@/lib/shared/types";
 import { Button } from "@/lib/ui/vendor/button";
 import { cn } from "@/lib/ui/vendor/utils";
 import { REPEAT_BUYER_WINDOW_MS } from "@/lib/shared/constants";
 import { FeedRow, type RowActions } from "./feed-row";
+import {
+  customFeedTimeRange,
+  feedTimeRangeForPreset,
+  type FeedTimePreset,
+  type FeedTimeRange,
+} from "./feed-time-range";
 import {
   ALL_FILTER,
   FEED_POLL_MS,
@@ -16,6 +22,13 @@ import {
 } from "./use-feed";
 
 const POLL_MINUTES = FEED_POLL_MS / 60_000;
+
+const TIME_PRESETS: { label: string; preset: FeedTimePreset }[] = [
+  { label: "Last 15 min", preset: "15m" },
+  { label: "Last 30 min", preset: "30m" },
+  { label: "Last 60 min", preset: "60m" },
+  { label: "Today", preset: "today" },
+];
 
 const CHIPS: { label: string; filter: FeedFilter }[] = [
   { label: "All", filter: { kind: "all" } },
@@ -38,6 +51,20 @@ function ActiveFilterPill({ filter, onClear }: { filter: FeedFilter; onClear: ()
       aria-label={`Clear filter ${label}`}
     >
       <span>{label}</span>
+      <span aria-hidden>✕</span>
+    </button>
+  );
+}
+
+function ActiveTimeRangePill({ range, onClear }: { range: FeedTimeRange; onClear: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClear}
+      className="inline-flex items-center gap-2 rounded-full bg-brand/10 px-3 py-1 text-sm font-medium text-brand"
+      aria-label={`Clear time range ${range.label}`}
+    >
+      <span>Time · {range.label}</span>
       <span aria-hidden>✕</span>
     </button>
   );
@@ -92,6 +119,9 @@ export function FeedView({
   initialRepeatBuyersTruncated?: boolean;
   pollMs?: number;
 }) {
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
+  const [customError, setCustomError] = useState<string | null>(null);
   const feed = useFeed({
     initialEntries,
     initialCursor,
@@ -122,6 +152,17 @@ export function FeedView({
   }, [feed.cursor]);
 
   const activeChip = CHIPS.find((c) => filtersEqual(feed.filter, c.filter));
+
+  function applyCustomRange(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const next = customFeedTimeRange(customFrom, customTo);
+    if (!next) {
+      setCustomError("Choose a start and end with the end after the start.");
+      return;
+    }
+    setCustomError(null);
+    feed.setRange(next);
+  }
 
   return (
     <div className="flex flex-col gap-4">
@@ -157,9 +198,79 @@ export function FeedView({
         })}
       </div>
 
+      <div className="flex flex-col gap-2">
+        <div role="group" aria-label="Feed time range" className="flex flex-wrap gap-1">
+          {TIME_PRESETS.map(({ label, preset }) => {
+            const active = feed.range?.label === label;
+            return (
+              <button
+                key={preset}
+                type="button"
+                aria-pressed={active}
+                onClick={() => {
+                  setCustomError(null);
+                  feed.setRange(feedTimeRangeForPreset(preset));
+                }}
+                className={cn(
+                  "rounded-full px-3 py-1 text-sm font-medium",
+                  active
+                    ? "bg-brand text-brand-foreground"
+                    : "bg-surface text-muted hover:text-foreground",
+                )}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+
+        <form onSubmit={applyCustomRange} className="flex flex-col gap-2 sm:flex-row sm:items-end">
+          <label className="flex flex-col gap-1 text-sm text-muted">
+            From
+            <input
+              aria-label="From"
+              type="datetime-local"
+              value={customFrom}
+              onChange={(event) => {
+                setCustomFrom(event.target.value);
+                setCustomError(null);
+              }}
+              className="h-10 rounded-md border border-border bg-background px-3 text-base text-foreground"
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-sm text-muted">
+            To
+            <input
+              aria-label="To"
+              type="datetime-local"
+              value={customTo}
+              min={customFrom || undefined}
+              onChange={(event) => {
+                setCustomTo(event.target.value);
+                setCustomError(null);
+              }}
+              className="h-10 rounded-md border border-border bg-background px-3 text-base text-foreground"
+            />
+          </label>
+          <Button type="submit" variant="outline" disabled={!customFrom || !customTo}>
+            Apply custom range
+          </Button>
+        </form>
+        {customError ? (
+          <p role="status" className="text-sm font-medium text-danger">
+            {customError}
+          </p>
+        ) : null}
+      </div>
+
       <RepeatBuyerBanner buyers={feed.repeatBuyers} truncated={feed.repeatBuyersTruncated} />
 
-      <ActiveFilterPill filter={feed.filter} onClear={() => feed.setFilter(ALL_FILTER)} />
+      <div className="flex flex-wrap gap-2">
+        <ActiveFilterPill filter={feed.filter} onClear={() => feed.setFilter(ALL_FILTER)} />
+        {feed.range ? (
+          <ActiveTimeRangePill range={feed.range} onClear={() => feed.setRange(null)} />
+        ) : null}
+      </div>
 
       {feed.error ? (
         <p role="status" className="text-sm font-medium text-danger">
