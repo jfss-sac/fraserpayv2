@@ -127,6 +127,16 @@ export interface BoothDetail {
   summary: BoothSummary | null;
 }
 
+export interface BoothSettingsDTO {
+  id: string;
+  name: string;
+  description: string;
+  status: BoothStatus;
+  items: BoothItem[];
+  archivedItems: BoothItem[];
+  memberNames: string[];
+}
+
 export interface BoothHistoryEntry {
   entryId: string;
   createdAt: string;

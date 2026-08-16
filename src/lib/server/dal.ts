@@ -12,7 +12,14 @@ import {
   UnauthorizedError,
   ValidationError,
 } from "./errors";
-import { type LedgerEntryDoc, type UserDoc, boothsCol, ledgerCol, usersCol } from "./db";
+import {
+  type LedgerEntryDoc,
+  type UserDoc,
+  boothsCol,
+  ledgerCol,
+  membersCol,
+  usersCol,
+} from "./db";
 import { getAdminAuth, getAdminFirestore } from "./firebase-admin";
 import { logger } from "./logger";
 import { SESSION_COOKIE_NAME } from "@/lib/shared/constants";
@@ -20,7 +27,9 @@ import type {
   BoothDTO,
   BoothHistoryDTO,
   BoothHistoryEntry,
+  BoothItem,
   BoothItemSummary,
+  BoothSettingsDTO,
   BoothStatus,
   BoothSummary,
   LedgerLineItem,
@@ -169,6 +178,10 @@ export const listMemberBooths = cache(async (uid: string): Promise<MemberBooth[]
     .sort((a, b) => a.name.localeCompare(b.name));
 });
 
+function withoutArchivedFlag({ id, name, priceCents, isCustom }: BoothItem): BoothItem {
+  return { id, name, priceCents, isCustom };
+}
+
 export const getBoothCatalog = cache(async (boothId: string): Promise<BoothDTO | null> => {
   const data = (await boothsCol().doc(boothId).get()).data();
   if (!data) return null;
@@ -177,11 +190,28 @@ export const getBoothCatalog = cache(async (boothId: string): Promise<BoothDTO |
     name: data.name,
     description: data.description,
     status: data.status,
-    items: data.items
-      .filter((item) => item.archived !== true)
-      .map(({ id, name, priceCents, isCustom }) => ({ id, name, priceCents, isCustom })),
+    items: data.items.filter((item) => item.archived !== true).map(withoutArchivedFlag),
   };
 });
+
+export async function getBoothSettings(boothId: string): Promise<BoothSettingsDTO | null> {
+  const booth = (await boothsCol().doc(boothId).get()).data();
+  if (!booth) return null;
+
+  const members = await membersCol(boothId).get();
+
+  return {
+    id: boothId,
+    name: booth.name,
+    description: booth.description,
+    status: booth.status,
+    items: booth.items.filter((item) => item.archived !== true).map(withoutArchivedFlag),
+    archivedItems: booth.items.filter((item) => item.archived === true).map(withoutArchivedFlag),
+    memberNames: members.docs
+      .map((doc) => doc.data().displayName)
+      .sort((a, b) => a.localeCompare(b)),
+  };
+}
 
 async function aggregateByType(
   type: LedgerEntryDoc["type"],
