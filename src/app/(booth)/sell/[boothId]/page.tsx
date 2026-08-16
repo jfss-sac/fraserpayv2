@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { getBoothCatalog, getSession, isBoothMember } from "@/lib/server/dal";
+import { getBoothCatalog, getSession, isBoothOperator } from "@/lib/server/dal";
 import { buttonVariants } from "@/lib/ui/vendor/button";
 import { PosTerminal } from "./pos-terminal";
 
@@ -13,7 +13,7 @@ export default async function PosPage({ params }: { params: Promise<{ boothId: s
   const { boothId } = await params;
   const session = await getSession();
   if (!session) redirect("/login");
-  if (!(await isBoothMember(boothId, session.uid))) notFound();
+  if (!(await isBoothOperator(boothId, session))) notFound();
 
   const booth = await getBoothCatalog(boothId);
   if (!booth) notFound();

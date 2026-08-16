@@ -1,9 +1,8 @@
 import "server-only";
 import { Timestamp } from "firebase-admin/firestore";
 import { z } from "zod";
-import { isBoothMember } from "./dal";
 import { ledgerCol } from "./db";
-import { ForbiddenError, SuspendedError } from "./errors";
+import { SuspendedError } from "./errors";
 import { logger } from "./logger";
 import { boothBuyerSchema, resolveBuyer } from "./money/shared";
 import type { LookupResult, RecentPurchase } from "@/lib/shared/types";
@@ -58,16 +57,7 @@ async function lastPurchaseAtBooth(
   return null;
 }
 
-export async function lookupBuyer(args: {
-  input: LookupInput;
-  actorUid: string;
-}): Promise<LookupResult> {
-  const { input, actorUid } = args;
-
-  if (!(await isBoothMember(input.boothId, actorUid))) {
-    throw new ForbiddenError("You are not a member of this booth.");
-  }
-
+export async function lookupBuyer(input: LookupInput): Promise<LookupResult> {
   const { uid: buyerUid, data: buyer } = await resolveBuyer(input.buyer);
   const lastPurchase = await lastPurchaseAtBooth(buyerUid, input.boothId);
   if (buyer.suspended) throw new SuspendedError();

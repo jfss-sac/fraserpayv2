@@ -5,6 +5,7 @@ import { AggregateField, type Transaction } from "firebase-admin/firestore";
 import type { DecodedIdToken } from "firebase-admin/auth";
 import { z } from "zod";
 import {
+  BoothNotSellableError,
   ForbiddenError,
   InternalError,
   SuspendedError,
@@ -20,12 +21,15 @@ import type {
   BoothHistoryDTO,
   BoothHistoryEntry,
   BoothItemSummary,
+  BoothStatus,
   BoothSummary,
   LedgerLineItem,
   MemberBooth,
 } from "@/lib/shared/types";
 
-export type Role = "public" | "session" | "active" | "sacMember" | "sacExec" | "boothMember";
+export type Role =
+  "public" | "session" | "active" | "sacMember" | "sacExec" | "boothMember" | "boothOperator";
+export type BoothScopedRole = Extract<Role, "boothMember" | "boothOperator">;
 export type TransactionRole = "active" | "sacMember" | "sacExec";
 
 export interface TransactionAuthorization {
@@ -38,7 +42,12 @@ export interface AuthorizedActor {
   displayName: string;
 }
 
+export function isBoothScopedRole(role: Role): role is BoothScopedRole {
+  return role === "boothMember" || role === "boothOperator";
+}
+
 export function transactionRoleFor(role: Role): TransactionRole | undefined {
+  if (role === "boothOperator") return "active";
   return role === "active" || role === "sacMember" || role === "sacExec" ? role : undefined;
 }
 
@@ -110,6 +119,21 @@ export const isBoothMember = cache(async (boothId: string, uid: string): Promise
     .get();
   return snap.exists;
 });
+
+const getBoothStatus = cache(async (boothId: string): Promise<BoothStatus | null> => {
+  const data = (await boothsCol().doc(boothId).get()).data();
+  return data ? data.status : null;
+});
+
+export function isBoothOperatorActor(isMember: boolean, roles: { sacExec: boolean }): boolean {
+  return isMember || roles.sacExec;
+}
+
+export async function isBoothOperator(boothId: string, session: Session): Promise<boolean> {
+  const isMember = await isBoothMember(boothId, session.uid);
+  if (!isBoothOperatorActor(isMember, session.roles)) return false;
+  return isMember || (await getBoothStatus(boothId)) === "approved";
+}
 
 export const hasAnyBoothMembership = cache(async (uid: string): Promise<boolean> => {
   try {
@@ -329,6 +353,21 @@ export function assertActorAuthorized(actor: UserDoc | undefined, role: Transact
   return actor;
 }
 
+export async function assertBoothScope(
+  role: BoothScopedRole,
+  session: Session,
+  boothId: string,
+): Promise<void> {
+  const notAMember = new ForbiddenError("You are not a member of this booth.");
+  if (role === "boothMember") {
+    if (!(await isBoothMember(boothId, session.uid))) throw notAMember;
+    return;
+  }
+  if (await isBoothOperator(boothId, session)) return;
+  if (!session.roles.sacExec) throw notAMember;
+  throw new BoothNotSellableError();
+}
+
 export async function runAuthorizedTransaction<T>(
   authorization: TransactionAuthorization | undefined,
   updateFunction: (transaction: Transaction, actor: AuthorizedActor) => Promise<T>,
@@ -380,11 +419,10 @@ export async function authorizeRequest(
       assertSacExec(session);
       return session;
     case "boothMember":
+    case "boothOperator":
       assertActive(session);
       if (!boothId) throw new InternalError();
-      if (!(await isBoothMember(boothId, session.uid))) {
-        throw new ForbiddenError("You are not a member of this booth.");
-      }
+      await assertBoothScope(role, session, boothId);
       return session;
   }
 }

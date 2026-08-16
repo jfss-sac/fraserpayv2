@@ -21,6 +21,7 @@ export type AuditAction =
   | "booth.memberRemove"
   | "booth.deactivate"
   | "booth.reactivate"
+  | "booth.execCharge"
   | "user.suspend"
   | "user.unsuspend"
   | "user.roleGrant"

@@ -4,7 +4,9 @@ import {
   type Role,
   type Session,
   type TransactionAuthorization,
+  assertBoothScope,
   authorizeRequest,
+  isBoothScopedRole,
   transactionRoleFor,
 } from "./dal";
 import { AppError, ForbiddenError, InternalError, toAppError, ValidationError } from "./errors";
@@ -116,6 +118,12 @@ async function enforceRateLimit(
   return await checkRateLimit(scope, key);
 }
 
+function inputBoothId(input: unknown): string {
+  const boothId = (input as { boothId?: unknown } | undefined)?.boothId;
+  if (typeof boothId !== "string") throw new InternalError();
+  return boothId;
+}
+
 function ledgerEntryId(result: HandlerResult): string | undefined {
   if (result === null || result === undefined || result instanceof Response) return undefined;
   const entryId = result.entryId;
@@ -152,20 +160,25 @@ export function defineHandler<
 
       const params = (routeContext ? await routeContext.params : ({} as TParams)) as TParams;
       const routeParams = params as Record<string, unknown> | undefined;
-      const boothId = routeParams?.boothId ?? routeParams?.id;
+      const routeBoothId = routeParams?.boothId ?? routeParams?.id;
+      const boothId = typeof routeBoothId === "string" ? routeBoothId : undefined;
 
-      const session = await authorizeRequest(
-        config.role ?? "public",
-        request,
-        typeof boothId === "string" ? boothId : undefined,
-      );
+      const role = config.role ?? "public";
+      const bodyScopedRole = isBoothScopedRole(role) && boothId === undefined ? role : undefined;
+
+      const session = await authorizeRequest(bodyScopedRole ? "active" : role, request, boothId);
       actorUid = session?.uid;
 
       const rateLimitTicket = await enforceRateLimit(config.rateLimit, session);
 
       const input = (await parseInput(request, config.schema)) as HandlerInput<S>;
 
-      const transactionRole = transactionRoleFor(config.role ?? "public");
+      if (bodyScopedRole) {
+        if (!session) throw new InternalError();
+        await assertBoothScope(bodyScopedRole, session, inputBoothId(input));
+      }
+
+      const transactionRole = transactionRoleFor(role);
       const authorization: TransactionAuthorization | undefined =
         session && transactionRole ? { actorUid: session.uid, role: transactionRole } : undefined;
 

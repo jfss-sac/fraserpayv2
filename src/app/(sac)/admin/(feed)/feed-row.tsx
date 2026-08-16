@@ -29,6 +29,7 @@ const AUDIT_LABEL: Record<AuditAction, string> = {
   "booth.memberRemove": "Removed booth member",
   "booth.deactivate": "Deactivated booth",
   "booth.reactivate": "Reactivated booth",
+  "booth.execCharge": "Sold for booth",
   "user.suspend": "Suspended account",
   "user.unsuspend": "Unsuspended account",
   "user.roleGrant": "Granted role",

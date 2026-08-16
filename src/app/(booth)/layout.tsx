@@ -9,7 +9,7 @@ export default async function BoothLayout({ children }: { children: React.ReactN
   if (!session) redirect("/login");
 
   const hasBooth = await hasAnyBoothMembership(session.uid);
-  if (session.suspended || !hasBooth) notFound();
+  if (session.suspended || !(hasBooth || session.roles.sacExec)) notFound();
 
   const modes = buildModes(session.roles, hasBooth);
 

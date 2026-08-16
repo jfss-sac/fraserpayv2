@@ -1,12 +1,13 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { formatCents } from "@/lib/shared/money";
 import type { BoothDetail, BoothItem, BoothStatus, BoothSummary } from "@/lib/shared/types";
 import { ConfirmDialog } from "@/lib/ui/confirm-dialog";
 import { useToast } from "@/lib/ui/toast";
-import { Button } from "@/lib/ui/vendor/button";
+import { Button, buttonVariants } from "@/lib/ui/vendor/button";
 import {
   approveBooth,
   boothActionErrorMessage,
@@ -207,6 +208,23 @@ export function BoothManage({ detail, isExec }: { detail: BoothDetail; isExec: b
               </div>
             ) : null}
           </Card>
+
+          {isExec && detail.status === "approved" ? (
+            <Card title="Point of sale">
+              <p className="text-sm text-muted">
+                Sell for this booth when nobody from it is at the counter. The sale is recorded
+                under your name and logged for review.
+              </p>
+              <div>
+                <Link
+                  href={`/sell/${detail.id}`}
+                  className={buttonVariants({ variant: "outline" })}
+                >
+                  Sell for this booth
+                </Link>
+              </div>
+            </Card>
+          ) : null}
 
           <Card title="Items & prices">
             {isExec ? (

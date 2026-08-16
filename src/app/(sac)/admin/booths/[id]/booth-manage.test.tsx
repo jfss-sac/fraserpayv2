@@ -91,6 +91,24 @@ describe("BoothManage — approved", () => {
     expect(screen.queryByLabelText("Slice price in dollars")).not.toBeInTheDocument();
   });
 
+  test("an exec can open the POS for a booth they never joined", () => {
+    render(<BoothManage detail={APPROVED} isExec={true} />);
+    expect(screen.getByRole("link", { name: "Sell for this booth" })).toHaveAttribute(
+      "href",
+      "/sell/booth-approved",
+    );
+  });
+
+  test("a non-exec member gets no way in — decision 2 is exec-only", () => {
+    render(<BoothManage detail={APPROVED} isExec={false} />);
+    expect(screen.queryByRole("link", { name: "Sell for this booth" })).not.toBeInTheDocument();
+  });
+
+  test("a deactivated booth offers no POS entry, even to an exec", () => {
+    render(<BoothManage detail={{ ...APPROVED, status: "deactivated" }} isExec={true} />);
+    expect(screen.queryByRole("link", { name: "Sell for this booth" })).not.toBeInTheDocument();
+  });
+
   test("an exec gets rotate, price edit, member removal, and deactivate", () => {
     render(<BoothManage detail={APPROVED} isExec={true} />);
     expect(screen.getByRole("button", { name: "Rotate code" })).toBeInTheDocument();

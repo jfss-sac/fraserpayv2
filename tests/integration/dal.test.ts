@@ -7,6 +7,7 @@ import { SESSION_COOKIE_NAME, SESSION_TTL_MS } from "../../src/lib/shared/consta
 
 const ORIGIN = "http://127.0.0.1";
 const BOOTH_ID = "dal-booth-1";
+const PENDING_BOOTH_ID = "dal-booth-pending";
 
 interface Fixture {
   uid: string;
@@ -74,9 +75,38 @@ const boothHandler = defineHandler<undefined, { boothId: string }>(
   { role: "boothMember" },
   async ({ session }) => ({ uid: session!.uid }),
 );
+const operatorHandler = defineHandler<undefined, { boothId: string }>(
+  { role: "boothOperator" },
+  async ({ session }) => ({ uid: session!.uid }),
+);
+const bodyScopedOperatorHandler = defineHandler(
+  { role: "boothOperator", schema: z.object({ boothId: z.string() }) },
+  async ({ session }) => ({ uid: session!.uid }),
+);
+const unscopedOperatorHandler = defineHandler(
+  { role: "boothOperator", schema: z.object({}) },
+  async ({ session }) => ({ uid: session!.uid }),
+);
 
 function boothReq(cookie: string, boothId: string): Promise<Response> {
   return boothHandler(req("GET", cookie), { params: Promise.resolve({ boothId }) });
+}
+
+function operatorReq(cookie: string, boothId: string): Promise<Response> {
+  return operatorHandler(req("GET", cookie), { params: Promise.resolve({ boothId }) });
+}
+
+function operatorBodyReq(cookie: string, body: unknown, unscoped = false): Promise<Response> {
+  const request = new Request(`${ORIGIN}/api/test`, {
+    method: "POST",
+    headers: {
+      origin: ORIGIN,
+      "content-type": "application/json",
+      cookie: `${SESSION_COOKIE_NAME}=${cookie}`,
+    },
+    body: JSON.stringify(body),
+  });
+  return unscoped ? unscopedOperatorHandler(request) : bodyScopedOperatorHandler(request);
 }
 
 beforeAll(async () => {
@@ -87,6 +117,12 @@ beforeAll(async () => {
   }
   vi.spyOn(console, "log").mockImplementation(() => {});
   const db = getAdminFirestore();
+  for (const [id, status] of [
+    [BOOTH_ID, "approved"],
+    [PENDING_BOOTH_ID, "pending"],
+  ] as const) {
+    await db.collection("booths").doc(id).set({ name: id, status, items: [] });
+  }
   for (const f of FIXTURES) {
     await getAdminAuth()
       .deleteUser(f.uid)
@@ -206,6 +242,68 @@ describe("DAL booth membership", () => {
   });
 });
 
+describe("DAL booth operator (P11 decision 2)", () => {
+  it("admits a member of the booth", async () => {
+    const res = await operatorReq(await mintSessionCookie("dal-boothseller"), BOOTH_ID);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ uid: "dal-boothseller" });
+  });
+
+  it("admits an exec who is not a member of the approved booth", async () => {
+    const res = await operatorReq(await mintSessionCookie("dal-exec"), BOOTH_ID);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ uid: "dal-exec" });
+  });
+
+  it("refuses an exec on a booth that is not approved", async () => {
+    const res = await operatorReq(await mintSessionCookie("dal-exec"), PENDING_BOOTH_ID);
+    expect(res.status).toBe(409);
+    expect(await code(res)).toBe("BOOTH_NOT_SELLABLE");
+  });
+
+  it("refuses an exec on a booth that does not exist", async () => {
+    const res = await operatorReq(await mintSessionCookie("dal-exec"), "dal-booth-missing");
+    expect(res.status).toBe(409);
+    expect(await code(res)).toBe("BOOTH_NOT_SELLABLE");
+  });
+
+  it("refuses a SAC member who is not an exec", async () => {
+    const res = await operatorReq(await mintSessionCookie("dal-member"), BOOTH_ID);
+    expect(res.status).toBe(403);
+    expect(await code(res)).toBe("FORBIDDEN");
+  });
+
+  it("refuses a plain student", async () => {
+    const res = await operatorReq(await mintSessionCookie("dal-student"), BOOTH_ID);
+    expect(res.status).toBe(403);
+    expect(await code(res)).toBe("FORBIDDEN");
+  });
+
+  it("refuses a suspended exec before it looks at the booth", async () => {
+    await getAdminFirestore().collection("users").doc("dal-exec").update({ suspended: true });
+    const res = await operatorReq(await mintSessionCookie("dal-exec"), BOOTH_ID);
+    expect(res.status).toBe(403);
+    expect(await code(res)).toBe("SUSPENDED");
+    await getAdminFirestore().collection("users").doc("dal-exec").update({ suspended: false });
+  });
+
+  it("scopes a body-carried boothId the same way, since charge and lookup have no route id", async () => {
+    const cookie = await mintSessionCookie("dal-boothseller");
+    expect((await operatorBodyReq(cookie, { boothId: BOOTH_ID })).status).toBe(200);
+
+    const other = await operatorBodyReq(cookie, { boothId: "some-other-booth" });
+    expect(other.status).toBe(403);
+    expect(await code(other)).toBe("FORBIDDEN");
+  });
+
+  it("refuses to run a booth-scoped handler that carries no boothId at all", async () => {
+    const cookie = await mintSessionCookie("dal-boothseller");
+    const res = await operatorBodyReq(cookie, {}, true);
+    expect(res.status).toBe(500);
+    expect(await code(res)).toBe("INTERNAL");
+  });
+});
+
 function mutate(cookie: string): Promise<Response> {
   return mutateSession(
     new Request(`${ORIGIN}/api/test`, {
@@ -234,11 +332,14 @@ describe("DAL revocation on mutations (checkRevoked)", () => {
   });
 });
 
-describe("authorizeRequest boothMember without a boothId", () => {
-  it("throws InternalError when the route provides no boothId", async () => {
-    const cookie = await mintSessionCookie("dal-boothseller");
-    await expect(authorizeRequest("boothMember", req("GET", cookie))).rejects.toMatchObject({
-      code: "INTERNAL",
-    });
-  });
+describe("authorizeRequest booth-scoped roles without a boothId", () => {
+  it.each(["boothMember", "boothOperator"] as const)(
+    "throws InternalError for %s when the route provides no boothId",
+    async (role) => {
+      const cookie = await mintSessionCookie("dal-boothseller");
+      await expect(authorizeRequest(role, req("GET", cookie))).rejects.toMatchObject({
+        code: "INTERNAL",
+      });
+    },
+  );
 });
