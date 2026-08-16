@@ -126,6 +126,23 @@ export interface BoothDetail {
   summary: BoothSummary | null;
 }
 
+export interface BoothHistoryEntry {
+  entryId: string;
+  createdAt: string;
+  type: LedgerType;
+  amountCents: number;
+  direction: LedgerDirection;
+  buyerName: string;
+  lineItems: LedgerLineItem[];
+  actorName: string;
+  originalEntryId?: string;
+}
+
+export interface BoothHistoryDTO {
+  entries: BoothHistoryEntry[];
+  nextCursor: string | null;
+}
+
 export interface ChargeResult {
   entryId: string;
   amountCents: number;

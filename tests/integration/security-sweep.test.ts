@@ -6,6 +6,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { POST as authSession } from "../../src/app/api/auth/session/route";
 import { POST as authSignout } from "../../src/app/api/auth/signout/route";
 import { GET as boothCatalog } from "../../src/app/api/booth/[id]/catalog/route";
+import { GET as boothHistory } from "../../src/app/api/booth/[id]/history/route";
 import { GET as boothSummary } from "../../src/app/api/booth/[id]/summary/route";
 import { POST as boothCharge } from "../../src/app/api/booth/charge/route";
 import { POST as boothLookup } from "../../src/app/api/booth/lookup/route";
@@ -133,6 +134,14 @@ const ENDPOINTS: Endpoint[] = [
     path: "/api/booth/[id]/catalog",
     method: "GET",
     handler: boothCatalog as AnyHandler,
+    role: "boothMember",
+    rateLimit: "reads",
+    params: { id: BOOTH_ID },
+  },
+  {
+    path: "/api/booth/[id]/history",
+    method: "GET",
+    handler: boothHistory as AnyHandler,
     role: "boothMember",
     rateLimit: "reads",
     params: { id: BOOTH_ID },
@@ -610,6 +619,7 @@ describe("IDOR sweep", () => {
       "/api/booth/charge",
       "/api/booth/[id]/summary",
       "/api/booth/[id]/catalog",
+      "/api/booth/[id]/history",
     ].includes(e.path),
   );
 
@@ -619,7 +629,7 @@ describe("IDOR sweep", () => {
     expect(await errorCode(res)).toBe("FORBIDDEN");
   });
 
-  it.each(["/api/booth/[id]/summary", "/api/booth/[id]/catalog"])(
+  it.each(["/api/booth/[id]/summary", "/api/booth/[id]/catalog", "/api/booth/[id]/history"])(
     "admits %s for an actual member of that booth",
     async (path) => {
       const res = await call(
@@ -630,7 +640,7 @@ describe("IDOR sweep", () => {
     },
   );
 
-  it.each(["/api/booth/[id]/summary", "/api/booth/[id]/catalog"])(
+  it.each(["/api/booth/[id]/summary", "/api/booth/[id]/catalog", "/api/booth/[id]/history"])(
     "does not let a booth member read %s of another booth",
     async (path) => {
       const endpoint = ENDPOINTS.find((e) => e.path === path)!;

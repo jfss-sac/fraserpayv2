@@ -3,13 +3,22 @@ import { cookies } from "next/headers";
 import { cache } from "react";
 import { AggregateField, type Transaction } from "firebase-admin/firestore";
 import type { DecodedIdToken } from "firebase-admin/auth";
-import { ForbiddenError, InternalError, SuspendedError, UnauthorizedError } from "./errors";
+import { z } from "zod";
+import {
+  ForbiddenError,
+  InternalError,
+  SuspendedError,
+  UnauthorizedError,
+  ValidationError,
+} from "./errors";
 import { type LedgerEntryDoc, type UserDoc, boothsCol, ledgerCol, usersCol } from "./db";
 import { getAdminAuth, getAdminFirestore } from "./firebase-admin";
 import { logger } from "./logger";
 import { SESSION_COOKIE_NAME } from "@/lib/shared/constants";
 import type {
   BoothDTO,
+  BoothHistoryDTO,
+  BoothHistoryEntry,
   BoothItemSummary,
   BoothSummary,
   LedgerLineItem,
@@ -227,6 +236,59 @@ export async function getBoothSummary(boothId: string): Promise<BoothSummary | n
     purchaseCount: purchases.size,
     refundCount: refunds.size,
     items,
+  };
+}
+
+export const BOOTH_HISTORY_PAGE_SIZE = 25;
+
+export const boothHistoryQuerySchema = z
+  .object({ cursor: z.string().trim().min(1).optional(), mine: z.literal("1").optional() })
+  .strict();
+
+export type BoothHistoryQuery = z.infer<typeof boothHistoryQuerySchema>;
+
+const LEDGER_ENTRY_ID = /^[A-Za-z0-9_-]{1,128}$/;
+
+function toBoothHistoryEntry(entryId: string, doc: LedgerEntryDoc): BoothHistoryEntry {
+  return {
+    entryId,
+    createdAt: doc.createdAt.toDate().toISOString(),
+    type: doc.type,
+    amountCents: doc.amountCents,
+    direction: doc.direction,
+    buyerName: doc.studentName,
+    lineItems: doc.lineItems ?? [],
+    actorName: doc.actorName,
+    ...(doc.originalEntryId !== undefined ? { originalEntryId: doc.originalEntryId } : {}),
+  };
+}
+
+export async function getBoothHistory(
+  boothId: string,
+  options: { cursor?: string; actorUid?: string } = {},
+): Promise<BoothHistoryDTO> {
+  const scoped = options.actorUid
+    ? ledgerCol().where("boothId", "==", boothId).where("actorUid", "==", options.actorUid)
+    : ledgerCol().where("boothId", "==", boothId);
+
+  let query = scoped.orderBy("createdAt", "desc").limit(BOOTH_HISTORY_PAGE_SIZE + 1);
+  if (options.cursor) {
+    const unknownCursor = new ValidationError("cursor: Unknown cursor.");
+    if (!LEDGER_ENTRY_ID.test(options.cursor)) throw unknownCursor;
+    const cursorSnap = await ledgerCol().doc(options.cursor).get();
+    const cursorDoc = cursorSnap.data();
+    if (!cursorDoc || cursorDoc.boothId !== boothId) throw unknownCursor;
+    if (options.actorUid && cursorDoc.actorUid !== options.actorUid) throw unknownCursor;
+    query = query.startAfter(cursorSnap);
+  }
+
+  const docs = (await query.get()).docs;
+  const hasMore = docs.length > BOOTH_HISTORY_PAGE_SIZE;
+  const page = hasMore ? docs.slice(0, BOOTH_HISTORY_PAGE_SIZE) : docs;
+
+  return {
+    entries: page.map((d) => toBoothHistoryEntry(d.id, d.data())),
+    nextCursor: hasMore ? page[page.length - 1]!.id : null,
   };
 }
 
