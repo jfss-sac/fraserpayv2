@@ -16,5 +16,5 @@ export default async function BoothsPage() {
 
   const booths = await listBooths();
 
-  return <BoothList booths={booths} />;
+  return <BoothList booths={booths} isExec={session.roles.sacExec} />;
 }

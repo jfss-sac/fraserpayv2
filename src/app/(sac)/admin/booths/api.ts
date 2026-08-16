@@ -1,5 +1,6 @@
 "use client";
 
+import type { BoothRegistrationInput } from "@/lib/shared/booth";
 import type { BoothItem } from "@/lib/shared/types";
 import { ApiError, NETWORK_ERROR_MESSAGE, postJson } from "@/lib/ui/api-client";
 
@@ -11,6 +12,12 @@ export interface PriceEdit {
 export interface NewItem {
   name: string;
   priceCents: number;
+}
+
+export interface CreatedBooth {
+  boothId: string;
+  status: "approved";
+  joinCode: string;
 }
 
 export function boothActionErrorMessage(err: unknown): string {
@@ -35,6 +42,10 @@ export function approveBooth(
 ): Promise<{ boothId: string; status: "approved"; joinCode: string }> {
   const body = priceEdits.length > 0 ? { priceEdits } : {};
   return postJson(`/api/exec/booths/${encodeURIComponent(boothId)}/approve`, body);
+}
+
+export function createBooth(input: BoothRegistrationInput): Promise<CreatedBooth> {
+  return postJson("/api/exec/booths", input);
 }
 
 export function editPrices(

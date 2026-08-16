@@ -20,6 +20,7 @@ function formatStamp(iso: string): string {
 }
 
 const AUDIT_LABEL: Record<AuditAction, string> = {
+  "booth.create": "Created booth",
   "booth.approve": "Approved booth",
   "booth.priceEdit": "Edited booth prices",
   "booth.itemAdd": "Added booth item",

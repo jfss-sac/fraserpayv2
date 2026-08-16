@@ -12,6 +12,7 @@ export interface SacRoles {
 }
 
 export type AuditAction =
+  | "booth.create"
   | "booth.approve"
   | "booth.priceEdit"
   | "booth.itemAdd"

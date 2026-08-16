@@ -13,6 +13,7 @@ import { POST as boothLookup } from "../../src/app/api/booth/lookup/route";
 import { POST as boothsJoin } from "../../src/app/api/booths/join/route";
 import { POST as boothsRegister } from "../../src/app/api/booths/register/route";
 import { POST as execAdjust } from "../../src/app/api/exec/adjust/route";
+import { POST as execBoothCreate } from "../../src/app/api/exec/booths/route";
 import { POST as execBoothApprove } from "../../src/app/api/exec/booths/[id]/approve/route";
 import { POST as execBoothItems } from "../../src/app/api/exec/booths/[id]/items/route";
 import { POST as execBoothItemAdd } from "../../src/app/api/exec/booths/[id]/items/add/route";
@@ -248,6 +249,18 @@ const ENDPOINTS: Endpoint[] = [
     role: "sacExec",
     rateLimit: "exec-mutations",
     body: { targetUid: "sweep-student", role: "sacMember", grant: true },
+  },
+  {
+    path: "/api/exec/booths",
+    method: "POST",
+    handler: execBoothCreate as AnyHandler,
+    role: "sacExec",
+    rateLimit: "exec-mutations",
+    body: {
+      name: "Sweep Created Booth",
+      description: "created by security sweep",
+      items: [{ name: "Sweep Item", priceCents: 100 }],
+    },
   },
   {
     path: "/api/exec/booths/[id]/approve",
