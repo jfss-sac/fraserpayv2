@@ -2,22 +2,42 @@ import { render, screen } from "@testing-library/react";
 import { beforeEach, expect, test, vi } from "vitest";
 import type { BoothDTO } from "@/lib/shared/types";
 
-const { getSession, isBoothOperator, getBoothCatalog, notFound, redirect, terminalProps } =
-  vi.hoisted(() => ({
-    getSession: vi.fn(),
-    isBoothOperator: vi.fn(),
-    getBoothCatalog: vi.fn(),
-    notFound: vi.fn(() => {
-      throw new Error("NOT_FOUND");
-    }),
-    redirect: vi.fn((url: string) => {
-      throw new Error(`REDIRECT:${url}`);
-    }),
-    terminalProps: { current: null as unknown },
-  }));
+const {
+  getSession,
+  isBoothOperator,
+  isBoothMember,
+  getBoothCatalog,
+  notFound,
+  redirect,
+  terminalProps,
+} = vi.hoisted(() => ({
+  getSession: vi.fn(),
+  isBoothOperator: vi.fn(),
+  isBoothMember: vi.fn(),
+  getBoothCatalog: vi.fn(),
+  notFound: vi.fn(() => {
+    throw new Error("NOT_FOUND");
+  }),
+  redirect: vi.fn((url: string) => {
+    throw new Error(`REDIRECT:${url}`);
+  }),
+  terminalProps: { current: null as unknown },
+}));
 
-vi.mock("@/lib/server/dal", () => ({ getSession, isBoothOperator, getBoothCatalog }));
+vi.mock("@/lib/server/dal", () => ({
+  getSession,
+  isBoothOperator,
+  isBoothMember,
+  getBoothCatalog,
+}));
 vi.mock("next/navigation", () => ({ notFound, redirect }));
+vi.mock("next/link", () => ({
+  default: ({ href, children, ...rest }: { href: string; children: React.ReactNode }) => (
+    <a href={href} {...rest}>
+      {children}
+    </a>
+  ),
+}));
 vi.mock("./pos-terminal", () => ({
   PosTerminal: (props: unknown) => {
     terminalProps.current = props;
@@ -45,6 +65,8 @@ beforeEach(() => {
   getSession.mockReset();
   getSession.mockResolvedValue(SESSION);
   isBoothOperator.mockReset();
+  isBoothMember.mockReset();
+  isBoothMember.mockResolvedValue(true);
   getBoothCatalog.mockReset();
   getBoothCatalog.mockResolvedValue(BOOTH);
   notFound.mockClear();
@@ -69,4 +91,33 @@ test("gates on the whole session, not just the uid", async () => {
   isBoothOperator.mockResolvedValue(true);
   await page();
   expect(isBoothOperator).toHaveBeenCalledWith("booth-1", SESSION);
+});
+
+test("a member gets the full booth tab bar with Sell current", async () => {
+  isBoothOperator.mockResolvedValue(true);
+  render(await page());
+  expect(screen.getByRole("link", { name: "Sell" })).toHaveAttribute("aria-current", "page");
+  expect(screen.getByRole("link", { name: "Dashboard" })).toHaveAttribute("href", "/booth/booth-1");
+  expect(screen.queryByRole("link", { name: "Booth admin" })).not.toBeInTheDocument();
+});
+
+test("a non-member exec sees the Sell tab alone and a way back to the admin booth page", async () => {
+  isBoothOperator.mockResolvedValue(true);
+  isBoothMember.mockResolvedValue(false);
+  render(await page());
+  expect(screen.getByRole("link", { name: "Sell" })).toBeInTheDocument();
+  for (const gone of ["Dashboard", "History", "Settings"]) {
+    expect(screen.queryByRole("link", { name: gone })).not.toBeInTheDocument();
+  }
+  expect(screen.getByRole("link", { name: "Booth admin" })).toHaveAttribute(
+    "href",
+    "/admin/booths/booth-1",
+  );
+});
+
+test("no longer offers the booth picker link that dead-ends a bootless exec", async () => {
+  isBoothOperator.mockResolvedValue(true);
+  isBoothMember.mockResolvedValue(false);
+  render(await page());
+  expect(screen.queryByRole("link", { name: "Booths" })).not.toBeInTheDocument();
 });

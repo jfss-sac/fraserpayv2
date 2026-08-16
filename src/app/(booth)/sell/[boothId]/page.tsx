@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { getBoothCatalog, getSession, isBoothOperator } from "@/lib/server/dal";
-import { buttonVariants } from "@/lib/ui/vendor/button";
+import { getBoothCatalog, getSession, isBoothMember, isBoothOperator } from "@/lib/server/dal";
+import { BoothTabs } from "@/lib/ui/booth-tabs";
 import { PosTerminal } from "./pos-terminal";
 
 export const metadata: Metadata = {
@@ -15,17 +14,17 @@ export default async function PosPage({ params }: { params: Promise<{ boothId: s
   if (!session) redirect("/login");
   if (!(await isBoothOperator(boothId, session))) notFound();
 
-  const booth = await getBoothCatalog(boothId);
+  const [booth, member] = await Promise.all([
+    getBoothCatalog(boothId),
+    isBoothMember(boothId, session.uid),
+  ]);
   if (!booth) notFound();
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between gap-4">
-        <h1 className="text-2xl font-bold text-foreground">{booth.name}</h1>
-        <Link href="/sell" className={buttonVariants({ variant: "ghost", size: "default" })}>
-          Booths
-        </Link>
-      </div>
+      <BoothTabs boothId={boothId} active="sell" isMember={member} />
+
+      <h1 className="text-2xl font-bold text-foreground">{booth.name}</h1>
 
       {booth.status === "approved" ? (
         <PosTerminal boothId={booth.id} actorUid={session.uid} items={booth.items} />
