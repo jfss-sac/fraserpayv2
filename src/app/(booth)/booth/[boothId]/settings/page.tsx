@@ -2,23 +2,12 @@ import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { getBoothSettings, getSession, isBoothMember } from "@/lib/server/dal";
 import { formatCents } from "@/lib/shared/money";
-import type { BoothItem, BoothStatus } from "@/lib/shared/types";
+import type { BoothItem } from "@/lib/shared/types";
 import { BoothTabs } from "@/lib/ui/booth-tabs";
+import { STATUS_BADGE, STATUS_LABEL } from "@/lib/ui/booth-status";
 
 export const metadata: Metadata = {
   title: "Booth settings",
-};
-
-const STATUS_LABEL: Record<BoothStatus, string> = {
-  pending: "Pending review",
-  approved: "Approved",
-  deactivated: "Deactivated",
-};
-
-const STATUS_BADGE: Record<BoothStatus, string> = {
-  pending: "bg-brand/10 text-brand",
-  approved: "bg-success/10 text-success",
-  deactivated: "bg-muted/10 text-muted",
 };
 
 function ItemPrices({ items }: { items: BoothItem[] }) {

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import type { AdminBoothListItem, BoothStatus } from "@/lib/shared/types";
+import { STATUS_BADGE, STATUS_LABEL } from "@/lib/ui/booth-status";
 
 type Filter = "all" | BoothStatus;
 
@@ -12,18 +13,6 @@ const FILTERS: { key: Filter; label: string }[] = [
   { key: "approved", label: "Approved" },
   { key: "deactivated", label: "Deactivated" },
 ];
-
-const STATUS_BADGE: Record<BoothStatus, string> = {
-  pending: "bg-brand/10 text-brand",
-  approved: "bg-success/10 text-success",
-  deactivated: "bg-muted/10 text-muted",
-};
-
-const STATUS_LABEL: Record<BoothStatus, string> = {
-  pending: "Pending review",
-  approved: "Approved",
-  deactivated: "Deactivated",
-};
 
 function BoothRow({ booth }: { booth: AdminBoothListItem }) {
   return (

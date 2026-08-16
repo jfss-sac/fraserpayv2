@@ -4,32 +4,24 @@ import { useCallback, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { formatCents } from "@/lib/shared/money";
-import type { BoothDetail, BoothItem, BoothStatus, BoothSummary } from "@/lib/shared/types";
+import type { BoothDetail, BoothItem, BoothSummary } from "@/lib/shared/types";
+import { STATUS_BADGE, STATUS_LABEL } from "@/lib/ui/booth-status";
 import { ConfirmDialog } from "@/lib/ui/confirm-dialog";
 import { useToast } from "@/lib/ui/toast";
 import { Button, buttonVariants } from "@/lib/ui/vendor/button";
 import {
+  addItem,
+  archiveItem,
   approveBooth,
   boothActionErrorMessage,
   editPrices,
   removeMember,
   rotateCode,
   setActive,
+  type NewItem,
   type PriceEdit,
 } from "../api";
-import { PriceEditor } from "./price-editor";
-
-const STATUS_BADGE: Record<BoothStatus, string> = {
-  pending: "bg-brand/10 text-brand",
-  approved: "bg-success/10 text-success",
-  deactivated: "bg-muted/10 text-muted",
-};
-
-const STATUS_LABEL: Record<BoothStatus, string> = {
-  pending: "Pending review",
-  approved: "Approved",
-  deactivated: "Deactivated",
-};
+import { parseDollars, PriceEditor } from "./price-editor";
 
 type Dialog =
   | { kind: "rotate" }
@@ -38,7 +30,11 @@ type Dialog =
   | { kind: "reactivate" };
 
 function priceSignature(items: BoothItem[]): string {
-  return items.map((item) => `${item.id}:${item.priceCents}`).join("|");
+  return items
+    .map(
+      (item) => `${item.id}:${item.priceCents}:${item.archived === true ? "archived" : "active"}`,
+    )
+    .join("|");
 }
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
@@ -63,6 +59,109 @@ function ReadOnlyItems({ items }: { items: BoothItem[] }) {
         </li>
       ))}
     </ul>
+  );
+}
+
+function ArchivedItems({
+  items,
+  busy,
+  onRestore,
+}: {
+  items: BoothItem[];
+  busy: boolean;
+  onRestore?: (item: BoothItem) => void;
+}) {
+  return (
+    <ul className="flex flex-col divide-y divide-border">
+      {items.map((item) => (
+        <li key={item.id} className="flex items-center justify-between gap-4 py-3">
+          <span className="font-medium text-foreground">{item.name}</span>
+          <span className="flex items-center gap-3">
+            <span className="text-base text-muted">{formatCents(item.priceCents)}</span>
+            {onRestore ? (
+              <Button
+                type="button"
+                variant="outline"
+                disabled={busy}
+                aria-label={`Restore ${item.name}`}
+                onClick={() => onRestore(item)}
+              >
+                Restore
+              </Button>
+            ) : null}
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function AddItemForm({
+  busy,
+  onSubmit,
+}: {
+  busy: boolean;
+  onSubmit: (item: NewItem) => Promise<boolean>;
+}) {
+  const [name, setName] = useState("");
+  const [price, setPrice] = useState("");
+  const submitting = useRef(false);
+  const priceCents = parseDollars(price);
+  const canSubmit = !busy && name.trim().length > 0 && priceCents !== null;
+
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+    if (!canSubmit || submitting.current) return;
+    submitting.current = true;
+    try {
+      if (await onSubmit({ name: name.trim(), priceCents })) {
+        setName("");
+        setPrice("");
+      }
+    } finally {
+      submitting.current = false;
+    }
+  }
+
+  return (
+    <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
+      <div className="flex flex-col gap-1">
+        <label htmlFor="new-item-name" className="text-sm font-medium text-foreground">
+          Item name
+        </label>
+        <input
+          id="new-item-name"
+          type="text"
+          value={name}
+          maxLength={60}
+          onChange={(event) => setName(event.target.value)}
+          className="h-11 rounded-md border border-border bg-background px-3 text-base text-foreground"
+        />
+      </div>
+      <div className="flex flex-col gap-1">
+        <label htmlFor="new-item-price" className="text-sm font-medium text-foreground">
+          Price ($)
+        </label>
+        <input
+          id="new-item-price"
+          type="text"
+          inputMode="decimal"
+          value={price}
+          onChange={(event) => setPrice(event.target.value)}
+          className={`h-11 rounded-md border bg-background px-3 text-base text-foreground ${
+            price.trim().length > 0 && priceCents === null ? "border-danger" : "border-border"
+          }`}
+        />
+      </div>
+      {price.trim().length > 0 && priceCents === null ? (
+        <p role="status" className="text-sm font-medium text-danger">
+          Prices must be a positive multiple of $0.50.
+        </p>
+      ) : null}
+      <Button type="submit" size="lg" disabled={!canSubmit}>
+        {busy ? "Working…" : "Add item"}
+      </Button>
+    </form>
   );
 }
 
@@ -111,8 +210,8 @@ export function BoothManage({ detail, isExec }: { detail: BoothDetail; isExec: b
   const inFlight = useRef(false);
 
   const perform = useCallback(
-    async (action: () => Promise<unknown>, success: string) => {
-      if (inFlight.current) return;
+    async (action: () => Promise<unknown>, success: string): Promise<boolean> => {
+      if (inFlight.current) return false;
       inFlight.current = true;
       setBusy(true);
       try {
@@ -120,9 +219,11 @@ export function BoothManage({ detail, isExec }: { detail: BoothDetail; isExec: b
         setDialog(null);
         push(success, "success");
         router.refresh();
+        return true;
       } catch (err) {
         setDialog(null);
         push(boothActionErrorMessage(err), "error");
+        return false;
       } finally {
         inFlight.current = false;
         setBusy(false);
@@ -140,6 +241,22 @@ export function BoothManage({ detail, isExec }: { detail: BoothDetail; isExec: b
     (edits: PriceEdit[]) => perform(() => editPrices(detail.id, edits), "Prices updated."),
     [detail.id, perform],
   );
+  const onAddItem = useCallback(
+    (item: NewItem) => perform(() => addItem(detail.id, item), "Item added."),
+    [detail.id, perform],
+  );
+  const onArchive = useCallback(
+    (item: BoothItem) => perform(() => archiveItem(detail.id, item.id, true), "Item archived."),
+    [detail.id, perform],
+  );
+  const onRestore = useCallback(
+    (item: BoothItem) => perform(() => archiveItem(detail.id, item.id, false), "Item restored."),
+    [detail.id, perform],
+  );
+
+  const activeItems = detail.items.filter((item) => item.archived !== true);
+  const archivedItems = detail.items.filter((item) => item.archived === true);
+  const isPending = detail.status === "pending";
 
   return (
     <div className="flex flex-col gap-6">
@@ -155,7 +272,7 @@ export function BoothManage({ detail, isExec }: { detail: BoothDetail; isExec: b
         <p className="text-sm text-muted">{detail.description}</p>
       </div>
 
-      {detail.status === "pending" ? (
+      {isPending ? (
         <>
           <Card title="Teacher check">
             <p className="text-sm text-muted">
@@ -167,24 +284,6 @@ export function BoothManage({ detail, isExec }: { detail: BoothDetail; isExec: b
                 {detail.submitterEmail}
               </span>
             </div>
-          </Card>
-
-          <Card title="Items & prices">
-            {isExec ? (
-              <PriceEditor
-                key={priceSignature(detail.items)}
-                items={detail.items}
-                submitLabel="Approve booth"
-                busy={busy}
-                allowNoChange
-                onSubmit={onApprove}
-              />
-            ) : (
-              <>
-                <ReadOnlyItems items={detail.items} />
-                <p className="text-sm text-muted">Only execs can approve booths.</p>
-              </>
-            )}
           </Card>
         </>
       ) : (
@@ -225,21 +324,6 @@ export function BoothManage({ detail, isExec }: { detail: BoothDetail; isExec: b
               </div>
             </Card>
           ) : null}
-
-          <Card title="Items & prices">
-            {isExec ? (
-              <PriceEditor
-                key={priceSignature(detail.items)}
-                items={detail.items}
-                submitLabel="Save prices"
-                busy={busy}
-                allowNoChange={false}
-                onSubmit={onSavePrices}
-              />
-            ) : (
-              <ReadOnlyItems items={detail.items} />
-            )}
-          </Card>
 
           <Card title="Members">
             {detail.members.length === 0 ? (
@@ -309,6 +393,45 @@ export function BoothManage({ detail, isExec }: { detail: BoothDetail; isExec: b
           ) : null}
         </>
       )}
+
+      <Card title="Items & prices">
+        {isExec ? (
+          <PriceEditor
+            key={priceSignature(detail.items)}
+            items={detail.items}
+            submitLabel={isPending ? "Approve booth" : "Save prices"}
+            busy={busy}
+            allowNoChange={isPending}
+            onSubmit={isPending ? onApprove : onSavePrices}
+            onArchive={onArchive}
+          />
+        ) : (
+          <>
+            <ReadOnlyItems items={activeItems} />
+            {isPending ? (
+              <p className="text-sm text-muted">Only execs can approve booths.</p>
+            ) : null}
+          </>
+        )}
+      </Card>
+
+      {archivedItems.length > 0 ? (
+        <Card title="No longer sold">
+          <ArchivedItems
+            items={archivedItems}
+            busy={busy}
+            onRestore={isExec ? onRestore : undefined}
+          />
+          <p className="text-sm text-muted">The price each one last sold for.</p>
+        </Card>
+      ) : null}
+
+      {isExec ? (
+        <Card title="Add item">
+          <p className="text-sm text-muted">New items must use a positive $0.50 price step.</p>
+          <AddItemForm busy={busy} onSubmit={onAddItem} />
+        </Card>
+      ) : null}
 
       {dialog?.kind === "rotate" ? (
         <ConfirmDialog

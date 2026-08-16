@@ -1,10 +1,23 @@
-import { render as testingRender, screen } from "@testing-library/react";
-import { describe, expect, test, vi } from "vitest";
+import { render as testingRender, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import type { BoothDetail } from "@/lib/shared/types";
+import { ApiError } from "@/lib/ui/api-client";
 import { ToastProvider } from "@/lib/ui/toast";
 import { BoothManage } from "./booth-manage";
 
-vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
+const mocks = vi.hoisted(() => ({
+  addItem: vi.fn(),
+  archiveItem: vi.fn(),
+  refresh: vi.fn(),
+}));
+
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: mocks.refresh }) }));
+vi.mock("../api", async () => ({
+  ...(await vi.importActual<typeof import("../api")>("../api")),
+  addItem: mocks.addItem,
+  archiveItem: mocks.archiveItem,
+}));
 
 function render(ui: React.ReactNode) {
   return testingRender(ui, { wrapper: ToastProvider });
@@ -36,6 +49,7 @@ const APPROVED: BoothDetail = {
   items: [
     { id: "custom", name: "Custom", priceCents: 50, isCustom: true },
     { id: "slice", name: "Slice", priceCents: 300, isCustom: false },
+    { id: "calzone", name: "Calzone", priceCents: 550, isCustom: false, archived: true },
   ],
   joinCode: "PIZZ-9K4M7",
   submitterUid: "teacher-uid",
@@ -53,6 +67,19 @@ const APPROVED: BoothDetail = {
     items: [{ itemId: "slice", name: "Slice", qty: 4, revenueCents: 1200 }],
   },
 };
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  mocks.addItem.mockResolvedValue({
+    boothId: APPROVED.id,
+    item: { id: "poutine", name: "Poutine", priceCents: 450, isCustom: false },
+  });
+  mocks.archiveItem.mockResolvedValue({
+    boothId: APPROVED.id,
+    itemId: "slice",
+    archived: true,
+  });
+});
 
 describe("BoothManage — pending", () => {
   test("surfaces the submitter email for the teacher check", () => {
@@ -88,7 +115,18 @@ describe("BoothManage — approved", () => {
     for (const name of ["Rotate code", "Save prices", "Remove", "Deactivate"]) {
       expect(screen.queryByRole("button", { name })).not.toBeInTheDocument();
     }
+    expect(
+      screen.queryByRole("button", { name: /^(Add item|Archive|Restore)/ }),
+    ).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Slice price in dollars")).not.toBeInTheDocument();
+  });
+
+  test("shows archived items under No longer sold at their last price", () => {
+    render(<BoothManage detail={APPROVED} isExec={false} />);
+    expect(screen.getByRole("heading", { name: "No longer sold" })).toBeInTheDocument();
+    expect(screen.getByText("Calzone")).toBeInTheDocument();
+    expect(screen.getByText("$5.50")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Calzone price in dollars")).not.toBeInTheDocument();
   });
 
   test("an exec can open the POS for a booth they never joined", () => {
@@ -116,5 +154,58 @@ describe("BoothManage — approved", () => {
     expect(screen.getByRole("button", { name: "Remove" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Deactivate" })).toBeInTheDocument();
     expect(screen.getByLabelText("Slice price in dollars")).toBeInTheDocument();
+  });
+
+  test("an exec can add an item and refresh the page", async () => {
+    const user = userEvent.setup();
+    render(<BoothManage detail={APPROVED} isExec={true} />);
+
+    await user.type(screen.getByLabelText("Item name"), "Poutine");
+    await user.type(screen.getByLabelText("Price ($)"), "4.50");
+    await user.click(screen.getByRole("button", { name: "Add item" }));
+
+    await waitFor(() =>
+      expect(mocks.addItem).toHaveBeenCalledWith("booth-approved", {
+        name: "Poutine",
+        priceCents: 450,
+      }),
+    );
+    expect(mocks.refresh).toHaveBeenCalledTimes(1);
+    expect(screen.getByLabelText("Item name")).toHaveValue("");
+    expect(screen.getByLabelText("Price ($)")).toHaveValue("");
+  });
+
+  test("an exec can archive and restore an item", async () => {
+    const user = userEvent.setup();
+    render(<BoothManage detail={APPROVED} isExec={true} />);
+
+    await user.click(screen.getByRole("button", { name: "Archive Slice" }));
+    await waitFor(() =>
+      expect(mocks.archiveItem).toHaveBeenCalledWith("booth-approved", "slice", true),
+    );
+    expect(mocks.refresh).toHaveBeenCalledTimes(1);
+
+    await user.click(screen.getByRole("button", { name: "Restore Calzone" }));
+    await waitFor(() =>
+      expect(mocks.archiveItem).toHaveBeenCalledWith("booth-approved", "calzone", false),
+    );
+    expect(mocks.refresh).toHaveBeenCalledTimes(2);
+  });
+
+  test("surfaces the item ceiling conflict as a toast", async () => {
+    const user = userEvent.setup();
+    mocks.addItem.mockRejectedValueOnce(
+      new ApiError("CONFLICT", "Archive one before adding another."),
+    );
+    render(<BoothManage detail={APPROVED} isExec={true} />);
+
+    await user.type(screen.getByLabelText("Item name"), "Poutine");
+    await user.type(screen.getByLabelText("Price ($)"), "4.50");
+    await user.click(screen.getByRole("button", { name: "Add item" }));
+
+    await waitFor(() =>
+      expect(screen.getByRole("alert")).toHaveTextContent("Archive one before adding another."),
+    );
+    expect(mocks.refresh).not.toHaveBeenCalled();
   });
 });

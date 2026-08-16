@@ -8,6 +8,7 @@ const ITEMS: BoothItem[] = [
   { id: "custom", name: "Custom", priceCents: 50, isCustom: true },
   { id: "taco", name: "Taco", priceCents: 300, isCustom: false },
   { id: "burrito", name: "Burrito", priceCents: 500, isCustom: false },
+  { id: "old", name: "Old item", priceCents: 250, isCustom: false, archived: true },
 ];
 
 function renderEditor(props?: Partial<React.ComponentProps<typeof PriceEditor>>) {
@@ -31,6 +32,12 @@ describe("PriceEditor", () => {
     expect(screen.getByText("Custom")).toBeInTheDocument();
     expect(screen.queryByLabelText("Custom price in dollars")).not.toBeInTheDocument();
     expect(screen.getByLabelText("Taco price in dollars")).toHaveValue("3.00");
+  });
+
+  test("archived items are not listed in the price editor", () => {
+    renderEditor();
+    expect(screen.queryByLabelText("Old item price in dollars")).not.toBeInTheDocument();
+    expect(screen.queryByText("Old item")).not.toBeInTheDocument();
   });
 
   test("submits only the changed items as price edits", async () => {

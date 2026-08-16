@@ -6,7 +6,7 @@ import type { BoothItem } from "@/lib/shared/types";
 import { Button } from "@/lib/ui/vendor/button";
 import type { PriceEdit } from "../api";
 
-function parseDollars(text: string): number | null {
+export function parseDollars(text: string): number | null {
   const trimmed = text.trim();
   if (!/^\d+(\.\d{1,2})?$/.test(trimmed)) return null;
   const cents = Math.round(Number.parseFloat(trimmed) * 100);
@@ -23,15 +23,20 @@ export function PriceEditor({
   busy,
   allowNoChange,
   onSubmit,
+  onArchive,
 }: {
   items: BoothItem[];
   submitLabel: string;
   busy: boolean;
   allowNoChange: boolean;
   onSubmit: (edits: PriceEdit[]) => void;
+  onArchive?: (item: BoothItem) => void;
 }) {
-  const editable = useMemo(() => items.filter((item) => !item.isCustom), [items]);
-  const custom = items.find((item) => item.isCustom);
+  const editable = useMemo(
+    () => items.filter((item) => !item.isCustom && item.archived !== true),
+    [items],
+  );
+  const custom = items.find((item) => item.isCustom && item.archived !== true);
 
   const [draft, setDraft] = useState<Record<string, string>>(() =>
     Object.fromEntries(editable.map((item) => [item.id, toDollars(item.priceCents)])),
@@ -62,24 +67,38 @@ export function PriceEditor({
               <label htmlFor={`price-${item.id}`} className="font-medium text-foreground">
                 {item.name}
               </label>
-              <span className="flex items-center gap-1">
-                <span aria-hidden className="text-muted">
-                  $
+              <span className="flex items-center gap-3">
+                <span className="flex items-center gap-1">
+                  <span aria-hidden className="text-muted">
+                    $
+                  </span>
+                  <input
+                    id={`price-${item.id}`}
+                    type="text"
+                    inputMode="decimal"
+                    value={value}
+                    aria-label={`${item.name} price in dollars`}
+                    aria-invalid={bad}
+                    disabled={busy}
+                    onChange={(event) =>
+                      setDraft((current) => ({ ...current, [item.id]: event.target.value }))
+                    }
+                    className={`h-11 w-24 rounded-md border bg-background px-3 text-right text-base text-foreground ${
+                      bad ? "border-danger" : "border-border"
+                    }`}
+                  />
                 </span>
-                <input
-                  id={`price-${item.id}`}
-                  type="text"
-                  inputMode="decimal"
-                  value={value}
-                  aria-label={`${item.name} price in dollars`}
-                  aria-invalid={bad}
-                  onChange={(event) =>
-                    setDraft((current) => ({ ...current, [item.id]: event.target.value }))
-                  }
-                  className={`h-11 w-24 rounded-md border bg-background px-3 text-right text-base text-foreground ${
-                    bad ? "border-danger" : "border-border"
-                  }`}
-                />
+                {onArchive ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={busy}
+                    aria-label={`Archive ${item.name}`}
+                    onClick={() => onArchive(item)}
+                  >
+                    Archive
+                  </Button>
+                ) : null}
               </span>
             </li>
           );
