@@ -192,13 +192,15 @@ describe("POST /api/exec/booths/[id]/items", () => {
 
     const audits = await itemsAudits(id);
     expect(audits).toHaveLength(1);
-    expect(audits[0]!.action).toBe("booth.priceEdit");
-    expect(audits[0]!.actorUid).toBe(EXEC.uid);
-    expect(audits[0]!.targetType).toBe("booth");
-    expect(audits[0]!.targetLabel).toBe("Taco Stand");
-    expect(audits[0]!.details.diff).toEqual([
-      { id: "coffee", name: "Coffee", before: 250, after: 300 },
-    ]);
+    const audit = audits[0]!;
+    expect(audit.action).toBe("booth.priceEdit");
+    expect(audit.actorUid).toBe(EXEC.uid);
+    expect(audit.targetType).toBe("booth");
+    expect(audit.targetLabel).toBe("Taco Stand");
+    expect(audit.details.diff).toBe("Coffee (coffee): $2.50 → $3.00");
+    for (const value of Object.values(audit.details)) {
+      expect(typeof value).not.toBe("object");
+    }
   });
 
   it("prices the next charge from the edited booth doc (I11)", async () => {

@@ -131,7 +131,7 @@ const ENDPOINTS: Endpoint[] = [
     path: "/api/booth/[id]/summary",
     method: "GET",
     handler: boothSummary as AnyHandler,
-    role: "active",
+    role: "boothMember",
     rateLimit: "reads",
     params: { id: BOOTH_ID },
   },

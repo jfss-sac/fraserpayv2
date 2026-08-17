@@ -7,7 +7,7 @@ import { runAuthorizedTransaction } from "@/lib/server/dal";
 import { boothsCol } from "@/lib/server/db";
 import { ConflictError, InternalError, NotFoundError, ValidationError } from "@/lib/server/errors";
 import { defineHandler } from "@/lib/server/http";
-import { isValidAmount } from "@/lib/shared/money";
+import { formatCents, isValidAmount } from "@/lib/shared/money";
 import type { BoothItem } from "@/lib/shared/types";
 
 const MAX_CODE_ATTEMPTS = 10;
@@ -31,10 +31,10 @@ const approveSchema = z
   })
   .strict();
 
-type PriceEdit = z.infer<typeof approveSchema>["priceEdits"];
+type PriceEdits = NonNullable<z.infer<typeof approveSchema>["priceEdits"]>;
 
-function applyPriceEdits(items: BoothItem[], edits: PriceEdit): BoothItem[] {
-  if (!edits || edits.length === 0) return items;
+function applyPriceEdits(items: BoothItem[], edits: PriceEdits): BoothItem[] {
+  if (edits.length === 0) return items;
   const next = items.map((item) => ({ ...item }));
   const byId = new Map(next.map((item) => [item.id, item]));
   for (const edit of edits) {
@@ -45,6 +45,11 @@ function applyPriceEdits(items: BoothItem[], edits: PriceEdit): BoothItem[] {
     item.priceCents = edit.priceCents;
   }
   return next;
+}
+
+function formatPriceEdits(edits: PriceEdits): string {
+  if (edits.length === 0) return "No price edits";
+  return edits.map(({ id, priceCents }) => `${id}: ${formatCents(priceCents)}`).join("; ");
 }
 
 export const POST = defineHandler<typeof approveSchema, { id: string }>(
@@ -70,7 +75,8 @@ export const POST = defineHandler<typeof approveSchema, { id: string }>(
       }
       if (!joinCode) throw new InternalError();
 
-      const items = applyPriceEdits(booth.items, input.priceEdits);
+      const priceEdits = input.priceEdits ?? [];
+      const items = applyPriceEdits(booth.items, priceEdits);
 
       t.update(boothRef, {
         status: "approved",
@@ -85,7 +91,7 @@ export const POST = defineHandler<typeof approveSchema, { id: string }>(
         "booth.approve",
         actor,
         { type: "booth", id: params.id, label: booth.name },
-        { joinCode, priceEdits: input.priceEdits ?? [] },
+        { joinCode, priceEdits: formatPriceEdits(priceEdits) },
       );
 
       return { boothId: params.id, status: "approved" as const, joinCode };

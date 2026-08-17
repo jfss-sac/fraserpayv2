@@ -97,6 +97,26 @@ test("expands a row to reveal its line items", async () => {
   expect(screen.getByText(/Slice × 2/)).toBeInTheDocument();
 });
 
+test("renders legacy nested audit details without object coercion", async () => {
+  const legacyDiff = [{ id: "coffee", name: "Coffee", before: 250, after: 300 }];
+  render(
+    <FeedView
+      initialEntries={[
+        audit("a1", {
+          action: "booth.priceEdit",
+          details: { diff: legacyDiff },
+        }),
+      ]}
+      initialCursor={null}
+    />,
+  );
+
+  await userEvent.click(screen.getByRole("button", { name: "Show details" }));
+
+  expect(screen.getByText(JSON.stringify(legacyDiff))).toBeInTheDocument();
+  expect(screen.queryByText("[object Object]")).not.toBeInTheDocument();
+});
+
 test("selecting a type chip refetches with that filter", async () => {
   const fetchMock = stubFetch(() => ({
     entries: [ledger("t1", { type: "topup", method: "cash", direction: "credit" })],

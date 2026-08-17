@@ -168,11 +168,16 @@ describe("POST /api/exec/booths/[id]/approve", () => {
 
     const audits = await approveAudits(id);
     expect(audits).toHaveLength(1);
-    expect(audits[0]!.action).toBe("booth.approve");
-    expect(audits[0]!.actorUid).toBe(EXEC.uid);
-    expect(audits[0]!.targetType).toBe("booth");
-    expect(audits[0]!.targetLabel).toBe("Taco Stand");
-    expect(audits[0]!.details.joinCode).toBe(body.joinCode);
+    const audit = audits[0]!;
+    expect(audit.action).toBe("booth.approve");
+    expect(audit.actorUid).toBe(EXEC.uid);
+    expect(audit.targetType).toBe("booth");
+    expect(audit.targetLabel).toBe("Taco Stand");
+    expect(audit.details.joinCode).toBe(body.joinCode);
+    expect(audit.details.priceEdits).toBe("No price edits");
+    for (const value of Object.values(audit.details)) {
+      expect(typeof value).not.toBe("object");
+    }
   });
 
   it("makes the booth immediately chargeable (FR-15b)", async () => {

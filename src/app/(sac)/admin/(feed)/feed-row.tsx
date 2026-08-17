@@ -19,6 +19,15 @@ function formatStamp(iso: string): string {
   return STAMP_FORMAT.format(new Date(iso));
 }
 
+function formatAuditValue(value: unknown): string {
+  if (typeof value !== "object" || value === null) return String(value);
+  try {
+    return JSON.stringify(value) ?? "Unknown value";
+  } catch {
+    return "Unserializable value";
+  }
+}
+
 const AUDIT_LABEL: Record<AuditAction, string> = {
   "booth.create": "Created booth",
   "booth.approve": "Approved booth",
@@ -204,7 +213,7 @@ function AuditRow({ entry, actions }: { entry: FeedAuditEntry; actions: RowActio
           {details.map(([key, value]) => (
             <li key={key} className="flex justify-between gap-4">
               <span>{key}</span>
-              <span className="text-foreground">{String(value)}</span>
+              <span className="text-foreground">{formatAuditValue(value)}</span>
             </li>
           ))}
         </ul>

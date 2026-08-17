@@ -5,7 +5,7 @@ import { runAuthorizedTransaction } from "@/lib/server/dal";
 import { boothsCol } from "@/lib/server/db";
 import { NotFoundError, ValidationError } from "@/lib/server/errors";
 import { defineHandler } from "@/lib/server/http";
-import { isValidAmount } from "@/lib/shared/money";
+import { formatCents, isValidAmount } from "@/lib/shared/money";
 import type { BoothItem } from "@/lib/shared/types";
 
 const itemsSchema = z
@@ -56,6 +56,16 @@ function applyPriceEdits(
   return { items: next, diff };
 }
 
+function formatPriceDiff(diff: PriceDiff[]): string {
+  if (diff.length === 0) return "No price changes";
+  return diff
+    .map(
+      ({ id, name, before, after }) =>
+        `${name} (${id}): ${formatCents(before)} → ${formatCents(after)}`,
+    )
+    .join("; ");
+}
+
 export const POST = defineHandler<typeof itemsSchema, { id: string }>(
   { role: "sacExec", schema: itemsSchema, rateLimit: "exec-mutations" },
   async ({ input, params, authorization }) => {
@@ -74,7 +84,7 @@ export const POST = defineHandler<typeof itemsSchema, { id: string }>(
         "booth.priceEdit",
         actor,
         { type: "booth", id: params.id, label: booth.name },
-        { diff },
+        { diff: formatPriceDiff(diff) },
       );
 
       return { boothId: params.id, items };
