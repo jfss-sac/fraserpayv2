@@ -10,7 +10,8 @@ import {
   usersCol,
 } from "../../src/lib/server/db";
 import { getAdminAuth, getAdminFirestore } from "../../src/lib/server/firebase-admin";
-import { SESSION_COOKIE_NAME, SESSION_TTL_MS } from "../../src/lib/shared/constants";
+import { SESSION_COOKIE_NAME, SESSION_TTL_MS, TIMEZONE } from "../../src/lib/shared/constants";
+import { getAdminKpis } from "../../src/lib/server/sac-reports";
 import type { BoothItem, BoothSummary, ReportsDTO } from "../../src/lib/shared/types";
 
 const ORIGIN = "http://127.0.0.1";
@@ -32,6 +33,10 @@ const RING_ITEMS: BoothItem[] = [
 const BAKE_ITEMS: BoothItem[] = [{ id: "cake", name: "Cake", priceCents: 300, isCustom: false }];
 
 const cookies: Record<string, string> = {};
+
+function todayToronto(): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: TIMEZONE }).format(new Date());
+}
 
 async function mintSessionCookie(uid: string): Promise<string> {
   const customToken = await getAdminAuth().createCustomToken(uid);
@@ -331,5 +336,58 @@ describe("GET /api/sac/reports — top-ups & liability", () => {
     const expected = snap.docs.reduce((sum, d) => sum + d.data().balanceCents, 0);
     expect(body.outstandingLiabilityCents).toBe(expected);
     expect(body.outstandingLiabilityCents).toBe(WALLET_A.balanceCents + WALLET_B.balanceCents);
+  });
+});
+
+describe("admin landing KPIs", () => {
+  it("matches independent ledger, booth, and account recomputations", async () => {
+    const today = todayToronto();
+    await seedEntry({
+      type: "topup",
+      direction: "credit",
+      amountCents: 500,
+      createdAt: Timestamp.now(),
+      createdDate: today,
+    });
+    await seedEntry({
+      type: "purchase",
+      direction: "debit",
+      amountCents: 1800,
+      createdAt: Timestamp.now(),
+      createdDate: today,
+    });
+    await seedEntry({
+      type: "refund",
+      direction: "credit",
+      amountCents: 300,
+      createdAt: Timestamp.now(),
+      createdDate: today,
+    });
+
+    const [kpis, ledgerSnap, boothSnap, userSnap] = await Promise.all([
+      getAdminKpis(today),
+      ledgerCol().get(),
+      boothsCol().get(),
+      usersCol().get(),
+    ]);
+    const ledger = ledgerSnap.docs.map((doc) => doc.data());
+    const todayTransactions = ledger.filter((entry) => entry.createdDate === today);
+    const grossRevenueCents = ledger.reduce(
+      (total, entry) =>
+        total +
+        (entry.type === "purchase"
+          ? entry.amountCents
+          : entry.type === "refund"
+            ? -entry.amountCents
+            : 0),
+      0,
+    );
+
+    expect(kpis).toEqual({
+      transactionsToday: todayTransactions.length,
+      activeBooths: boothSnap.docs.filter((doc) => doc.data().status === "approved").length,
+      accounts: userSnap.size,
+      grossRevenueCents,
+    });
   });
 });

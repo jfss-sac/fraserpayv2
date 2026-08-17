@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getSession } from "@/lib/server/dal";
 import { getFeed } from "@/lib/server/sac-feed";
+import { getCachedAdminKpis } from "@/lib/server/sac-reports";
+import { AdminKpiStrip } from "./admin-kpi-strip";
 import { FeedView } from "./feed-view";
 
 export const metadata: Metadata = {
@@ -14,14 +16,17 @@ export default async function FeedPage() {
     notFound();
   }
 
-  const feed = await getFeed({});
+  const [feed, kpis] = await Promise.all([getFeed({}), getCachedAdminKpis().catch(() => null)]);
 
   return (
-    <FeedView
-      initialEntries={feed.entries}
-      initialCursor={feed.nextCursor}
-      initialRepeatBuyers={feed.repeatBuyers}
-      initialRepeatBuyersTruncated={feed.repeatBuyersTruncated}
-    />
+    <>
+      {kpis ? <AdminKpiStrip data={kpis} /> : null}
+      <FeedView
+        initialEntries={feed.entries}
+        initialCursor={feed.nextCursor}
+        initialRepeatBuyers={feed.repeatBuyers}
+        initialRepeatBuyersTruncated={feed.repeatBuyersTruncated}
+      />
+    </>
   );
 }
