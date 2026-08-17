@@ -122,6 +122,8 @@ test.describe("J1 · onboarding → wallet → offline reopen", () => {
       await page.goto("/wallet");
       await expect.poll(() => isCached(page, "/wallet"), { timeout: 20_000 }).toBe(true);
 
+      await page.goto("/account");
+      await expect(page.getByRole("heading", { name: "Account" })).toBeVisible();
       await page.getByRole("button", { name: "Sign out" }).click();
       await page.waitForURL("**/login");
 

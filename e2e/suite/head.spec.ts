@@ -1,7 +1,14 @@
 import { type Page, expect, test } from "@playwright/test";
 import { APPROVED_BOOTH_ID, BUYER_UID, SAC_MEMBER_STATE } from "../fixtures";
 
-const OPERATOR_ROUTES = ["/wallet", "/leaderboard", "/booths/join", "/request-booth", "/sell"];
+const OPERATOR_ROUTES = [
+  "/wallet",
+  "/leaderboard",
+  "/account",
+  "/booths/join",
+  "/request-booth",
+  "/sell",
+];
 const BOOTH_ROUTES = [`/sell/${APPROVED_BOOTH_ID}`, `/booth/${APPROVED_BOOTH_ID}`];
 const SAC_ROUTES = [
   "/admin",

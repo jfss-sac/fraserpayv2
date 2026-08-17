@@ -24,6 +24,7 @@ describe("proxy matcher", () => {
     "/",
     "/wallet",
     "/leaderboard",
+    "/account",
     "/sell",
     "/admin",
     "/request-booth",
@@ -78,6 +79,13 @@ describe("proxy redirect", () => {
     const url = new URL(location as string);
     expect(url.pathname).toBe("/login");
     expect(url.searchParams.get("next")).toBe("/wallet");
+  });
+
+  it("redirects a signed-out account request to /login", () => {
+    const res = proxy(new NextRequest(`${ORIGIN}/account`));
+    const url = new URL(getRedirectUrl(res) as string);
+    expect(url.pathname).toBe("/login");
+    expect(url.searchParams.get("next")).toBe("/account");
   });
 
   it("preserves the query string in the next param", () => {

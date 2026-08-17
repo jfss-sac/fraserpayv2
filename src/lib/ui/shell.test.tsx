@@ -39,7 +39,7 @@ test("buildModes: a booth-member SAC exec holds all three modes in order", () =>
 });
 
 function renderShell(modes: Mode[], active: Mode, suspended = false) {
-  render(
+  return render(
     <AppShell active={active} modes={modes} suspended={suspended}>
       <p>page body</p>
     </AppShell>,
@@ -72,9 +72,28 @@ test("shell marks the active mode with aria-current", () => {
   expect(screen.getByRole("link", { name: "Wallet" })).not.toHaveAttribute("aria-current");
 });
 
-test("shell always offers a sign-out control", () => {
+test("shell offers Account and Leaderboard links in every mode", () => {
+  for (const [modes, active] of [
+    [["student"], "student"],
+    [["student", "sell"], "sell"],
+    [["student", "admin"], "admin"],
+    [["student", "sell", "admin"], "admin"],
+  ] as [Mode[], Mode][]) {
+    const { unmount } = renderShell(modes, active);
+    const account = screen.getByRole("link", { name: "Account" });
+    const leaderboard = screen.getByRole("link", { name: "Leaderboard" });
+
+    expect(account).toHaveAttribute("href", "/account");
+    expect(leaderboard).toHaveAttribute("href", "/leaderboard");
+    expect(account).toHaveClass("min-h-11");
+    expect(leaderboard).toHaveClass("min-h-11");
+    unmount();
+  }
+});
+
+test("shell no longer exposes sign-out in the shared header", () => {
   renderShell(["student"], "student");
-  expect(screen.getByRole("button", { name: "Sign out" })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Sign out" })).not.toBeInTheDocument();
 });
 
 test("shell hides the suspended banner by default", () => {
