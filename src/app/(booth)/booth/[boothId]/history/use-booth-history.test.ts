@@ -2,11 +2,11 @@ import { act, renderHook } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 import type { BoothHistoryDTO, BoothHistoryEntry } from "@/lib/shared/types";
 import { ApiError } from "@/lib/ui/api-client";
-import { requestBoothHistory } from "./api";
-import { useBoothHistory } from "./use-booth-history";
+import { requestBoothHistory } from "@/lib/ui/booth-history-api";
+import { useBoothHistory } from "@/lib/ui/use-booth-history";
 
-vi.mock("./api", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./api")>();
+vi.mock("@/lib/ui/booth-history-api", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/ui/booth-history-api")>();
   return { ...actual, requestBoothHistory: vi.fn() };
 });
 

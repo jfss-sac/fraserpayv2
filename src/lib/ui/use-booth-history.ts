@@ -3,7 +3,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { BoothHistoryEntry } from "@/lib/shared/types";
 import { ApiError } from "@/lib/ui/api-client";
-import { historyErrorMessage, requestBoothHistory } from "./api";
+import {
+  historyErrorMessage,
+  requestBoothHistory,
+  type BoothHistoryFetcher,
+} from "@/lib/ui/booth-history-api";
 
 export type HistoryScope = "all" | "mine";
 
@@ -30,9 +34,13 @@ function codeOf(err: unknown): string {
 export function useBoothHistory({
   boothId,
   onError,
+  requestHistory = requestBoothHistory,
+  showScopeToggle = true,
 }: {
   boothId: string;
   onError?: (message: string) => void;
+  requestHistory?: BoothHistoryFetcher;
+  showScopeToggle?: boolean;
 }): UseBoothHistory {
   const [entries, setEntries] = useState<BoothHistoryEntry[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
@@ -60,7 +68,9 @@ export function useBoothHistory({
     (target: HistoryScope) => {
       const id = headSeq.current + 1;
       headSeq.current = id;
-      requestBoothHistory(boothId, { mine: target === "mine" })
+      requestHistory(boothId, {
+        ...(showScopeToggle ? { mine: target === "mine" } : {}),
+      })
         .then((dto) => {
           if (headSeq.current !== id) return;
           setEntries(dto.entries);
@@ -75,7 +85,7 @@ export function useBoothHistory({
           fail("head", err);
         });
     },
-    [boothId, fail],
+    [boothId, fail, requestHistory, showScopeToggle],
   );
 
   useEffect(() => {
@@ -84,16 +94,17 @@ export function useBoothHistory({
 
   const setScope = useCallback(
     (next: HistoryScope) => {
-      if (scopeRef.current === next) return;
-      scopeRef.current = next;
-      setScopeState(next);
+      const target = showScopeToggle ? next : "all";
+      if (scopeRef.current === target) return;
+      scopeRef.current = target;
+      setScopeState(target);
       setEntries([]);
       setCursor(null);
       setError(null);
       setLoading(true);
-      runHead(next);
+      runHead(target);
     },
-    [runHead],
+    [runHead, showScopeToggle],
   );
 
   const refresh = useCallback(() => {
@@ -108,7 +119,10 @@ export function useBoothHistory({
     const headId = headSeq.current;
     setLoadingOlder(true);
     setError(null);
-    requestBoothHistory(boothId, { mine: scopeRef.current === "mine", cursor })
+    requestHistory(boothId, {
+      ...(showScopeToggle ? { mine: scopeRef.current === "mine" } : {}),
+      cursor,
+    })
       .then((dto) => {
         setLoadingOlder(false);
         if (headSeq.current !== headId) return;
@@ -123,7 +137,7 @@ export function useBoothHistory({
         if (headSeq.current !== headId) return;
         fail("older", err);
       });
-  }, [boothId, cursor, fail, loadingOlder]);
+  }, [boothId, cursor, fail, loadingOlder, requestHistory, showScopeToggle]);
 
   const retry = useCallback(() => {
     if (error === null) return;

@@ -2,6 +2,7 @@ import { Timestamp } from "firebase-admin/firestore";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { POST as chargeRoute } from "../../src/app/api/booth/charge/route";
 import { GET as historyRoute } from "../../src/app/api/booth/[id]/history/route";
+import { GET as sacHistoryRoute } from "../../src/app/api/sac/booths/[id]/history/route";
 import { BOOTH_HISTORY_PAGE_SIZE, getBoothSummary } from "../../src/lib/server/dal";
 import { boothsCol, ledgerCol, membersCol, usersCol } from "../../src/lib/server/db";
 import { getAdminAuth, getAdminFirestore } from "../../src/lib/server/firebase-admin";
@@ -15,6 +16,7 @@ const ORIGIN = "http://127.0.0.1";
 const ALPHA = { uid: "history-alpha", name: "Ada Alpha" };
 const BRAVO = { uid: "history-bravo", name: "Bo Bravo" };
 const EXEC = { uid: "history-exec", name: "Eve Exec" };
+const SAC = { uid: "history-sac-member", name: "Sally SAC" };
 const OUTSIDER = { uid: "history-outsider", name: "Otto Outsider" };
 
 const BOOTH_ID = "history-booth";
@@ -158,6 +160,31 @@ async function readPage(actor: string, boothId: string, query = ""): Promise<Boo
   return (await res.json()) as BoothHistoryDTO;
 }
 
+function sacHistoryRequest(actor: string | null, boothId: string, query = ""): Request {
+  const headers: Record<string, string> = {};
+  if (actor) headers.cookie = `${SESSION_COOKIE_NAME}=${cookies[actor]}`;
+  return new Request(`${ORIGIN}/api/sac/booths/${boothId}/history${query}`, {
+    method: "GET",
+    headers,
+  });
+}
+
+async function readSacHistory(
+  actor: string | null,
+  boothId: string,
+  query = "",
+): Promise<Response> {
+  return sacHistoryRoute(sacHistoryRequest(actor, boothId, query), {
+    params: Promise.resolve({ id: boothId }),
+  });
+}
+
+async function readSacPage(actor: string, boothId: string, query = ""): Promise<BoothHistoryDTO> {
+  const res = await readSacHistory(actor, boothId, query);
+  if (res.status !== 200) throw new Error(`SAC history failed: ${res.status} ${await res.text()}`);
+  return (await res.json()) as BoothHistoryDTO;
+}
+
 async function errorCode(res: Response): Promise<string> {
   return ((await res.json()) as { error: { code: string } }).error.code;
 }
@@ -184,6 +211,12 @@ beforeAll(async () => {
     paymentCode: "fp1-HEXECU",
     roles: { sacMember: true, sacExec: true },
   });
+  await makeUser({
+    uid: SAC.uid,
+    displayName: SAC.name,
+    paymentCode: "fp1-HSACME",
+    roles: { sacMember: true, sacExec: false },
+  });
   await makeUser({ uid: OUTSIDER.uid, displayName: OUTSIDER.name, paymentCode: "fp1-HOUTSI" });
   for (const buyer of BUYERS) {
     await makeUser({
@@ -194,7 +227,7 @@ beforeAll(async () => {
       balanceCents: 500_000,
     });
   }
-  for (const uid of [ALPHA.uid, BRAVO.uid, OUTSIDER.uid]) {
+  for (const uid of [ALPHA.uid, BRAVO.uid, EXEC.uid, SAC.uid, OUTSIDER.uid]) {
     cookies[uid] = await mintSessionCookie(uid);
   }
 
@@ -229,7 +262,7 @@ afterAll(async () => {
   );
   await db.recursiveDelete(db.collection("booths"));
   await getAdminAuth()
-    .deleteUsers([ALPHA.uid, BRAVO.uid, OUTSIDER.uid])
+    .deleteUsers([ALPHA.uid, BRAVO.uid, EXEC.uid, SAC.uid, OUTSIDER.uid])
     .catch(() => undefined);
   vi.restoreAllMocks();
 });
@@ -453,5 +486,58 @@ describe("GET /api/booth/[id]/history", () => {
 
     const page = await readPage(ALPHA.uid, "history-quiet-booth");
     expect(page).toEqual({ entries: [], nextCursor: null });
+  });
+});
+
+describe("GET /api/sac/booths/[id]/history", () => {
+  it("lets a SAC member read any booth's history", async () => {
+    const page = await readSacPage(SAC.uid, OTHER_BOOTH_ID);
+
+    expect(page.entries).toHaveLength(1);
+    expect(page.entries[0]!.buyerName).toBe(BUYERS[0]!.name);
+  });
+
+  it("returns the same row DTO as the booth-side history", async () => {
+    const boothPage = await readPage(ALPHA.uid, BOOTH_ID);
+    const sacPage = await readSacPage(SAC.uid, BOOTH_ID);
+
+    expect(sacPage).toEqual(boothPage);
+    expect(sacPage.entries.map((entry) => Object.keys(entry).sort())).toEqual(
+      boothPage.entries.map((entry) => Object.keys(entry).sort()),
+    );
+  });
+
+  it("uses the same cursor paging as the booth-side history", async () => {
+    const boothFirst = await readPage(ALPHA.uid, BOOTH_ID);
+    const sacFirst = await readSacPage(SAC.uid, BOOTH_ID);
+    const boothSecond = await readPage(ALPHA.uid, BOOTH_ID, `?cursor=${boothFirst.nextCursor!}`);
+    const sacSecond = await readSacPage(SAC.uid, BOOTH_ID, `?cursor=${sacFirst.nextCursor!}`);
+
+    expect(sacFirst).toEqual(boothFirst);
+    expect(sacSecond).toEqual(boothSecond);
+    expect([...sacFirst.entries, ...sacSecond.entries]).toEqual([
+      ...boothFirst.entries,
+      ...boothSecond.entries,
+    ]);
+  });
+
+  it("forbids a non-SAC reader even when they belong to the booth", async () => {
+    const res = await readSacHistory(ALPHA.uid, BOOTH_ID);
+
+    expect(res.status).toBe(403);
+    expect(await errorCode(res)).toBe("FORBIDDEN");
+  });
+
+  it("rejects the booth-only mine filter", async () => {
+    const res = await readSacHistory(SAC.uid, BOOTH_ID, "?mine=1");
+
+    expect(res.status).toBe(400);
+    expect(await errorCode(res)).toBe("VALIDATION");
+  });
+
+  it("sets no-store", async () => {
+    const res = await readSacHistory(SAC.uid, BOOTH_ID);
+
+    expect(res.headers.get("cache-control")).toBe("no-store");
   });
 });

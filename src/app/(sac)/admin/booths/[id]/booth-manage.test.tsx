@@ -10,9 +10,16 @@ const mocks = vi.hoisted(() => ({
   addItem: vi.fn(),
   archiveItem: vi.fn(),
   refresh: vi.fn(),
+  requestSacBoothHistory: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: mocks.refresh }) }));
+vi.mock("@/lib/ui/booth-history-api", async () => ({
+  ...(await vi.importActual<typeof import("@/lib/ui/booth-history-api")>(
+    "@/lib/ui/booth-history-api",
+  )),
+  requestSacBoothHistory: mocks.requestSacBoothHistory,
+}));
 vi.mock("../api", async () => ({
   ...(await vi.importActual<typeof import("../api")>("../api")),
   addItem: mocks.addItem,
@@ -108,6 +115,19 @@ describe("BoothManage — approved", () => {
     const gross = screen.getByText("Gross").parentElement!;
     expect(gross).toHaveTextContent("$12.00");
     expect(screen.getByText("Ava Nguyen")).toBeInTheDocument();
+  });
+
+  test("shows all booth history without a mine filter on the History tab", async () => {
+    const user = userEvent.setup();
+    mocks.requestSacBoothHistory.mockResolvedValueOnce({ entries: [], nextCursor: null });
+    render(<BoothManage detail={APPROVED} isExec={false} />);
+
+    await user.click(screen.getByRole("tab", { name: "History" }));
+
+    expect(await screen.findByText("No sales yet.")).toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "Filter sales" })).not.toBeInTheDocument();
+    expect(mocks.requestSacBoothHistory).toHaveBeenCalledWith("booth-approved", {});
+    expect(screen.getByRole("tab", { name: "History" })).toHaveAttribute("aria-selected", "true");
   });
 
   test("a member gets no mutating controls", () => {

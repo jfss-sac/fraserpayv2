@@ -4,8 +4,9 @@ import { useCallback } from "react";
 import { useToast } from "@/lib/ui/toast";
 import { Button } from "@/lib/ui/vendor/button";
 import { cn } from "@/lib/ui/vendor/utils";
-import { BoothHistoryRow } from "./history-row";
-import { type HistoryScope, useBoothHistory } from "./use-booth-history";
+import { requestBoothHistory, type BoothHistoryFetcher } from "@/lib/ui/booth-history-api";
+import { BoothHistoryRow } from "@/lib/ui/booth-history-row";
+import { type HistoryScope, useBoothHistory } from "@/lib/ui/use-booth-history";
 
 const SCOPES: readonly { scope: HistoryScope; label: string }[] = [
   { scope: "all", label: "All" },
@@ -22,10 +23,18 @@ function HistorySkeleton() {
   );
 }
 
-export function BoothHistoryView({ boothId }: { boothId: string }) {
+export function BoothHistoryView({
+  boothId,
+  requestHistory = requestBoothHistory,
+  showScopeToggle = true,
+}: {
+  boothId: string;
+  requestHistory?: BoothHistoryFetcher;
+  showScopeToggle?: boolean;
+}) {
   const { push } = useToast();
   const onError = useCallback((message: string) => void push(message, "error"), [push]);
-  const history = useBoothHistory({ boothId, onError });
+  const history = useBoothHistory({ boothId, onError, requestHistory, showScopeToggle });
 
   return (
     <section className="flex flex-col gap-4">
@@ -41,25 +50,27 @@ export function BoothHistoryView({ boothId }: { boothId: string }) {
         </Button>
       </div>
 
-      <div role="group" aria-label="Filter sales" className="flex flex-wrap gap-1">
-        {SCOPES.map((option) => {
-          const active = option.scope === history.scope;
-          return (
-            <button
-              key={option.scope}
-              type="button"
-              aria-pressed={active}
-              onClick={() => history.setScope(option.scope)}
-              className={cn(
-                "inline-flex min-h-11 items-center rounded-full px-4 text-sm font-medium",
-                active ? "bg-brand text-brand-foreground" : "bg-surface text-muted",
-              )}
-            >
-              {option.label}
-            </button>
-          );
-        })}
-      </div>
+      {showScopeToggle ? (
+        <div role="group" aria-label="Filter sales" className="flex flex-wrap gap-1">
+          {SCOPES.map((option) => {
+            const active = option.scope === history.scope;
+            return (
+              <button
+                key={option.scope}
+                type="button"
+                aria-pressed={active}
+                onClick={() => history.setScope(option.scope)}
+                className={cn(
+                  "inline-flex min-h-11 items-center rounded-full px-4 text-sm font-medium",
+                  active ? "bg-brand text-brand-foreground" : "bg-surface text-muted",
+                )}
+              >
+                {option.label}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
 
       {history.error !== null ? (
         <div

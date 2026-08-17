@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { getSession, isBoothMember } from "@/lib/server/dal";
 import { BoothTabs } from "@/lib/ui/booth-tabs";
-import { BoothHistoryView } from "./history-view";
+import { BoothHistoryView } from "@/lib/ui/booth-history-view";
 
 export const metadata: Metadata = {
   title: "Booth history",

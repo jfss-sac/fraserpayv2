@@ -21,7 +21,7 @@ vi.mock("next/link", () => ({
     </a>
   ),
 }));
-vi.mock("./history-view", () => ({
+vi.mock("@/lib/ui/booth-history-view", () => ({
   BoothHistoryView: ({ boothId }: { boothId: string }) => <div>history view for {boothId}</div>,
 }));
 

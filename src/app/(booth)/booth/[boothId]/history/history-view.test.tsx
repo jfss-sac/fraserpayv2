@@ -3,12 +3,12 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, expect, test, vi } from "vitest";
 import type { BoothHistoryDTO, BoothHistoryEntry } from "@/lib/shared/types";
 import { ApiError } from "@/lib/ui/api-client";
+import { requestBoothHistory } from "@/lib/ui/booth-history-api";
+import { BoothHistoryView } from "@/lib/ui/booth-history-view";
 import { ToastProvider } from "@/lib/ui/toast";
-import { requestBoothHistory } from "./api";
-import { BoothHistoryView } from "./history-view";
 
-vi.mock("./api", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./api")>();
+vi.mock("@/lib/ui/booth-history-api", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/ui/booth-history-api")>();
   return { ...actual, requestBoothHistory: vi.fn() };
 });
 
@@ -35,8 +35,12 @@ function pageOf(entries: BoothHistoryEntry[], nextCursor: string | null = null):
   return { entries, nextCursor };
 }
 
-function render() {
-  return testingRender(<BoothHistoryView boothId="booth-1" />, { wrapper: ToastProvider });
+function render(
+  props: { requestHistory?: typeof requestBoothHistory; showScopeToggle?: boolean } = {},
+) {
+  return testingRender(<BoothHistoryView boothId="booth-1" {...props} />, {
+    wrapper: ToastProvider,
+  });
 }
 
 afterEach(() => {
@@ -141,6 +145,16 @@ test("re-fetches from the head when the operator asks for their own sales", asyn
   expect(mockRequest).toHaveBeenLastCalledWith("booth-1", { mine: true });
   expect(screen.getByRole("button", { name: "Just mine" })).toHaveAttribute("aria-pressed", "true");
   expect(screen.queryByText("by Ada Actor")).not.toBeInTheDocument();
+});
+
+test("can hide the scope toggle for an all-history reader", async () => {
+  mockRequest.mockResolvedValueOnce(pageOf([]));
+
+  render({ requestHistory: mockRequest, showScopeToggle: false });
+
+  expect(await screen.findByText("No sales yet.")).toBeInTheDocument();
+  expect(screen.queryByRole("group", { name: "Filter sales" })).not.toBeInTheDocument();
+  expect(mockRequest).toHaveBeenCalledWith("booth-1", {});
 });
 
 test("appends the next page when the operator loads older sales", async () => {
