@@ -15,5 +15,5 @@ export default async function ReportsPage() {
   }
 
   const data = await getCachedEventReports();
-  return <ReportsView data={data} />;
+  return <ReportsView data={data} canExportLedger={session.roles.sacExec} />;
 }

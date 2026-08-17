@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { refreshEventReports } from "./actions";
+import { LedgerExportControl } from "./ledger-export-control";
 import { formatCents } from "@/lib/shared/money";
 import type {
   BoothItemSummary,
@@ -116,7 +117,13 @@ function BoothRow({ booth }: { booth: BoothReportRow }) {
   );
 }
 
-export function ReportsView({ data }: { data: ReportsDTO }) {
+export function ReportsView({
+  data,
+  canExportLedger = false,
+}: {
+  data: ReportsDTO;
+  canExportLedger?: boolean;
+}) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
 
@@ -124,19 +131,28 @@ export function ReportsView({ data }: { data: ReportsDTO }) {
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between gap-4">
         <h1 className="text-2xl font-bold text-foreground">Event reports</h1>
-        <button
-          type="button"
-          onClick={() =>
-            startTransition(async () => {
-              await refreshEventReports();
-              router.refresh();
-            })
-          }
-          disabled={pending}
-          className="h-10 rounded-md border border-border px-4 text-sm font-medium text-foreground disabled:opacity-50"
-        >
-          {pending ? "Refreshing…" : "Refresh"}
-        </button>
+        <div className="flex items-center gap-2">
+          <a
+            href="/api/sac/reports/export"
+            download
+            className="h-10 rounded-md border border-border px-4 py-2 text-sm font-medium text-foreground"
+          >
+            Download CSV
+          </a>
+          <button
+            type="button"
+            onClick={() =>
+              startTransition(async () => {
+                await refreshEventReports();
+                router.refresh();
+              })
+            }
+            disabled={pending}
+            className="h-10 rounded-md border border-border px-4 text-sm font-medium text-foreground disabled:opacity-50"
+          >
+            {pending ? "Refreshing…" : "Refresh"}
+          </button>
+        </div>
       </div>
 
       <p className="text-sm text-muted">
@@ -185,6 +201,8 @@ export function ReportsView({ data }: { data: ReportsDTO }) {
           </ul>
         )}
       </section>
+
+      {canExportLedger ? <LedgerExportControl /> : null}
     </div>
   );
 }

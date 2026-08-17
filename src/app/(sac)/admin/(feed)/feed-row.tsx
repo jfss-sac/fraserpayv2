@@ -36,6 +36,7 @@ const AUDIT_LABEL: Record<AuditAction, string> = {
   "user.roleGrant": "Granted role",
   "user.roleRevoke": "Revoked role",
   "user.paymentCodeRegen": "Regenerated payment code",
+  "data.export": "Exported ledger data",
 };
 
 function ledgerTitle(entry: FeedLedgerEntry): string {

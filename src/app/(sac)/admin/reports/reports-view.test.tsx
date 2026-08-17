@@ -62,6 +62,23 @@ describe("ReportsView", () => {
     ).toBeInTheDocument();
   });
 
+  test("offers a report CSV download", () => {
+    render(<ReportsView data={DATA} />);
+
+    expect(screen.getByRole("link", { name: "Download CSV" })).toHaveAttribute(
+      "href",
+      "/api/sac/reports/export",
+    );
+  });
+
+  test("shows the itemized ledger control only for an exec", () => {
+    const { rerender } = render(<ReportsView data={DATA} />);
+    expect(screen.queryByText("Itemized ledger export")).toBeNull();
+
+    rerender(<ReportsView data={DATA} canExportLedger />);
+    expect(screen.getByText("Itemized ledger export")).toBeInTheDocument();
+  });
+
   test("fetches the item breakdown only when a booth is expanded", async () => {
     const fetchMock = mockSummaryFetch([
       { itemId: "i1", name: "Play", qty: 8, revenueCents: 4000 },

@@ -23,3 +23,5 @@ export const BOOTH_STUDENT_NUMBER_ENABLED = false;
 export const REPEAT_BUYER_WINDOW_MS = 10 * 60_000;
 
 export const REPEAT_BUYER_THRESHOLD = 10;
+
+export const LEDGER_EXPORT_ROW_LIMIT = 10_000;

@@ -162,7 +162,16 @@ export function ReconciliationView({
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-2xl font-bold text-foreground">Reconciliation</h1>
+      <div className="flex items-center justify-between gap-4">
+        <h1 className="text-2xl font-bold text-foreground">Reconciliation</h1>
+        <a
+          href={`/api/sac/reconciliation/export?date=${encodeURIComponent(date)}`}
+          download
+          className="h-10 rounded-md border border-border px-4 py-2 text-sm font-medium text-foreground"
+        >
+          Download CSV
+        </a>
+      </div>
 
       <div className="flex flex-col gap-2">
         <label htmlFor="recon-date" className="text-sm font-medium text-foreground">

@@ -21,6 +21,7 @@ import { POST as execBoothItemArchive } from "../../src/app/api/exec/booths/[id]
 import { POST as execBoothMemberRemove } from "../../src/app/api/exec/booths/[id]/members/remove/route";
 import { POST as execBoothRotateCode } from "../../src/app/api/exec/booths/[id]/rotate-code/route";
 import { POST as execBoothStatus } from "../../src/app/api/exec/booths/[id]/status/route";
+import { POST as execLedgerExport } from "../../src/app/api/exec/ledger/export/route";
 import { POST as execPaymentCode } from "../../src/app/api/exec/payment-code/route";
 import { POST as execRefund } from "../../src/app/api/exec/refund/route";
 import { POST as execRoles } from "../../src/app/api/exec/roles/route";
@@ -30,7 +31,9 @@ import { GET as sacBoothSummary } from "../../src/app/api/sac/booths/[id]/summar
 import { GET as sacFeed } from "../../src/app/api/sac/feed/route";
 import { POST as sacLookup } from "../../src/app/api/sac/lookup/route";
 import { GET as sacReconciliation } from "../../src/app/api/sac/reconciliation/route";
+import { GET as sacReconciliationExport } from "../../src/app/api/sac/reconciliation/export/route";
 import { GET as sacReports } from "../../src/app/api/sac/reports/route";
+import { GET as sacReportsExport } from "../../src/app/api/sac/reports/export/route";
 import { GET as sacStudentLedger } from "../../src/app/api/sac/students/[uid]/ledger/route";
 import { GET as sacStudents } from "../../src/app/api/sac/students/route";
 import { POST as sacTopup } from "../../src/app/api/sac/topup/route";
@@ -211,9 +214,23 @@ const ENDPOINTS: Endpoint[] = [
     rateLimit: "reads",
   },
   {
+    path: "/api/sac/reconciliation/export",
+    method: "GET",
+    handler: sacReconciliationExport as AnyHandler,
+    role: "sacMember",
+    rateLimit: "reads",
+  },
+  {
     path: "/api/sac/reports",
     method: "GET",
     handler: sacReports as AnyHandler,
+    role: "sacMember",
+    rateLimit: "reads",
+  },
+  {
+    path: "/api/sac/reports/export",
+    method: "GET",
+    handler: sacReportsExport as AnyHandler,
     role: "sacMember",
     rateLimit: "reads",
   },
@@ -234,6 +251,14 @@ const ENDPOINTS: Endpoint[] = [
     rateLimit: "exec-mutations",
     idempotent: true,
     body: { studentUid: "sweep-student", amountCents: 50, reason: "sweep" },
+  },
+  {
+    path: "/api/exec/ledger/export",
+    method: "POST",
+    handler: execLedgerExport as AnyHandler,
+    role: "sacExec",
+    rateLimit: "exec-mutations",
+    body: { from: "2024-01-01T00:00:00.000Z", to: "2024-01-02T00:00:00.000Z" },
   },
   {
     path: "/api/exec/payment-code",

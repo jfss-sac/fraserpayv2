@@ -17,7 +17,7 @@ export interface AuditActor {
 }
 
 export interface AuditTarget {
-  type: "booth" | "user";
+  type: "booth" | "user" | "export";
   id: string;
   label: string;
 }

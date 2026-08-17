@@ -27,7 +27,8 @@ export type AuditAction =
   | "user.unsuspend"
   | "user.roleGrant"
   | "user.roleRevoke"
-  | "user.paymentCodeRegen";
+  | "user.paymentCodeRegen"
+  | "data.export";
 
 export interface BoothItem {
   id: string;
