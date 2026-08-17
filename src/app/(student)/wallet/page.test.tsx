@@ -100,6 +100,19 @@ test("renders the wallet with a server-rendered QR and mapped history", async ()
   expect(props.history[0].createdAtIso).toBe("2026-07-24T15:04:00.000Z");
 });
 
+test("renders the iOS install script with the request nonce", async () => {
+  getSession.mockResolvedValue(SESSION);
+
+  const { container } = render(await WalletPage());
+  const script = Array.from(container.querySelectorAll("script")).find((candidate) =>
+    candidate.innerHTML.includes("data-ios-install-hint"),
+  );
+
+  expect(script?.getAttribute("nonce")).toBe("test-nonce");
+  expect(script?.innerHTML).toContain("display-mode");
+  expect(script?.innerHTML).toContain("localStorage");
+});
+
 test("reuses the user snapshot loaded for the session instead of reading the user again", async () => {
   getSession.mockResolvedValue(SESSION);
   render(await WalletPage());

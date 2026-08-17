@@ -57,6 +57,17 @@ test("shows the payment code as text so a booth can key it in when the camera fa
   expect(screen.getByText(PAYMENT_CODE)).toBeInTheDocument();
 });
 
+test("includes the hidden iOS install hint and SAC blurb", () => {
+  const { container } = render(<WalletView {...baseProps()} />);
+  const hint = container.querySelector("[data-ios-install-hint]");
+
+  expect(hint).not.toBeNull();
+  expect(hint?.hasAttribute("hidden")).toBe(true);
+  expect(hint?.textContent).toContain("Share → Add to Home Screen");
+  expect(hint?.querySelector("[data-ios-install-blurb]")).not.toBeNull();
+  expect(hint?.querySelector("[data-ios-install-dismiss]")?.textContent).toBe("Dismiss");
+});
+
 test("omits the student number row for teacher-pattern accounts", () => {
   render(<WalletView {...baseProps()} studentNumber={null} />);
   expect(screen.queryByText(/^#/)).not.toBeInTheDocument();
