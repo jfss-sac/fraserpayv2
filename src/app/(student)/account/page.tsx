@@ -3,6 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSession, listMemberBooths, type Session } from "@/lib/server/dal";
 import { SignOutButton } from "@/lib/ui/sign-out-button";
+import { HelpSection } from "./help-section";
 
 export const metadata: Metadata = {
   title: "Account",
@@ -27,6 +28,7 @@ export default async function AccountPage() {
   if (!session) redirect("/login");
 
   const booths = await listMemberBooths(session.uid);
+  const externalHelpUrl = process.env.ACCOUNT_HELP_URL?.trim() || undefined;
 
   return (
     <div className="flex flex-col gap-8">
@@ -97,6 +99,8 @@ export default async function AccountPage() {
           </ul>
         )}
       </section>
+
+      <HelpSection externalHelpUrl={externalHelpUrl} />
 
       <div className="border-t border-border pt-6">
         <SignOutButton />

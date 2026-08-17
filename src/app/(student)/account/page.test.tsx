@@ -1,5 +1,6 @@
 import { render, screen } from "@testing-library/react";
-import { beforeEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { STUDENT_FAILURE_GUIDANCE, STUDENT_VISIBLE_ERROR_CODES } from "./help-section";
 
 const { getSession, listMemberBooths, redirect } = vi.hoisted(() => ({
   getSession: vi.fn(),
@@ -35,10 +36,16 @@ const SESSION = {
 };
 
 beforeEach(() => {
+  vi.unstubAllEnvs();
+  vi.stubEnv("ACCOUNT_HELP_URL", "");
   getSession.mockReset();
   listMemberBooths.mockReset();
   redirect.mockClear();
   listMemberBooths.mockResolvedValue([]);
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
 });
 
 test("redirects a signed-out visitor to /login", async () => {
@@ -69,8 +76,7 @@ test("renders identity, roles, and linked booth memberships without the payment 
     "/booth/booth-2",
   );
   expect(screen.getByRole("button", { name: "Sign out" })).toBeInTheDocument();
-  expect(screen.queryByText("secret-payment-code")).not.toBeInTheDocument();
-  expect(screen.queryByText(/payment code/i)).not.toBeInTheDocument();
+  expect(screen.queryByText(SESSION.paymentCode)).not.toBeInTheDocument();
 });
 
 test("renders the teacher-pattern account without a student number", async () => {
@@ -85,4 +91,37 @@ test("renders the teacher-pattern account without a student number", async () =>
   expect(screen.getByText("No student number")).toBeInTheDocument();
   expect(screen.getByText("Teacher")).toBeInTheDocument();
   expect(screen.queryByText("123456")).not.toBeInTheDocument();
+});
+
+test("renders guidance for every student-visible error code", async () => {
+  getSession.mockResolvedValue(SESSION);
+
+  render(await AccountPage());
+
+  for (const code of STUDENT_VISIBLE_ERROR_CODES) {
+    const guidance = STUDENT_FAILURE_GUIDANCE[code];
+    const item = screen.getByTestId(`charge-help-${code}`);
+    expect(item).toHaveTextContent(guidance.title);
+    expect(item).toHaveTextContent(guidance.body);
+  }
+});
+
+test("hides the external how-to link when no URL is configured", async () => {
+  getSession.mockResolvedValue(SESSION);
+
+  render(await AccountPage());
+
+  expect(screen.queryByRole("link", { name: "Open the school how-to" })).not.toBeInTheDocument();
+});
+
+test("renders the external how-to link when configured", async () => {
+  vi.stubEnv("ACCOUNT_HELP_URL", "https://school.example/fraserpay-help");
+  getSession.mockResolvedValue(SESSION);
+
+  render(await AccountPage());
+
+  expect(screen.getByRole("link", { name: "Open the school how-to" })).toHaveAttribute(
+    "href",
+    "https://school.example/fraserpay-help",
+  );
 });
