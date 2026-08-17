@@ -5,6 +5,7 @@ import { ledgerCol } from "./db";
 import { SuspendedError } from "./errors";
 import { logger } from "./logger";
 import { boothBuyerSchema, resolveBuyer } from "./money/shared";
+import { firestoreDocumentIdSchema } from "@/lib/shared/document-id";
 import type { LookupResult, RecentPurchase } from "@/lib/shared/types";
 
 export const RECENT_PURCHASE_WINDOW_MS = 10 * 60 * 1000;
@@ -12,7 +13,7 @@ const RECENT_PURCHASE_SCAN_LIMIT = 25;
 
 export const lookupSchema = z
   .object({
-    boothId: z.string().trim().min(1),
+    boothId: firestoreDocumentIdSchema,
     buyer: boothBuyerSchema,
   })
   .strict();

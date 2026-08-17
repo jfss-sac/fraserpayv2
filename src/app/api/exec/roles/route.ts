@@ -7,10 +7,11 @@ import { usersCol } from "@/lib/server/db";
 import { ConflictError, NotFoundError } from "@/lib/server/errors";
 import { hasOtherActiveExec } from "@/lib/server/exec-lockout";
 import { defineHandler } from "@/lib/server/http";
+import { firestoreDocumentIdSchema } from "@/lib/shared/document-id";
 
 const rolesSchema = z
   .object({
-    targetUid: z.string().trim().min(1),
+    targetUid: firestoreDocumentIdSchema,
     role: z.enum(["sacMember", "sacExec"]),
     grant: z.boolean(),
   })

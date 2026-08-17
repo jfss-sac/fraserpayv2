@@ -23,6 +23,7 @@ import {
 import { getAdminAuth, getAdminFirestore } from "./firebase-admin";
 import { logger } from "./logger";
 import { SESSION_COOKIE_NAME } from "@/lib/shared/constants";
+import { isFirestoreDocumentId } from "@/lib/shared/document-id";
 import type {
   BoothDTO,
   BoothHistoryDTO,
@@ -301,8 +302,6 @@ export const boothHistoryQuerySchema = z
 
 export type BoothHistoryQuery = z.infer<typeof boothHistoryQuerySchema>;
 
-const LEDGER_ENTRY_ID = /^[A-Za-z0-9_-]{1,128}$/;
-
 function toBoothHistoryEntry(entryId: string, doc: LedgerEntryDoc): BoothHistoryEntry {
   return {
     entryId,
@@ -328,7 +327,7 @@ export async function getBoothHistory(
   let query = scoped.orderBy("createdAt", "desc").limit(BOOTH_HISTORY_PAGE_SIZE + 1);
   if (options.cursor) {
     const unknownCursor = new ValidationError("cursor: Unknown cursor.");
-    if (!LEDGER_ENTRY_ID.test(options.cursor)) throw unknownCursor;
+    if (!isFirestoreDocumentId(options.cursor)) throw unknownCursor;
     const cursorSnap = await ledgerCol().doc(options.cursor).get();
     const cursorDoc = cursorSnap.data();
     if (!cursorDoc || cursorDoc.boothId !== boothId) throw unknownCursor;

@@ -22,6 +22,7 @@ import {
   checkRateLimit,
   releaseRateLimit,
 } from "./ratelimit";
+import { isFirestoreDocumentId } from "@/lib/shared/document-id";
 
 export type { Role, Session };
 export type HandlerSession = Session;
@@ -124,6 +125,14 @@ function inputBoothId(input: unknown): string {
   return boothId;
 }
 
+function assertDocumentIdParams(params: Record<string, unknown> | undefined): void {
+  for (const [name, value] of Object.entries(params ?? {})) {
+    if (typeof value !== "string" || !isFirestoreDocumentId(value)) {
+      throw new ValidationError(`${name}: Must be a valid document id.`);
+    }
+  }
+}
+
 function ledgerEntryId(result: HandlerResult): string | undefined {
   if (result === null || result === undefined || result instanceof Response) return undefined;
   const entryId = result.entryId;
@@ -160,6 +169,7 @@ export function defineHandler<
 
       const params = (routeContext ? await routeContext.params : ({} as TParams)) as TParams;
       const routeParams = params as Record<string, unknown> | undefined;
+      assertDocumentIdParams(routeParams);
       const routeBoothId = routeParams?.boothId ?? routeParams?.id;
       const boothId = typeof routeBoothId === "string" ? routeBoothId : undefined;
 

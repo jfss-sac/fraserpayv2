@@ -381,6 +381,13 @@ const FIXTURES = [
     suspended: true,
     booth: true,
   },
+  {
+    uid: "sweep-exec",
+    number: "900006",
+    roles: { sacMember: true, sacExec: true },
+    suspended: false,
+    booth: false,
+  },
 ];
 
 const cookies: Record<string, string> = {};
@@ -409,6 +416,7 @@ function call(
     secFetchSite?: string;
     idempotencyKey?: string;
     headers?: Record<string, string>;
+    query?: string;
   } = {},
 ): Promise<Response> {
   const headers: Record<string, string> = {
@@ -421,7 +429,7 @@ function call(
   }
   if (opts.secFetchSite) headers["sec-fetch-site"] = opts.secFetchSite;
   if (opts.uid) headers.cookie = `${SESSION_COOKIE_NAME}=${cookies[opts.uid]}`;
-  const request = new Request(`${ORIGIN}${endpoint.path}`, {
+  const request = new Request(`${ORIGIN}${endpoint.path}${opts.query ?? ""}`, {
     method: endpoint.method,
     headers,
     ...(endpoint.method === "POST" ? { body: JSON.stringify(endpoint.body ?? {}) } : {}),
@@ -699,6 +707,83 @@ describe("IDOR sweep", () => {
       expect(await errorCode(res)).toBe("FORBIDDEN");
     },
   );
+});
+
+describe("request-supplied document id validation", () => {
+  const malformedId = "a/b";
+  const documentIdFields = [
+    "boothId",
+    "studentUid",
+    "targetUid",
+    "originalEntryId",
+    "uid",
+  ] as const;
+  const bodyCases = ENDPOINTS.flatMap((endpoint) => {
+    const body = endpoint.body;
+    if (body === undefined || body === null || typeof body !== "object" || Array.isArray(body)) {
+      return [];
+    }
+    return documentIdFields
+      .filter((field) => field in body)
+      .map((field) => ({ path: endpoint.path, field }));
+  });
+
+  function actorFor(endpoint: Endpoint): string {
+    if (endpoint.role === "sacExec") return "sweep-exec";
+    if (endpoint.role === "sacMember") return "sweep-member";
+    return "sweep-seller";
+  }
+
+  function loggedRequestCodes(): string[] {
+    return vi.mocked(console.log).mock.calls.flatMap(([line]) => {
+      try {
+        const record = JSON.parse(String(line)) as { event?: string; code?: string };
+        return record.event === "request" && record.code ? [record.code] : [];
+      } catch {
+        return [];
+      }
+    });
+  }
+
+  it.each(bodyCases)("$path rejects a slash in $field", async ({ path, field }) => {
+    const endpoint = ENDPOINTS.find((candidate) => candidate.path === path)!;
+    const body = { ...(endpoint.body as Record<string, unknown>), [field]: malformedId };
+    vi.mocked(console.log).mockClear();
+
+    const res = await call({ ...endpoint, body }, { uid: actorFor(endpoint) });
+
+    expect(res.status).toBe(400);
+    expect(await errorCode(res)).toBe("VALIDATION");
+    expect(loggedRequestCodes()).not.toContain("INTERNAL");
+  });
+
+  it("rejects a slash in the student-ledger cursor", async () => {
+    const endpoint = ENDPOINTS.find(
+      (candidate) => candidate.path === "/api/sac/students/[uid]/ledger",
+    )!;
+    vi.mocked(console.log).mockClear();
+
+    const res = await call(endpoint, { uid: "sweep-member", query: "?cursor=a%2Fb" });
+
+    expect(res.status).toBe(400);
+    expect(await errorCode(res)).toBe("VALIDATION");
+    expect(loggedRequestCodes()).not.toContain("INTERNAL");
+  });
+
+  const dynamicEndpoints = ENDPOINTS.filter((endpoint) => endpoint.params);
+
+  it.each(dynamicEndpoints)("$path rejects a decoded slash in route params", async (endpoint) => {
+    const params = Object.fromEntries(
+      Object.keys(endpoint.params!).map((name) => [name, malformedId]),
+    );
+    vi.mocked(console.log).mockClear();
+
+    const res = await call({ ...endpoint, params }, { uid: actorFor(endpoint) });
+
+    expect(res.status).toBe(400);
+    expect(await errorCode(res)).toBe("VALIDATION");
+    expect(loggedRequestCodes()).not.toContain("INTERNAL");
+  });
 });
 
 describe("enumeration sweep (NFR-9, I10)", () => {

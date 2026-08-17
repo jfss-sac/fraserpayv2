@@ -5,8 +5,9 @@ import { runAuthorizedTransaction } from "@/lib/server/dal";
 import { boothsCol, membersCol } from "@/lib/server/db";
 import { NotFoundError } from "@/lib/server/errors";
 import { defineHandler } from "@/lib/server/http";
+import { firestoreDocumentIdSchema } from "@/lib/shared/document-id";
 
-const removeSchema = z.object({ uid: z.string().trim().min(1) }).strict();
+const removeSchema = z.object({ uid: firestoreDocumentIdSchema }).strict();
 
 export const POST = defineHandler<typeof removeSchema, { id: string }>(
   { role: "sacExec", schema: removeSchema, rateLimit: "exec-mutations" },

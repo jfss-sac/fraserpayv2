@@ -12,6 +12,7 @@ import {
 } from "../errors";
 import { type IdempotencyContext, type IdempotentOutcome, runIdempotent } from "../idempotency";
 import { CENT_STEP } from "@/lib/shared/constants";
+import { firestoreDocumentIdSchema } from "@/lib/shared/document-id";
 import { isHighAmount } from "@/lib/shared/money";
 import type { ChargeResult, LedgerLineItem } from "@/lib/shared/types";
 import { assertNonNegative } from "./invariants";
@@ -19,7 +20,7 @@ import { boothBuyerSchema, resolveActiveBuyer, torontoDate } from "./shared";
 
 export const chargeSchema = z
   .object({
-    boothId: z.string().trim().min(1),
+    boothId: firestoreDocumentIdSchema,
     buyer: boothBuyerSchema,
     items: z
       .array(

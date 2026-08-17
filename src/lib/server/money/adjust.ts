@@ -5,6 +5,7 @@ import { type LedgerEntryDoc, ledgerCol } from "../db";
 import { ConflictError, InsufficientFundsError, ValidationError } from "../errors";
 import { type IdempotencyContext, type IdempotentOutcome, runIdempotent } from "../idempotency";
 import { CENT_STEP } from "@/lib/shared/constants";
+import { firestoreDocumentIdSchema } from "@/lib/shared/document-id";
 import { pointsFor } from "@/lib/shared/money";
 import type { AdjustResult } from "@/lib/shared/types";
 import { assertNonNegative, assertNotSelf } from "./invariants";
@@ -12,14 +13,14 @@ import { readUser, torontoDate } from "./shared";
 
 export const adjustSchema = z
   .object({
-    studentUid: z.string().trim().min(1),
+    studentUid: firestoreDocumentIdSchema,
     amountCents: z
       .number()
       .int()
       .multipleOf(CENT_STEP)
       .refine((v) => v !== 0, "Amount must be non-zero."),
     reason: z.string().trim().min(1).max(280),
-    originalEntryId: z.string().trim().min(1).optional(),
+    originalEntryId: firestoreDocumentIdSchema.optional(),
   })
   .strict();
 
