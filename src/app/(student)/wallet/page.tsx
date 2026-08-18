@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { getSession } from "@/lib/server/dal";
 import { type LedgerEntryDoc, ledgerCol } from "@/lib/server/db";
 import { renderPaymentQrSvg } from "@/lib/server/qr";
+import { IOS_INSTALL_HINT_SCRIPT } from "./install-hint-script";
 import { WALLET_REFRESH_SCRIPT } from "./refresh-script";
 import { WalletView, type WalletHistoryItem } from "./wallet-view";
 
@@ -52,6 +53,7 @@ export default async function WalletPage() {
         asOfIso={new Date().toISOString()}
         history={ledgerSnap.docs.map((doc) => toHistoryItem(doc.id, doc.data()))}
       />
+      <script nonce={nonce} dangerouslySetInnerHTML={{ __html: IOS_INSTALL_HINT_SCRIPT }} />
       <script nonce={nonce} dangerouslySetInnerHTML={{ __html: WALLET_REFRESH_SCRIPT }} />
     </>
   );

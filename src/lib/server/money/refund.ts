@@ -4,13 +4,14 @@ import { z } from "zod";
 import { type LedgerEntryDoc, ledgerCol } from "../db";
 import { ConflictError, ValidationError } from "../errors";
 import { type IdempotencyContext, type IdempotentOutcome, runIdempotent } from "../idempotency";
+import { firestoreDocumentIdSchema } from "@/lib/shared/document-id";
 import type { LedgerLineItem, RefundResult } from "@/lib/shared/types";
 import { assertNonNegative, assertNotSelf, assertRefundable } from "./invariants";
 import { readUser, torontoDate } from "./shared";
 
 export const refundSchema = z
   .object({
-    originalEntryId: z.string().trim().min(1),
+    originalEntryId: firestoreDocumentIdSchema,
     reason: z.string().trim().min(1).max(280),
     lineItems: z
       .array(

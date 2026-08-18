@@ -4,7 +4,7 @@ import { POST as chargeRoute } from "../../src/app/api/booth/charge/route";
 import { POST as registerRoute } from "../../src/app/api/booths/register/route";
 import { POST as rolesRoute } from "../../src/app/api/exec/roles/route";
 import { POST as topupRoute } from "../../src/app/api/sac/topup/route";
-import { boothsCol, ledgerCol, membersCol, usersCol } from "../../src/lib/server/db";
+import { auditCol, boothsCol, ledgerCol, membersCol, usersCol } from "../../src/lib/server/db";
 import { getAdminAuth, getAdminFirestore } from "../../src/lib/server/firebase-admin";
 import { IDEMPOTENT_REPLAY_HEADER } from "../../src/lib/server/idempotency";
 import { SESSION_COOKIE_NAME, SESSION_TTL_MS } from "../../src/lib/shared/constants";
@@ -14,6 +14,7 @@ const EXEC_UID = "authorization-race-exec";
 const OPERATOR_UID = "authorization-race-operator";
 const TARGET_UID = "authorization-race-target";
 const BUYER_UID = "authorization-race-buyer";
+const EXEC_BUYER_UID = "authorization-race-exec-buyer";
 const CAP_EXEC_UID = "authorization-race-cap-exec";
 const CAP_BUYER_UID = "authorization-race-cap-buyer";
 const REPLAY_MEMBER_UID = "authorization-race-replay-member";
@@ -119,6 +120,7 @@ beforeAll(async () => {
   await makeUser(OPERATOR_UID, { sacMember: false, sacExec: false });
   await makeUser(TARGET_UID, { sacMember: false, sacExec: false });
   await makeUser(BUYER_UID, { sacMember: false, sacExec: false }, 1_000);
+  await makeUser(EXEC_BUYER_UID, { sacMember: false, sacExec: false }, 1_000);
   await makeUser(CAP_EXEC_UID, { sacMember: true, sacExec: true });
   await makeUser(CAP_BUYER_UID, { sacMember: false, sacExec: false });
   await makeUser(REPLAY_MEMBER_UID, { sacMember: true, sacExec: false });
@@ -216,6 +218,42 @@ describe("transactional authorization freshness", () => {
       gate.release();
       gate.restore();
     }
+  });
+
+  it("does not commit a non-member exec's charge after the exec role is revoked (loop)", async () => {
+    for (let attempt = 1; attempt <= 5; attempt += 1) {
+      await updateRoles(EXEC_UID, { sacMember: true, sacExec: true });
+      const gate = pauseNextTransaction();
+      try {
+        const pending = chargeRoute(
+          post(
+            "/api/booth/charge",
+            EXEC_UID,
+            {
+              boothId: BOOTH_ID,
+              buyer: { paymentCode: `fp1-${EXEC_BUYER_UID}` },
+              items: [{ itemId: "item", qty: 1 }],
+            },
+            `f47ac10b-58cc-4372-a567-1000000000${attempt.toString().padStart(2, "0")}`,
+          ),
+        );
+
+        await gate.started;
+        await updateRoles(EXEC_UID, { sacMember: true, sacExec: false });
+        gate.release();
+
+        const res = await pending;
+        expect(res.status).toBe(403);
+        expect(await errorCode(res)).toBe("FORBIDDEN");
+        expect((await usersCol().doc(EXEC_BUYER_UID).get()).data()?.balanceCents).toBe(1_000);
+        expect((await ledgerCol().where("studentUid", "==", EXEC_BUYER_UID).get()).size).toBe(0);
+        expect((await auditCol().where("action", "==", "booth.execCharge").get()).size).toBe(0);
+      } finally {
+        gate.release();
+        gate.restore();
+      }
+    }
+    await updateRoles(EXEC_UID, { sacMember: true, sacExec: false });
   });
 
   it("does not use a revoked exec role for a queued top-up cap override", async () => {

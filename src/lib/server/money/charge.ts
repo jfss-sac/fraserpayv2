@@ -1,9 +1,18 @@
 import "server-only";
 import { Timestamp } from "firebase-admin/firestore";
 import { z } from "zod";
+import { writeAudit } from "../audit";
+import { isBoothOperatorActor } from "../dal";
 import { type LedgerEntryDoc, boothsCol, ledgerCol, membersCol } from "../db";
-import { BoothNotSellableError, ForbiddenError, InsufficientFundsError } from "../errors";
+import {
+  BoothNotSellableError,
+  CatalogChangedError,
+  ForbiddenError,
+  InsufficientFundsError,
+} from "../errors";
 import { type IdempotencyContext, type IdempotentOutcome, runIdempotent } from "../idempotency";
+import { CENT_STEP } from "@/lib/shared/constants";
+import { firestoreDocumentIdSchema } from "@/lib/shared/document-id";
 import { isHighAmount } from "@/lib/shared/money";
 import type { ChargeResult, LedgerLineItem } from "@/lib/shared/types";
 import { assertNonNegative } from "./invariants";
@@ -11,13 +20,14 @@ import { boothBuyerSchema, resolveActiveBuyer, torontoDate } from "./shared";
 
 export const chargeSchema = z
   .object({
-    boothId: z.string().trim().min(1),
+    boothId: firestoreDocumentIdSchema,
     buyer: boothBuyerSchema,
     items: z
       .array(
         z.object({ itemId: z.string().trim().min(1), qty: z.number().int().positive() }).strict(),
       )
       .min(1),
+    expectedAmountCents: z.number().int().positive().multipleOf(CENT_STEP).optional(),
   })
   .strict();
 
@@ -41,7 +51,7 @@ export async function charge(args: {
       const booth = boothSnapshot.data();
       if (!booth || booth.status !== "approved") throw new BoothNotSellableError();
 
-      if (!memberSnapshot.exists) {
+      if (!isBoothOperatorActor(memberSnapshot.exists, actor.roles)) {
         throw new ForbiddenError("You are not a member of this booth.");
       }
 
@@ -50,10 +60,17 @@ export async function charge(args: {
       const lineItems: LedgerLineItem[] = input.items.map(({ itemId, qty }) => {
         const item = booth.items.find((i) => i.id === itemId);
         if (!item) throw new BoothNotSellableError("That item is not sold at this booth.");
+        if (item.archived === true) {
+          throw new CatalogChangedError(`${item.name} is no longer sold at this booth.`);
+        }
         return { itemId, name: item.name, qty, unitPriceCents: item.priceCents };
       });
 
       const amountCents = lineItems.reduce((sum, li) => sum + li.qty * li.unitPriceCents, 0);
+
+      if (input.expectedAmountCents !== undefined && input.expectedAmountCents !== amountCents) {
+        throw new CatalogChangedError();
+      }
 
       if (data.balanceCents < amountCents) throw new InsufficientFundsError();
       const balanceAfterCents = data.balanceCents - amountCents;
@@ -84,6 +101,16 @@ export async function charge(args: {
       const entryRef = ledgerCol().doc();
       t.create(entryRef, entry);
       t.update(buyerRef, { balanceCents: balanceAfterCents, updatedAt: now });
+
+      if (!memberSnapshot.exists) {
+        writeAudit(
+          t,
+          "booth.execCharge",
+          { uid: actorUid, displayName: actor.displayName },
+          { type: "booth", id: input.boothId, label: booth.name },
+          { entryId: entryRef.id, amountCents },
+        );
+      }
 
       return {
         response: { entryId: entryRef.id, amountCents },

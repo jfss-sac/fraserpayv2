@@ -1,13 +1,25 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import { expect, test, vi } from "vitest";
 import type { BoothItem } from "@/lib/shared/types";
-import { PosCart, cartItemCount, cartTotalCents } from "./pos-cart";
+import {
+  PosCart,
+  type CartQuantities,
+  type PosCartProps,
+  cartItemCount,
+  cartTotalCents,
+} from "./pos-cart";
 
 const TACO: BoothItem = { id: "taco", name: "Taco", priceCents: 250, isCustom: false };
 const WATER: BoothItem = { id: "water", name: "Water", priceCents: 150, isCustom: false };
 const CUSTOM: BoothItem = { id: "custom", name: "Custom", priceCents: 50, isCustom: true };
 const ITEMS = [TACO, WATER, CUSTOM];
+
+function TestPosCart(props: Omit<PosCartProps, "quantities" | "onQuantitiesChange">) {
+  const [quantities, setQuantities] = useState<CartQuantities>({});
+  return <PosCart {...props} quantities={quantities} onQuantitiesChange={setQuantities} />;
+}
 
 test("cartTotalCents and cartItemCount sum quantities", () => {
   expect(cartTotalCents(ITEMS, { taco: 2, custom: 3 })).toBe(650);
@@ -16,13 +28,13 @@ test("cartTotalCents and cartItemCount sum quantities", () => {
 });
 
 test("total starts at zero with the decrement disabled", () => {
-  render(<PosCart items={ITEMS} />);
+  render(<TestPosCart items={ITEMS} />);
   expect(screen.getByLabelText("Cart total")).toHaveTextContent("$0.00");
   expect(screen.getByRole("button", { name: "Remove one Taco" })).toBeDisabled();
 });
 
 test("adding items updates the running total and quantity", async () => {
-  render(<PosCart items={ITEMS} />);
+  render(<TestPosCart items={ITEMS} />);
   await userEvent.click(screen.getByRole("button", { name: "Add Taco" }));
   await userEvent.click(screen.getByRole("button", { name: "Add Taco" }));
 
@@ -31,7 +43,7 @@ test("adding items updates the running total and quantity", async () => {
 });
 
 test("removing decrements and never drops below zero", async () => {
-  render(<PosCart items={ITEMS} />);
+  render(<TestPosCart items={ITEMS} />);
   const add = screen.getByRole("button", { name: "Add Taco" });
   await userEvent.click(add);
   await userEvent.click(add);
@@ -46,7 +58,7 @@ test("removing decrements and never drops below zero", async () => {
 });
 
 test("custom item shows the $0.50 × N explainer and multiplies", async () => {
-  render(<PosCart items={ITEMS} />);
+  render(<TestPosCart items={ITEMS} />);
   expect(screen.getByText("$0.50 × N")).toBeInTheDocument();
 
   const add = screen.getByRole("button", { name: "Add Custom" });
@@ -59,7 +71,7 @@ test("custom item shows the $0.50 × N explainer and multiplies", async () => {
 });
 
 test("mixed cart totals across items", async () => {
-  render(<PosCart items={ITEMS} />);
+  render(<TestPosCart items={ITEMS} />);
   await userEvent.click(screen.getByRole("button", { name: "Add Taco" }));
   await userEvent.click(screen.getByRole("button", { name: "Add Taco" }));
   await userEvent.click(screen.getByRole("button", { name: "Add Water" }));
@@ -71,7 +83,7 @@ test("mixed cart totals across items", async () => {
 
 test("Charge is disabled while the cart is empty and enabled once items are added", async () => {
   const onCharge = vi.fn();
-  render(<PosCart items={ITEMS} onCharge={onCharge} />);
+  render(<TestPosCart items={ITEMS} onCharge={onCharge} />);
 
   const charge = screen.getByRole("button", { name: "Charge" });
   expect(charge).toBeDisabled();
@@ -84,7 +96,21 @@ test("Charge is disabled while the cart is empty and enabled once items are adde
 });
 
 test("Charge stays disabled without a charge handler", async () => {
-  render(<PosCart items={ITEMS} />);
+  render(<TestPosCart items={ITEMS} />);
   await userEvent.click(screen.getByRole("button", { name: "Add Taco" }));
   expect(screen.getByRole("button", { name: "Charge" })).toBeDisabled();
+});
+
+test("drops an archived line after the catalog is refreshed while keeping the rest of the cart", async () => {
+  const { rerender } = render(<TestPosCart items={ITEMS} />);
+  await userEvent.click(screen.getByRole("button", { name: "Add Taco" }));
+  await userEvent.click(screen.getByRole("button", { name: "Add Water" }));
+
+  rerender(<TestPosCart items={[TACO, CUSTOM]} />);
+
+  await waitFor(() => {
+    expect(screen.queryByText("Water")).not.toBeInTheDocument();
+  });
+  expect(screen.getByLabelText("Taco quantity")).toHaveTextContent("1");
+  expect(screen.getByLabelText("Cart total")).toHaveTextContent("$2.50");
 });

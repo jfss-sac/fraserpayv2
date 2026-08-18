@@ -43,6 +43,10 @@ function keyOf(call: unknown[]): string | null {
   return new Headers((call[1] as RequestInit).headers).get("idempotency-key");
 }
 
+function bodyOf(call: unknown[]): Record<string, unknown> {
+  return JSON.parse(String((call[1] as RequestInit).body)) as Record<string, unknown>;
+}
+
 afterEach(() => {
   vi.restoreAllMocks();
   localStorage.clear();
@@ -57,6 +61,7 @@ test("cartToItems drops zero quantities and maps the rest", () => {
 
 test("chargeErrorMessage maps known codes and falls back", () => {
   expect(chargeErrorMessage("INSUFFICIENT_FUNDS")).toBe("Balance can't cover this cart.");
+  expect(chargeErrorMessage("CATALOG_CHANGED")).toContain("refresh");
   expect(chargeErrorMessage("NETWORK")).toContain("connection");
   expect(chargeErrorMessage("WHATEVER")).toBe("Charge failed. Try again.");
 });
@@ -74,6 +79,7 @@ test("sends a valid UUID v4 idempotency key and reports success", async () => {
   expect(keyOf(fetchMock.mock.calls[0]!)).toMatch(
     /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
   );
+  expect(bodyOf(fetchMock.mock.calls[0]!)).toMatchObject({ expectedAmountCents: 500 });
   expect(result.current.state).toEqual({ status: "success", amountCents: 500, buyerName: "Ada" });
   expect(onSuccess).toHaveBeenCalledWith({
     entryId: "e1",
@@ -167,6 +173,26 @@ test("surfaces a business error without retrying", async () => {
   expect(fetchMock).toHaveBeenCalledTimes(1);
   expect(result.current.state).toEqual({ status: "error", code: "INSUFFICIENT_FUNDS" });
   expect(onError).toHaveBeenCalledWith("INSUFFICIENT_FUNDS");
+});
+
+test("uses a new key when re-confirmation changes the expected amount", async () => {
+  const fetchMock = vi
+    .fn()
+    .mockResolvedValueOnce(errorResponse("CATALOG_CHANGED"))
+    .mockResolvedValueOnce(okResponse({ entryId: "e1", amountCents: 750 }));
+  vi.stubGlobal("fetch", fetchMock);
+
+  const { result } = renderHook(() => useCharge({ boothId: "b1", actorUid: ACTOR }));
+  await act(async () => {
+    await result.current.submit({ buyer: BUYER, buyerName: "Ada", items: ITEMS, amountCents: 500 });
+  });
+  await act(async () => {
+    await result.current.submit({ buyer: BUYER, buyerName: "Ada", items: ITEMS, amountCents: 750 });
+  });
+
+  expect(keyOf(fetchMock.mock.calls[0]!)).not.toBe(keyOf(fetchMock.mock.calls[1]!));
+  expect(bodyOf(fetchMock.mock.calls[0]!)).toMatchObject({ expectedAmountCents: 500 });
+  expect(bodyOf(fetchMock.mock.calls[1]!)).toMatchObject({ expectedAmountCents: 750 });
 });
 
 test("gives up with a NETWORK error after exhausting retries", async () => {
@@ -463,7 +489,7 @@ test("keeps the record for every code that cannot prove the original never lande
 });
 
 test("clears the record only for codes raised inside the transaction", async () => {
-  for (const code of ["INSUFFICIENT_FUNDS", "BOOTH_NOT_SELLABLE"]) {
+  for (const code of ["INSUFFICIENT_FUNDS", "BOOTH_NOT_SELLABLE", "CATALOG_CHANGED"]) {
     const fetchMock = vi.fn().mockResolvedValue(errorResponse(code));
     vi.stubGlobal("fetch", fetchMock);
 

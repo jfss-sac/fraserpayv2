@@ -423,6 +423,32 @@ describe("GET /api/sac/students/[uid]/ledger", () => {
     expect(await errorCode(res)).toBe("VALIDATION");
   });
 
+  it("rejects a cursor belonging to another student like an unknown cursor", async () => {
+    const uid = await freshLedgerStudent();
+    const other = await freshLedgerStudent();
+    const foreignCursor = await seedEntry(other, { atMs: BASE_MS + 4_500_000 });
+
+    const [unknownReq, unknownCtx] = ledgerReq(MEMBER.uid, uid, "does-not-exist");
+    const unknownRes = await ledgerRoute(unknownReq, unknownCtx);
+    const unknownBody = (await unknownRes.json()) as {
+      error: { code: string; message: string };
+    };
+
+    const [foreignReq, foreignCtx] = ledgerReq(MEMBER.uid, uid, foreignCursor);
+    const foreignRes = await ledgerRoute(foreignReq, foreignCtx);
+    const foreignBody = (await foreignRes.json()) as {
+      error: { code: string; message: string };
+    };
+
+    expect(unknownRes.status).toBe(400);
+    expect(foreignRes.status).toBe(400);
+    expect(foreignBody.error).toEqual({
+      code: "VALIDATION",
+      message: unknownBody.error.message,
+      requestId: expect.any(String),
+    });
+  });
+
   it("returns only the target student's entries", async () => {
     const uid = await freshLedgerStudent();
     const other = await freshLedgerStudent();

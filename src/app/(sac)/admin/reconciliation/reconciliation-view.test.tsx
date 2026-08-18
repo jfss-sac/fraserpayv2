@@ -99,6 +99,10 @@ describe("ReconciliationView", () => {
 
     expect(await screen.findByText("You recorded $15.00 cash / $20.00 card")).toBeInTheDocument();
     expect(screen.getByText("You")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Download CSV" })).toHaveAttribute(
+      "href",
+      "/api/sac/reconciliation/export?date=2024-01-15",
+    );
   });
 
   test("drill-down reveals top-up entries and linked corrections", async () => {

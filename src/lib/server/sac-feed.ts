@@ -17,6 +17,7 @@ export const REPEAT_BUYER_SCAN_LIMIT = 500;
 const HIGH_AMOUNT_TAG = "high-amount";
 
 const FILTER_KEYS = ["type", "boothId", "actorUid", "tag"] as const;
+const ISO_INSTANT = z.string().datetime({ offset: true });
 
 export const feedQuerySchema = z
   .object({
@@ -24,12 +25,21 @@ export const feedQuerySchema = z
     boothId: z.string().trim().min(1).optional(),
     actorUid: z.string().trim().min(1).optional(),
     tag: z.literal(HIGH_AMOUNT_TAG).optional(),
+    from: ISO_INSTANT.optional(),
+    to: ISO_INSTANT.optional(),
     cursor: z.string().trim().min(1).optional(),
   })
   .strict()
   .refine((v) => FILTER_KEYS.filter((k) => v[k] !== undefined).length <= 1, {
     message: "At most one feed filter may be applied at a time.",
-  });
+  })
+  .refine(
+    (v) => v.from === undefined || v.to === undefined || Date.parse(v.from) < Date.parse(v.to),
+    {
+      path: ["to"],
+      message: "The feed range must end after it starts.",
+    },
+  );
 
 export type FeedQuery = z.infer<typeof feedQuerySchema>;
 
@@ -75,19 +85,47 @@ function ordered<T>(query: Query<T>, cursor: FeedCursor | null): Query<T> {
   return q.limit(FEED_PAGE_SIZE + 1);
 }
 
-function ledgerQuery(filters: FeedQuery, cursor: FeedCursor | null): Query<LedgerEntryDoc> {
+interface FeedRange {
+  fromMs?: number;
+  toMs?: number;
+}
+
+function parsedRange(input: FeedQuery): FeedRange {
+  return {
+    ...(input.from !== undefined ? { fromMs: Date.parse(input.from) } : {}),
+    ...(input.to !== undefined ? { toMs: Date.parse(input.to) } : {}),
+  };
+}
+
+function applyRange<T>(query: Query<T>, range: FeedRange): Query<T> {
+  let q = query;
+  if (range.fromMs !== undefined)
+    q = q.where("createdAt", ">=", Timestamp.fromMillis(range.fromMs));
+  if (range.toMs !== undefined) q = q.where("createdAt", "<", Timestamp.fromMillis(range.toMs));
+  return q;
+}
+
+function ledgerQuery(
+  filters: FeedQuery,
+  range: FeedRange,
+  cursor: FeedCursor | null,
+): Query<LedgerEntryDoc> {
   let q: Query<LedgerEntryDoc> = ledgerCol();
   if (filters.type) q = q.where("type", "==", filters.type);
   if (filters.boothId) q = q.where("boothId", "==", filters.boothId);
   if (filters.actorUid) q = q.where("actorUid", "==", filters.actorUid);
   if (filters.tag) q = q.where("tags", "array-contains", filters.tag);
-  return ordered(q, cursor);
+  return ordered(applyRange(q, range), cursor);
 }
 
-function auditQuery(filters: FeedQuery, cursor: FeedCursor | null): Query<AuditLogDoc> {
+function auditQuery(
+  filters: FeedQuery,
+  range: FeedRange,
+  cursor: FeedCursor | null,
+): Query<AuditLogDoc> {
   let q: Query<AuditLogDoc> = auditCol();
   if (filters.actorUid) q = q.where("actorUid", "==", filters.actorUid);
-  return ordered(q, cursor);
+  return ordered(applyRange(q, range), cursor);
 }
 
 function auditParticipates(filters: FeedQuery): boolean {
@@ -158,13 +196,18 @@ interface RepeatBuyerScan {
   truncated: boolean;
 }
 
-async function repeatBuyersSince(nowMs: number): Promise<RepeatBuyerScan> {
-  const snap = await ledgerCol()
+async function repeatBuyersSince(nowMs: number, range: FeedRange): Promise<RepeatBuyerScan> {
+  let query = ledgerCol()
     .where("type", "==", "purchase")
-    .where("createdAt", ">=", Timestamp.fromMillis(nowMs - REPEAT_BUYER_WINDOW_MS))
-    .orderBy("createdAt", "desc")
-    .limit(REPEAT_BUYER_SCAN_LIMIT)
-    .get();
+    .where(
+      "createdAt",
+      ">=",
+      Timestamp.fromMillis(Math.max(nowMs - REPEAT_BUYER_WINDOW_MS, range.fromMs ?? -Infinity)),
+    );
+  if (range.toMs !== undefined) {
+    query = query.where("createdAt", "<", Timestamp.fromMillis(range.toMs));
+  }
+  const snap = await query.orderBy("createdAt", "desc").limit(REPEAT_BUYER_SCAN_LIMIT).get();
   return {
     buyers: flagRepeatBuyers(snap.docs.map((doc) => doc.data())),
     truncated: snap.size === REPEAT_BUYER_SCAN_LIMIT,
@@ -173,15 +216,19 @@ async function repeatBuyersSince(nowMs: number): Promise<RepeatBuyerScan> {
 
 export async function getFeed(input: FeedQuery, nowMs: number = Date.now()): Promise<FeedDTO> {
   const cursor = input.cursor ? decodeCursor(input.cursor) : null;
+  const range = parsedRange(input);
+  const rangeIncludesNow =
+    (range.fromMs === undefined || range.fromMs <= nowMs) &&
+    (range.toMs === undefined || nowMs < range.toMs);
 
   const [snaps, repeatBuyers] = await Promise.all([
     Promise.all([
-      ledgerQuery(input, cursor).get(),
-      auditParticipates(input) ? auditQuery(input, cursor).get() : null,
+      ledgerQuery(input, range, cursor).get(),
+      auditParticipates(input) ? auditQuery(input, range, cursor).get() : null,
     ]),
-    cursor
+    cursor || !rangeIncludesNow
       ? Promise.resolve<RepeatBuyerScan>({ buyers: [], truncated: false })
-      : repeatBuyersSince(nowMs),
+      : repeatBuyersSince(nowMs, range),
   ]);
 
   const ranked: Ranked[] = [];

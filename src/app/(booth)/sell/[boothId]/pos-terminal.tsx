@@ -9,8 +9,13 @@ import { useToast } from "@/lib/ui/toast";
 import { useNow } from "@/lib/ui/use-now";
 import { Button } from "@/lib/ui/vendor/button";
 import { OfflineBanner } from "./offline-banner";
-import { type CartQuantities, PosCart } from "./pos-cart";
+import {
+  cartTotalCents as calculateCartTotalCents,
+  type CartQuantities,
+  PosCart,
+} from "./pos-cart";
 import { RecoveryCard } from "./recovery-card";
+import { type CatalogChange, CATALOG_REFRESH_ERROR, useCatalog } from "./use-catalog";
 import { useConnectivity } from "./use-connectivity";
 import { cartToItems, chargeErrorMessage, useCharge } from "./use-charge";
 import { type ObservedPurchase, type SufficiencyState, useSufficiency } from "./use-sufficiency";
@@ -106,6 +111,58 @@ export function BuyerPanel({
   );
 }
 
+function catalogChangeLabel(change: CatalogChange): string {
+  if (change.type === "price") {
+    return `${change.name} ${formatCents(change.previousPriceCents)} → ${formatCents(change.priceCents)}`;
+  }
+  if (change.type === "archived") {
+    return `${change.name} — no longer sold (removed from cart)`;
+  }
+  return `${change.name} added at ${formatCents(change.priceCents)}`;
+}
+
+export function CatalogChangeNotice({
+  changes,
+  confirmationRequired,
+  confirmationAvailable,
+  onConfirm,
+}: {
+  changes: CatalogChange[];
+  confirmationRequired: boolean;
+  confirmationAvailable: boolean;
+  onConfirm: () => void;
+}) {
+  if (changes.length === 0 && !confirmationRequired) return null;
+
+  return (
+    <section
+      aria-label="Catalog changes"
+      role={confirmationRequired ? "alert" : "status"}
+      className="flex flex-col gap-3 rounded-lg border border-warning bg-surface p-4"
+    >
+      <p className="font-medium text-foreground">
+        {confirmationRequired && confirmationAvailable
+          ? "Review the catalog changes before charging again."
+          : confirmationRequired
+            ? "Refresh the catalog before charging again."
+            : "Catalog updated."}
+      </p>
+      {changes.length > 0 && (
+        <ul className="flex flex-col gap-1 text-sm text-foreground">
+          {changes.map((change) => (
+            <li key={`${change.type}-${change.itemId}`}>{catalogChangeLabel(change)}</li>
+          ))}
+        </ul>
+      )}
+      {confirmationRequired && confirmationAvailable && (
+        <Button type="button" variant="outline" onClick={onConfirm} className="self-start">
+          Confirm price changes
+        </Button>
+      )}
+    </section>
+  );
+}
+
 export function PosTerminal({
   boothId,
   actorUid,
@@ -115,9 +172,20 @@ export function PosTerminal({
   actorUid: string;
   items: BoothItem[];
 }) {
+  const {
+    items: catalogItems,
+    changes: catalogChanges,
+    isRefreshing: catalogRefreshing,
+    error: catalogError,
+    refresh: requestCatalogRefresh,
+    clearChanges: clearCatalogChanges,
+  } = useCatalog({ boothId, initialItems: items });
   const [buyer, setBuyer] = useState<BuyerId | null>(null);
   const [cartTotalCents, setCartTotalCents] = useState(0);
-  const [cartKey, setCartKey] = useState(0);
+  const [cartQuantities, setCartQuantities] = useState<CartQuantities>({});
+  const [catalogConfirmationRequired, setCatalogConfirmationRequired] = useState(false);
+  const [catalogConfirmationAvailable, setCatalogConfirmationAvailable] = useState(false);
+  const [catalogWasRefreshed, setCatalogWasRefreshed] = useState(false);
   const { state: sufficiency, refresh: refreshLookup } = useSufficiency({
     boothId,
     buyer,
@@ -125,6 +193,45 @@ export function PosTerminal({
   });
   const online = useConnectivity();
   const { push } = useToast();
+
+  const refreshCatalog = useCallback(
+    async (requiresConfirmation = false) => {
+      const confirmationWasRequired = catalogConfirmationRequired;
+      const shouldGate = requiresConfirmation || confirmationWasRequired;
+      if (shouldGate) {
+        setCatalogConfirmationRequired(true);
+        setCatalogConfirmationAvailable(false);
+      }
+      const result = await requestCatalogRefresh();
+      if (!result) {
+        push(CATALOG_REFRESH_ERROR, "error");
+        return null;
+      }
+      setCatalogWasRefreshed(true);
+      const archivedIds = new Set(
+        result.changes
+          .filter(
+            (change): change is Extract<CatalogChange, { type: "archived" }> =>
+              change.type === "archived",
+          )
+          .map((change) => change.itemId),
+      );
+      if (archivedIds.size > 0) {
+        setCartQuantities((current) => {
+          const next = Object.fromEntries(
+            Object.entries(current).filter(([itemId]) => !archivedIds.has(itemId)),
+          );
+          return Object.keys(next).length === Object.keys(current).length ? current : next;
+        });
+      }
+      if (shouldGate) {
+        setCatalogConfirmationRequired(true);
+        setCatalogConfirmationAvailable(true);
+      }
+      return result;
+    },
+    [catalogConfirmationRequired, push, requestCatalogRefresh],
+  );
 
   const {
     state: chargeState,
@@ -156,11 +263,13 @@ export function PosTerminal({
         !possiblySameBuyer(buyer, recovered.buyer);
       if (!saleBelongsToAnotherBuyer) {
         setBuyer(null);
-        setCartKey((key) => key + 1);
+        setCartQuantities({});
       }
+      clearCatalogChanges();
     },
     onError: (code) => {
       if (code === "INSUFFICIENT_FUNDS") refreshLookup();
+      if (code === "CATALOG_CHANGED") void refreshCatalog(true);
       push(chargeErrorMessage(code), "error");
     },
   });
@@ -176,13 +285,14 @@ export function PosTerminal({
         buyer,
         buyerName,
         items: cartToItems(quantities),
-        amountCents: cartTotalCents,
+        amountCents: calculateCartTotalCents(catalogItems, quantities),
       });
     },
-    [buyer, buyerName, cartTotalCents, submit],
+    [buyer, buyerName, catalogItems, submit],
   );
 
-  const canCharge = buyer !== null && sufficiency.status === "ready" && online;
+  const canCharge =
+    buyer !== null && sufficiency.status === "ready" && online && !catalogConfirmationRequired;
   const busy = chargeState.status === "pending";
 
   return (
@@ -199,9 +309,44 @@ export function PosTerminal({
         />
       )}
 
+      <div className="flex flex-col gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => void refreshCatalog()}
+          disabled={catalogRefreshing || busy || catalogConfirmationAvailable}
+          className="self-start"
+        >
+          {catalogRefreshing ? "Refreshing catalog…" : "Refresh catalog"}
+        </Button>
+        {catalogError && (
+          <p role="alert" className="text-sm font-medium text-danger">
+            {catalogError}
+          </p>
+        )}
+      </div>
+
+      {catalogWasRefreshed && catalogChanges.length === 0 && !catalogConfirmationRequired && (
+        <p role="status" className="text-sm font-medium text-muted">
+          Catalog is up to date.
+        </p>
+      )}
+
+      <CatalogChangeNotice
+        changes={catalogChanges}
+        confirmationRequired={catalogConfirmationRequired}
+        confirmationAvailable={catalogConfirmationAvailable}
+        onConfirm={() => {
+          setCatalogConfirmationRequired(false);
+          setCatalogConfirmationAvailable(false);
+          clearCatalogChanges();
+        }}
+      />
+
       <PosCart
-        key={cartKey}
-        items={items}
+        items={catalogItems}
+        quantities={cartQuantities}
+        onQuantitiesChange={setCartQuantities}
         onTotalChange={handleTotalChange}
         onCharge={canCharge ? handleCharge : undefined}
         busy={busy}

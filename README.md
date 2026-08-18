@@ -13,6 +13,12 @@ Closed-loop digital credit system for a school event(s) at John Fraser SS. Stude
 
 ---
 
+## iPhone install blurb for SAC
+
+> On iPhone, open FraserPay in Safari, tap Share → Add to Home Screen, then use the new icon at the event. The wallet can open from that icon when the network is unavailable.
+
+---
+
 ## Architecture
 
 Clients reach Firebase Auth only to sign in; every read and write goes through the Next.js server, the holder of database credentials.

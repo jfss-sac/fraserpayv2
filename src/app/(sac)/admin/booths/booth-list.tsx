@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useState } from "react";
 import type { AdminBoothListItem, BoothStatus } from "@/lib/shared/types";
+import { STATUS_BADGE, STATUS_LABEL } from "@/lib/ui/booth-status";
+import { NewBoothForm } from "./new-booth-form";
 
 type Filter = "all" | BoothStatus;
 
@@ -12,18 +14,6 @@ const FILTERS: { key: Filter; label: string }[] = [
   { key: "approved", label: "Approved" },
   { key: "deactivated", label: "Deactivated" },
 ];
-
-const STATUS_BADGE: Record<BoothStatus, string> = {
-  pending: "bg-brand/10 text-brand",
-  approved: "bg-success/10 text-success",
-  deactivated: "bg-muted/10 text-muted",
-};
-
-const STATUS_LABEL: Record<BoothStatus, string> = {
-  pending: "Pending review",
-  approved: "Approved",
-  deactivated: "Deactivated",
-};
 
 function BoothRow({ booth }: { booth: AdminBoothListItem }) {
   return (
@@ -50,20 +40,23 @@ function BoothRow({ booth }: { booth: AdminBoothListItem }) {
   );
 }
 
-export function BoothList({ booths }: { booths: AdminBoothListItem[] }) {
+export function BoothList({ booths, isExec }: { booths: AdminBoothListItem[]; isExec: boolean }) {
   const [filter, setFilter] = useState<Filter>("all");
   const pendingCount = booths.filter((booth) => booth.status === "pending").length;
   const shown = filter === "all" ? booths : booths.filter((booth) => booth.status === filter);
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-bold text-foreground">Booths</h1>
-        {pendingCount > 0 ? (
-          <p className="text-sm font-medium text-brand">
-            {pendingCount} booth{pendingCount === 1 ? "" : "s"} awaiting review
-          </p>
-        ) : null}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex flex-col gap-1">
+          <h1 className="text-2xl font-bold text-foreground">Booths</h1>
+          {pendingCount > 0 ? (
+            <p className="text-sm font-medium text-brand">
+              {pendingCount} booth{pendingCount === 1 ? "" : "s"} awaiting review
+            </p>
+          ) : null}
+        </div>
+        {isExec ? <NewBoothForm /> : null}
       </div>
 
       <div className="flex flex-wrap gap-2" role="tablist" aria-label="Filter booths by status">

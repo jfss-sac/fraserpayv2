@@ -7,9 +7,10 @@ import { usersCol } from "@/lib/server/db";
 import { ConflictError, NotFoundError } from "@/lib/server/errors";
 import { hasOtherActiveExec } from "@/lib/server/exec-lockout";
 import { defineHandler } from "@/lib/server/http";
+import { firestoreDocumentIdSchema } from "@/lib/shared/document-id";
 
 const suspendSchema = z
-  .object({ studentUid: z.string().trim().min(1), suspended: z.boolean() })
+  .object({ studentUid: firestoreDocumentIdSchema, suspended: z.boolean() })
   .strict();
 
 export const POST = defineHandler(

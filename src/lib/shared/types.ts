@@ -12,6 +12,7 @@ export interface SacRoles {
 }
 
 export type AuditAction =
+  | "booth.create"
   | "booth.approve"
   | "booth.priceEdit"
   | "booth.itemAdd"
@@ -21,11 +22,13 @@ export type AuditAction =
   | "booth.memberRemove"
   | "booth.deactivate"
   | "booth.reactivate"
+  | "booth.execCharge"
   | "user.suspend"
   | "user.unsuspend"
   | "user.roleGrant"
   | "user.roleRevoke"
-  | "user.paymentCodeRegen";
+  | "user.paymentCodeRegen"
+  | "data.export";
 
 export interface BoothItem {
   id: string;
@@ -124,6 +127,33 @@ export interface BoothDetail {
   approvedAt: string | null;
   members: BoothMemberDTO[];
   summary: BoothSummary | null;
+}
+
+export interface BoothSettingsDTO {
+  id: string;
+  name: string;
+  description: string;
+  status: BoothStatus;
+  items: BoothItem[];
+  archivedItems: BoothItem[];
+  memberNames: string[];
+}
+
+export interface BoothHistoryEntry {
+  entryId: string;
+  createdAt: string;
+  type: LedgerType;
+  amountCents: number;
+  direction: LedgerDirection;
+  buyerName: string;
+  lineItems: LedgerLineItem[];
+  actorName: string;
+  originalEntryId?: string;
+}
+
+export interface BoothHistoryDTO {
+  entries: BoothHistoryEntry[];
+  nextCursor: string | null;
 }
 
 export interface ChargeResult {

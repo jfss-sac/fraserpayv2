@@ -99,6 +99,35 @@ export function WalletView({
   return (
     <div className="flex flex-col gap-6">
       <h1 className="sr-only">Wallet</h1>
+      <aside
+        data-ios-install-hint=""
+        hidden
+        aria-labelledby="ios-install-hint-title"
+        className="rounded-lg border border-brand/30 bg-brand/5 p-4"
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex flex-col gap-1">
+            <h2 id="ios-install-hint-title" className="font-semibold text-foreground">
+              Install the wallet on your iPhone
+            </h2>
+            <p className="text-sm text-muted">
+              In Safari, tap Share → Add to Home Screen. Your wallet can then open from the home
+              screen when the network is unavailable.
+            </p>
+            <p data-ios-install-blurb="" className="text-xs text-muted">
+              SAC reminder: tell students to open FraserPay in Safari, tap Share → Add to Home
+              Screen, and use that icon at the event.
+            </p>
+          </div>
+          <button
+            type="button"
+            data-ios-install-dismiss=""
+            className="min-h-11 shrink-0 rounded-md px-3 py-2 text-sm font-medium text-muted underline underline-offset-4"
+          >
+            Dismiss
+          </button>
+        </div>
+      </aside>
       <section className="flex flex-col items-center gap-3">
         <div
           className="aspect-square w-full max-w-[15rem] rounded-lg border border-border bg-white p-3"

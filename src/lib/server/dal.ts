@@ -3,20 +3,43 @@ import { cookies } from "next/headers";
 import { cache } from "react";
 import { AggregateField, type Transaction } from "firebase-admin/firestore";
 import type { DecodedIdToken } from "firebase-admin/auth";
-import { ForbiddenError, InternalError, SuspendedError, UnauthorizedError } from "./errors";
-import { type LedgerEntryDoc, type UserDoc, boothsCol, ledgerCol, usersCol } from "./db";
+import { z } from "zod";
+import {
+  BoothNotSellableError,
+  ForbiddenError,
+  InternalError,
+  SuspendedError,
+  UnauthorizedError,
+  ValidationError,
+} from "./errors";
+import {
+  type LedgerEntryDoc,
+  type UserDoc,
+  boothsCol,
+  ledgerCol,
+  membersCol,
+  usersCol,
+} from "./db";
 import { getAdminAuth, getAdminFirestore } from "./firebase-admin";
 import { logger } from "./logger";
 import { SESSION_COOKIE_NAME } from "@/lib/shared/constants";
+import { isFirestoreDocumentId } from "@/lib/shared/document-id";
 import type {
   BoothDTO,
+  BoothHistoryDTO,
+  BoothHistoryEntry,
+  BoothItem,
   BoothItemSummary,
+  BoothSettingsDTO,
+  BoothStatus,
   BoothSummary,
   LedgerLineItem,
   MemberBooth,
 } from "@/lib/shared/types";
 
-export type Role = "public" | "session" | "active" | "sacMember" | "sacExec" | "boothMember";
+export type Role =
+  "public" | "session" | "active" | "sacMember" | "sacExec" | "boothMember" | "boothOperator";
+export type BoothScopedRole = Extract<Role, "boothMember" | "boothOperator">;
 export type TransactionRole = "active" | "sacMember" | "sacExec";
 
 export interface TransactionAuthorization {
@@ -29,7 +52,12 @@ export interface AuthorizedActor {
   displayName: string;
 }
 
+export function isBoothScopedRole(role: Role): role is BoothScopedRole {
+  return role === "boothMember" || role === "boothOperator";
+}
+
 export function transactionRoleFor(role: Role): TransactionRole | undefined {
+  if (role === "boothOperator") return "active";
   return role === "active" || role === "sacMember" || role === "sacExec" ? role : undefined;
 }
 
@@ -102,6 +130,21 @@ export const isBoothMember = cache(async (boothId: string, uid: string): Promise
   return snap.exists;
 });
 
+const getBoothStatus = cache(async (boothId: string): Promise<BoothStatus | null> => {
+  const data = (await boothsCol().doc(boothId).get()).data();
+  return data ? data.status : null;
+});
+
+export function isBoothOperatorActor(isMember: boolean, roles: { sacExec: boolean }): boolean {
+  return isMember || roles.sacExec;
+}
+
+export async function isBoothOperator(boothId: string, session: Session): Promise<boolean> {
+  const isMember = await isBoothMember(boothId, session.uid);
+  if (!isBoothOperatorActor(isMember, session.roles)) return false;
+  return isMember || (await getBoothStatus(boothId)) === "approved";
+}
+
 export const hasAnyBoothMembership = cache(async (uid: string): Promise<boolean> => {
   try {
     const snap = await getAdminFirestore()
@@ -136,7 +179,11 @@ export const listMemberBooths = cache(async (uid: string): Promise<MemberBooth[]
     .sort((a, b) => a.name.localeCompare(b.name));
 });
 
-export const getBoothForSale = cache(async (boothId: string): Promise<BoothDTO | null> => {
+function withoutArchivedFlag({ id, name, priceCents, isCustom }: BoothItem): BoothItem {
+  return { id, name, priceCents, isCustom };
+}
+
+export const getBoothCatalog = cache(async (boothId: string): Promise<BoothDTO | null> => {
   const data = (await boothsCol().doc(boothId).get()).data();
   if (!data) return null;
   return {
@@ -144,9 +191,28 @@ export const getBoothForSale = cache(async (boothId: string): Promise<BoothDTO |
     name: data.name,
     description: data.description,
     status: data.status,
-    items: data.items.filter((item) => item.archived !== true),
+    items: data.items.filter((item) => item.archived !== true).map(withoutArchivedFlag),
   };
 });
+
+export async function getBoothSettings(boothId: string): Promise<BoothSettingsDTO | null> {
+  const booth = (await boothsCol().doc(boothId).get()).data();
+  if (!booth) return null;
+
+  const members = await membersCol(boothId).get();
+
+  return {
+    id: boothId,
+    name: booth.name,
+    description: booth.description,
+    status: booth.status,
+    items: booth.items.filter((item) => item.archived !== true).map(withoutArchivedFlag),
+    archivedItems: booth.items.filter((item) => item.archived === true).map(withoutArchivedFlag),
+    memberNames: members.docs
+      .map((doc) => doc.data().displayName)
+      .sort((a, b) => a.localeCompare(b)),
+  };
+}
 
 async function aggregateByType(
   type: LedgerEntryDoc["type"],
@@ -228,6 +294,57 @@ export async function getBoothSummary(boothId: string): Promise<BoothSummary | n
   };
 }
 
+export const BOOTH_HISTORY_PAGE_SIZE = 25;
+
+export const boothHistoryQuerySchema = z
+  .object({ cursor: z.string().trim().min(1).optional(), mine: z.literal("1").optional() })
+  .strict();
+
+export type BoothHistoryQuery = z.infer<typeof boothHistoryQuerySchema>;
+
+function toBoothHistoryEntry(entryId: string, doc: LedgerEntryDoc): BoothHistoryEntry {
+  return {
+    entryId,
+    createdAt: doc.createdAt.toDate().toISOString(),
+    type: doc.type,
+    amountCents: doc.amountCents,
+    direction: doc.direction,
+    buyerName: doc.studentName,
+    lineItems: doc.lineItems ?? [],
+    actorName: doc.actorName,
+    ...(doc.originalEntryId !== undefined ? { originalEntryId: doc.originalEntryId } : {}),
+  };
+}
+
+export async function getBoothHistory(
+  boothId: string,
+  options: { cursor?: string; actorUid?: string } = {},
+): Promise<BoothHistoryDTO> {
+  const scoped = options.actorUid
+    ? ledgerCol().where("boothId", "==", boothId).where("actorUid", "==", options.actorUid)
+    : ledgerCol().where("boothId", "==", boothId);
+
+  let query = scoped.orderBy("createdAt", "desc").limit(BOOTH_HISTORY_PAGE_SIZE + 1);
+  if (options.cursor) {
+    const unknownCursor = new ValidationError("cursor: Unknown cursor.");
+    if (!isFirestoreDocumentId(options.cursor)) throw unknownCursor;
+    const cursorSnap = await ledgerCol().doc(options.cursor).get();
+    const cursorDoc = cursorSnap.data();
+    if (!cursorDoc || cursorDoc.boothId !== boothId) throw unknownCursor;
+    if (options.actorUid && cursorDoc.actorUid !== options.actorUid) throw unknownCursor;
+    query = query.startAfter(cursorSnap);
+  }
+
+  const docs = (await query.get()).docs;
+  const hasMore = docs.length > BOOTH_HISTORY_PAGE_SIZE;
+  const page = hasMore ? docs.slice(0, BOOTH_HISTORY_PAGE_SIZE) : docs;
+
+  return {
+    entries: page.map((d) => toBoothHistoryEntry(d.id, d.data())),
+    nextCursor: hasMore ? page[page.length - 1]!.id : null,
+  };
+}
+
 function assertSession(session: Session | null): asserts session is Session {
   if (!session) throw new UnauthorizedError();
 }
@@ -263,6 +380,21 @@ export function assertActorAuthorized(actor: UserDoc | undefined, role: Transact
   }
 
   return actor;
+}
+
+export async function assertBoothScope(
+  role: BoothScopedRole,
+  session: Session,
+  boothId: string,
+): Promise<void> {
+  const notAMember = new ForbiddenError("You are not a member of this booth.");
+  if (role === "boothMember") {
+    if (!(await isBoothMember(boothId, session.uid))) throw notAMember;
+    return;
+  }
+  if (await isBoothOperator(boothId, session)) return;
+  if (!session.roles.sacExec) throw notAMember;
+  throw new BoothNotSellableError();
 }
 
 export async function runAuthorizedTransaction<T>(
@@ -316,11 +448,10 @@ export async function authorizeRequest(
       assertSacExec(session);
       return session;
     case "boothMember":
+    case "boothOperator":
       assertActive(session);
       if (!boothId) throw new InternalError();
-      if (!(await isBoothMember(boothId, session.uid))) {
-        throw new ForbiddenError("You are not a member of this booth.");
-      }
+      await assertBoothScope(role, session, boothId);
       return session;
   }
 }

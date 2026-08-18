@@ -1,34 +1,29 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { formatCents } from "@/lib/shared/money";
-import type { BoothDetail, BoothItem, BoothStatus, BoothSummary } from "@/lib/shared/types";
+import type { BoothDetail, BoothItem, BoothSummary } from "@/lib/shared/types";
+import { STATUS_BADGE, STATUS_LABEL } from "@/lib/ui/booth-status";
+import { requestSacBoothHistory } from "@/lib/ui/booth-history-api";
+import { BoothHistoryView } from "@/lib/ui/booth-history-view";
 import { ConfirmDialog } from "@/lib/ui/confirm-dialog";
 import { useToast } from "@/lib/ui/toast";
-import { Button } from "@/lib/ui/vendor/button";
+import { Button, buttonVariants } from "@/lib/ui/vendor/button";
 import {
+  addItem,
+  archiveItem,
   approveBooth,
   boothActionErrorMessage,
   editPrices,
   removeMember,
   rotateCode,
   setActive,
+  type NewItem,
   type PriceEdit,
 } from "../api";
-import { PriceEditor } from "./price-editor";
-
-const STATUS_BADGE: Record<BoothStatus, string> = {
-  pending: "bg-brand/10 text-brand",
-  approved: "bg-success/10 text-success",
-  deactivated: "bg-muted/10 text-muted",
-};
-
-const STATUS_LABEL: Record<BoothStatus, string> = {
-  pending: "Pending review",
-  approved: "Approved",
-  deactivated: "Deactivated",
-};
+import { parseDollars, PriceEditor } from "./price-editor";
 
 type Dialog =
   | { kind: "rotate" }
@@ -36,8 +31,14 @@ type Dialog =
   | { kind: "deactivate" }
   | { kind: "reactivate" };
 
+type AdminTab = "manage" | "history";
+
 function priceSignature(items: BoothItem[]): string {
-  return items.map((item) => `${item.id}:${item.priceCents}`).join("|");
+  return items
+    .map(
+      (item) => `${item.id}:${item.priceCents}:${item.archived === true ? "archived" : "active"}`,
+    )
+    .join("|");
 }
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
@@ -62,6 +63,109 @@ function ReadOnlyItems({ items }: { items: BoothItem[] }) {
         </li>
       ))}
     </ul>
+  );
+}
+
+function ArchivedItems({
+  items,
+  busy,
+  onRestore,
+}: {
+  items: BoothItem[];
+  busy: boolean;
+  onRestore?: (item: BoothItem) => void;
+}) {
+  return (
+    <ul className="flex flex-col divide-y divide-border">
+      {items.map((item) => (
+        <li key={item.id} className="flex items-center justify-between gap-4 py-3">
+          <span className="font-medium text-foreground">{item.name}</span>
+          <span className="flex items-center gap-3">
+            <span className="text-base text-muted">{formatCents(item.priceCents)}</span>
+            {onRestore ? (
+              <Button
+                type="button"
+                variant="outline"
+                disabled={busy}
+                aria-label={`Restore ${item.name}`}
+                onClick={() => onRestore(item)}
+              >
+                Restore
+              </Button>
+            ) : null}
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function AddItemForm({
+  busy,
+  onSubmit,
+}: {
+  busy: boolean;
+  onSubmit: (item: NewItem) => Promise<boolean>;
+}) {
+  const [name, setName] = useState("");
+  const [price, setPrice] = useState("");
+  const submitting = useRef(false);
+  const priceCents = parseDollars(price);
+  const canSubmit = !busy && name.trim().length > 0 && priceCents !== null;
+
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+    if (!canSubmit || submitting.current) return;
+    submitting.current = true;
+    try {
+      if (await onSubmit({ name: name.trim(), priceCents })) {
+        setName("");
+        setPrice("");
+      }
+    } finally {
+      submitting.current = false;
+    }
+  }
+
+  return (
+    <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
+      <div className="flex flex-col gap-1">
+        <label htmlFor="new-item-name" className="text-sm font-medium text-foreground">
+          Item name
+        </label>
+        <input
+          id="new-item-name"
+          type="text"
+          value={name}
+          maxLength={60}
+          onChange={(event) => setName(event.target.value)}
+          className="h-11 rounded-md border border-border bg-background px-3 text-base text-foreground"
+        />
+      </div>
+      <div className="flex flex-col gap-1">
+        <label htmlFor="new-item-price" className="text-sm font-medium text-foreground">
+          Price ($)
+        </label>
+        <input
+          id="new-item-price"
+          type="text"
+          inputMode="decimal"
+          value={price}
+          onChange={(event) => setPrice(event.target.value)}
+          className={`h-11 rounded-md border bg-background px-3 text-base text-foreground ${
+            price.trim().length > 0 && priceCents === null ? "border-danger" : "border-border"
+          }`}
+        />
+      </div>
+      {price.trim().length > 0 && priceCents === null ? (
+        <p role="status" className="text-sm font-medium text-danger">
+          Prices must be a positive multiple of $0.50.
+        </p>
+      ) : null}
+      <Button type="submit" size="lg" disabled={!canSubmit}>
+        {busy ? "Working…" : "Add item"}
+      </Button>
+    </form>
   );
 }
 
@@ -106,12 +210,13 @@ export function BoothManage({ detail, isExec }: { detail: BoothDetail; isExec: b
   const router = useRouter();
   const { push } = useToast();
   const [dialog, setDialog] = useState<Dialog | null>(null);
+  const [activeTab, setActiveTab] = useState<AdminTab>("manage");
   const [busy, setBusy] = useState(false);
   const inFlight = useRef(false);
 
   const perform = useCallback(
-    async (action: () => Promise<unknown>, success: string) => {
-      if (inFlight.current) return;
+    async (action: () => Promise<unknown>, success: string): Promise<boolean> => {
+      if (inFlight.current) return false;
       inFlight.current = true;
       setBusy(true);
       try {
@@ -119,9 +224,11 @@ export function BoothManage({ detail, isExec }: { detail: BoothDetail; isExec: b
         setDialog(null);
         push(success, "success");
         router.refresh();
+        return true;
       } catch (err) {
         setDialog(null);
         push(boothActionErrorMessage(err), "error");
+        return false;
       } finally {
         inFlight.current = false;
         setBusy(false);
@@ -139,6 +246,22 @@ export function BoothManage({ detail, isExec }: { detail: BoothDetail; isExec: b
     (edits: PriceEdit[]) => perform(() => editPrices(detail.id, edits), "Prices updated."),
     [detail.id, perform],
   );
+  const onAddItem = useCallback(
+    (item: NewItem) => perform(() => addItem(detail.id, item), "Item added."),
+    [detail.id, perform],
+  );
+  const onArchive = useCallback(
+    (item: BoothItem) => perform(() => archiveItem(detail.id, item.id, true), "Item archived."),
+    [detail.id, perform],
+  );
+  const onRestore = useCallback(
+    (item: BoothItem) => perform(() => archiveItem(detail.id, item.id, false), "Item restored."),
+    [detail.id, perform],
+  );
+
+  const activeItems = detail.items.filter((item) => item.archived !== true);
+  const archivedItems = detail.items.filter((item) => item.archived === true);
+  const isPending = detail.status === "pending";
 
   return (
     <div className="flex flex-col gap-6">
@@ -154,197 +277,267 @@ export function BoothManage({ detail, isExec }: { detail: BoothDetail; isExec: b
         <p className="text-sm text-muted">{detail.description}</p>
       </div>
 
-      {detail.status === "pending" ? (
+      <div role="tablist" aria-label="Booth sections" className="flex flex-wrap gap-2">
+        {(["manage", "history"] as const).map((tab) => {
+          const active = activeTab === tab;
+          return (
+            <button
+              key={tab}
+              id={`booth-tab-${tab}`}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              aria-controls={`booth-panel-${tab}`}
+              onClick={() => setActiveTab(tab)}
+              className={`min-h-11 rounded-full px-4 text-sm font-medium ${
+                active
+                  ? "bg-brand text-brand-foreground"
+                  : "border border-border bg-background text-foreground hover:bg-surface"
+              }`}
+            >
+              {tab === "manage" ? "Manage" : "History"}
+            </button>
+          );
+        })}
+      </div>
+
+      {activeTab === "history" ? (
+        <div
+          id="booth-panel-history"
+          role="tabpanel"
+          aria-labelledby="booth-tab-history"
+          className="flex flex-col gap-4"
+        >
+          <BoothHistoryView
+            boothId={detail.id}
+            requestHistory={requestSacBoothHistory}
+            showScopeToggle={false}
+          />
+        </div>
+      ) : (
         <>
-          <Card title="Teacher check">
-            <p className="text-sm text-muted">
-              Confirm this came from a real teacher before approving.
-            </p>
-            <div className="flex flex-col gap-1 rounded-md border border-border bg-background p-4">
-              <span className="text-sm text-muted">Submitted by</span>
-              <span className="text-xl font-semibold text-foreground break-all">
-                {detail.submitterEmail}
-              </span>
-            </div>
-          </Card>
+          {isPending ? (
+            <>
+              <Card title="Teacher check">
+                <p className="text-sm text-muted">
+                  Confirm this came from a real teacher before approving.
+                </p>
+                <div className="flex flex-col gap-1 rounded-md border border-border bg-background p-4">
+                  <span className="text-sm text-muted">Submitted by</span>
+                  <span className="text-xl font-semibold text-foreground break-all">
+                    {detail.submitterEmail}
+                  </span>
+                </div>
+              </Card>
+            </>
+          ) : (
+            <>
+              <Card title="Join code">
+                <p className="text-sm text-muted">
+                  Email this code to the teacher; each seller enters it once to join.
+                </p>
+                <p className="font-mono text-3xl font-bold tracking-wide text-foreground">
+                  {detail.joinCode}
+                </p>
+                {isExec ? (
+                  <div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setDialog({ kind: "rotate" })}
+                    >
+                      Rotate code
+                    </Button>
+                  </div>
+                ) : null}
+              </Card>
+
+              {isExec && detail.status === "approved" ? (
+                <Card title="Point of sale">
+                  <p className="text-sm text-muted">
+                    Sell for this booth when nobody from it is at the counter. The sale is recorded
+                    under your name and logged for review.
+                  </p>
+                  <div>
+                    <Link
+                      href={`/sell/${detail.id}`}
+                      className={buttonVariants({ variant: "outline" })}
+                    >
+                      Sell for this booth
+                    </Link>
+                  </div>
+                </Card>
+              ) : null}
+
+              <Card title="Members">
+                {detail.members.length === 0 ? (
+                  <p className="text-sm text-muted">No sellers have joined yet.</p>
+                ) : (
+                  <ul className="flex flex-col divide-y divide-border">
+                    {detail.members.map((member) => (
+                      <li key={member.uid} className="flex items-center justify-between gap-4 py-3">
+                        <span className="font-medium text-foreground">{member.displayName}</span>
+                        {isExec ? (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() =>
+                              setDialog({
+                                kind: "removeMember",
+                                uid: member.uid,
+                                name: member.displayName,
+                              })
+                            }
+                          >
+                            Remove
+                          </Button>
+                        ) : null}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </Card>
+
+              {detail.summary ? <SalesCard summary={detail.summary} /> : null}
+
+              {isExec ? (
+                <Card
+                  title={detail.status === "approved" ? "Deactivate booth" : "Reactivate booth"}
+                >
+                  {detail.status === "approved" ? (
+                    <>
+                      <p className="text-sm text-muted">
+                        A deactivated booth cannot sell or accept new members until reactivated.
+                      </p>
+                      <div>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => setDialog({ kind: "deactivate" })}
+                        >
+                          Deactivate
+                        </Button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-sm text-muted">
+                        Reactivating lets this booth sell again with its existing join code.
+                      </p>
+                      <div>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => setDialog({ kind: "reactivate" })}
+                        >
+                          Reactivate
+                        </Button>
+                      </div>
+                    </>
+                  )}
+                </Card>
+              ) : null}
+            </>
+          )}
 
           <Card title="Items & prices">
             {isExec ? (
               <PriceEditor
                 key={priceSignature(detail.items)}
                 items={detail.items}
-                submitLabel="Approve booth"
+                submitLabel={isPending ? "Approve booth" : "Save prices"}
                 busy={busy}
-                allowNoChange
-                onSubmit={onApprove}
+                allowNoChange={isPending}
+                onSubmit={isPending ? onApprove : onSavePrices}
+                onArchive={onArchive}
               />
             ) : (
               <>
-                <ReadOnlyItems items={detail.items} />
-                <p className="text-sm text-muted">Only execs can approve booths.</p>
+                <ReadOnlyItems items={activeItems} />
+                {isPending ? (
+                  <p className="text-sm text-muted">Only execs can approve booths.</p>
+                ) : null}
               </>
             )}
           </Card>
-        </>
-      ) : (
-        <>
-          <Card title="Join code">
-            <p className="text-sm text-muted">
-              Email this code to the teacher; each seller enters it once to join.
-            </p>
-            <p className="font-mono text-3xl font-bold tracking-wide text-foreground">
-              {detail.joinCode}
-            </p>
-            {isExec ? (
-              <div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setDialog({ kind: "rotate" })}
-                >
-                  Rotate code
-                </Button>
-              </div>
-            ) : null}
-          </Card>
 
-          <Card title="Items & prices">
-            {isExec ? (
-              <PriceEditor
-                key={priceSignature(detail.items)}
-                items={detail.items}
-                submitLabel="Save prices"
+          {archivedItems.length > 0 ? (
+            <Card title="No longer sold">
+              <ArchivedItems
+                items={archivedItems}
                 busy={busy}
-                allowNoChange={false}
-                onSubmit={onSavePrices}
+                onRestore={isExec ? onRestore : undefined}
               />
-            ) : (
-              <ReadOnlyItems items={detail.items} />
-            )}
-          </Card>
-
-          <Card title="Members">
-            {detail.members.length === 0 ? (
-              <p className="text-sm text-muted">No sellers have joined yet.</p>
-            ) : (
-              <ul className="flex flex-col divide-y divide-border">
-                {detail.members.map((member) => (
-                  <li key={member.uid} className="flex items-center justify-between gap-4 py-3">
-                    <span className="font-medium text-foreground">{member.displayName}</span>
-                    {isExec ? (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() =>
-                          setDialog({
-                            kind: "removeMember",
-                            uid: member.uid,
-                            name: member.displayName,
-                          })
-                        }
-                      >
-                        Remove
-                      </Button>
-                    ) : null}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Card>
-
-          {detail.summary ? <SalesCard summary={detail.summary} /> : null}
+              <p className="text-sm text-muted">The price each one last sold for.</p>
+            </Card>
+          ) : null}
 
           {isExec ? (
-            <Card title={detail.status === "approved" ? "Deactivate booth" : "Reactivate booth"}>
-              {detail.status === "approved" ? (
-                <>
-                  <p className="text-sm text-muted">
-                    A deactivated booth cannot sell or accept new members until reactivated.
-                  </p>
-                  <div>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => setDialog({ kind: "deactivate" })}
-                    >
-                      Deactivate
-                    </Button>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <p className="text-sm text-muted">
-                    Reactivating lets this booth sell again with its existing join code.
-                  </p>
-                  <div>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => setDialog({ kind: "reactivate" })}
-                    >
-                      Reactivate
-                    </Button>
-                  </div>
-                </>
-              )}
+            <Card title="Add item">
+              <p className="text-sm text-muted">New items must use a positive $0.50 price step.</p>
+              <AddItemForm busy={busy} onSubmit={onAddItem} />
             </Card>
+          ) : null}
+
+          {dialog?.kind === "rotate" ? (
+            <ConfirmDialog
+              title="Rotate join code?"
+              confirmLabel="Rotate code"
+              danger
+              busy={busy}
+              onCancel={() => setDialog(null)}
+              onConfirm={() => perform(() => rotateCode(detail.id), "Join code rotated.")}
+            >
+              <p>
+                The current code stops working immediately. Anyone mid-join must use the new code.
+                Email the new code to the teacher.
+              </p>
+            </ConfirmDialog>
+          ) : null}
+
+          {dialog?.kind === "removeMember" ? (
+            <ConfirmDialog
+              title="Remove member?"
+              confirmLabel="Remove"
+              danger
+              busy={busy}
+              onCancel={() => setDialog(null)}
+              onConfirm={() =>
+                perform(() => removeMember(detail.id, dialog.uid), "Member removed.")
+              }
+            >
+              <p>
+                {dialog.name} can no longer sell for this booth until they rejoin with the code.
+              </p>
+            </ConfirmDialog>
+          ) : null}
+
+          {dialog?.kind === "deactivate" ? (
+            <ConfirmDialog
+              title="Deactivate booth?"
+              confirmLabel="Deactivate"
+              danger
+              busy={busy}
+              onCancel={() => setDialog(null)}
+              onConfirm={() => perform(() => setActive(detail.id, false), "Booth deactivated.")}
+            >
+              <p>{detail.name} stops selling and cannot accept new members until reactivated.</p>
+            </ConfirmDialog>
+          ) : null}
+
+          {dialog?.kind === "reactivate" ? (
+            <ConfirmDialog
+              title="Reactivate booth?"
+              confirmLabel="Reactivate"
+              busy={busy}
+              onCancel={() => setDialog(null)}
+              onConfirm={() => perform(() => setActive(detail.id, true), "Booth reactivated.")}
+            >
+              <p>{detail.name} can sell again immediately with its existing join code.</p>
+            </ConfirmDialog>
           ) : null}
         </>
       )}
-
-      {dialog?.kind === "rotate" ? (
-        <ConfirmDialog
-          title="Rotate join code?"
-          confirmLabel="Rotate code"
-          danger
-          busy={busy}
-          onCancel={() => setDialog(null)}
-          onConfirm={() => perform(() => rotateCode(detail.id), "Join code rotated.")}
-        >
-          <p>
-            The current code stops working immediately. Anyone mid-join must use the new code. Email
-            the new code to the teacher.
-          </p>
-        </ConfirmDialog>
-      ) : null}
-
-      {dialog?.kind === "removeMember" ? (
-        <ConfirmDialog
-          title="Remove member?"
-          confirmLabel="Remove"
-          danger
-          busy={busy}
-          onCancel={() => setDialog(null)}
-          onConfirm={() => perform(() => removeMember(detail.id, dialog.uid), "Member removed.")}
-        >
-          <p>{dialog.name} can no longer sell for this booth until they rejoin with the code.</p>
-        </ConfirmDialog>
-      ) : null}
-
-      {dialog?.kind === "deactivate" ? (
-        <ConfirmDialog
-          title="Deactivate booth?"
-          confirmLabel="Deactivate"
-          danger
-          busy={busy}
-          onCancel={() => setDialog(null)}
-          onConfirm={() => perform(() => setActive(detail.id, false), "Booth deactivated.")}
-        >
-          <p>{detail.name} stops selling and cannot accept new members until reactivated.</p>
-        </ConfirmDialog>
-      ) : null}
-
-      {dialog?.kind === "reactivate" ? (
-        <ConfirmDialog
-          title="Reactivate booth?"
-          confirmLabel="Reactivate"
-          busy={busy}
-          onCancel={() => setDialog(null)}
-          onConfirm={() => perform(() => setActive(detail.id, true), "Booth reactivated.")}
-        >
-          <p>{detail.name} can sell again immediately with its existing join code.</p>
-        </ConfirmDialog>
-      ) : null}
     </div>
   );
 }

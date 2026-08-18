@@ -1,9 +1,10 @@
 import { Timestamp } from "firebase-admin/firestore";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { POST as chargeRoute } from "../../src/app/api/booth/charge/route";
 import {
   type LedgerEntryDoc,
   boothsCol,
+  idempotencyCol,
   ledgerCol,
   membersCol,
   usersCol,
@@ -26,9 +27,13 @@ const BOOTH_ID = "charge-booth";
 const PENDING_BOOTH_ID = "charge-booth-pending";
 const DEACTIVATED_BOOTH_ID = "charge-booth-deactivated";
 
+const SCONE_PRICE_CENTS = 300;
+
 const ITEMS: BoothItem[] = [
   { id: "coffee", name: "Coffee", priceCents: 250, isCustom: false },
   { id: "cookie", name: "Cookie", priceCents: 150, isCustom: false },
+  { id: "scone", name: "Scone", priceCents: SCONE_PRICE_CENTS, isCustom: false },
+  { id: "retired", name: "Retired Scone", priceCents: 200, isCustom: false, archived: true },
   { id: "custom", name: "Custom", priceCents: 50, isCustom: true },
 ];
 
@@ -187,6 +192,14 @@ afterAll(async () => {
   await db.recursiveDelete(db.collection("booths"));
   vi.restoreAllMocks();
 });
+
+async function setSconePrice(priceCents: number): Promise<void> {
+  const ref = boothsCol().doc(BOOTH_ID);
+  const items = (await ref.get())
+    .data()!
+    .items.map((item) => (item.id === "scone" ? { ...item, priceCents } : item));
+  await ref.update({ items });
+}
 
 let buyerSeq = 0;
 async function freshBuyer(
@@ -540,6 +553,223 @@ describe("POST /api/booth/charge", () => {
   });
 });
 
+describe("charge price coherence (expectedAmountCents)", () => {
+  afterEach(async () => {
+    await setSconePrice(SCONE_PRICE_CENTS);
+  });
+
+  it("commits normally when the expected amount matches the server-priced cart", async () => {
+    const buyer = await freshBuyer(2000);
+    const res = await chargeRoute(
+      post(OPERATOR.uid, {
+        boothId: BOOTH_ID,
+        buyer: { paymentCode: buyer.paymentCode },
+        items: [{ itemId: "scone", qty: 2 }],
+        expectedAmountCents: 600,
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect((await res.json()) as ChargeResult).toEqual({
+      entryId: expect.any(String),
+      amountCents: 600,
+    });
+    expect((await usersCol().doc(buyer.uid).get()).data()?.balanceCents).toBe(1400);
+    expect(await ledgerFor(buyer.uid)).toHaveLength(1);
+  });
+
+  it("charges exactly as before when the expected amount is omitted", async () => {
+    const buyer = await freshBuyer(2000);
+    const res = await chargeRoute(
+      post(OPERATOR.uid, {
+        boothId: BOOTH_ID,
+        buyer: { paymentCode: buyer.paymentCode },
+        items: [{ itemId: "scone", qty: 2 }],
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect((await usersCol().doc(buyer.uid).get()).data()?.balanceCents).toBe(1400);
+    expect(await ledgerFor(buyer.uid)).toHaveLength(1);
+  });
+
+  it("aborts a repriced cart with CATALOG_CHANGED and writes nothing (loop)", async () => {
+    for (let i = 0; i < 10; i += 1) {
+      const buyer = await freshBuyer(2000);
+      const operatorBefore = (await usersCol().doc(OPERATOR.uid).get()).data()?.balanceCents;
+      await setSconePrice(450);
+
+      const res = await chargeRoute(
+        post(OPERATOR.uid, {
+          boothId: BOOTH_ID,
+          buyer: { paymentCode: buyer.paymentCode },
+          items: [{ itemId: "scone", qty: 2 }],
+          expectedAmountCents: 600,
+        }),
+      );
+
+      expect(res.status).toBe(409);
+      expect(await errorCode(res)).toBe("CATALOG_CHANGED");
+      expect((await usersCol().doc(buyer.uid).get()).data()?.balanceCents).toBe(2000);
+      expect((await usersCol().doc(OPERATOR.uid).get()).data()?.balanceCents).toBe(operatorBefore);
+      expect(await ledgerFor(buyer.uid)).toHaveLength(0);
+
+      await setSconePrice(SCONE_PRICE_CENTS);
+    }
+  }, 60_000);
+
+  it("rolls back the whole transaction, leaving no idempotency record behind", async () => {
+    const buyer = await freshBuyer(2000);
+    const key = nextKey();
+    await setSconePrice(450);
+
+    const res = await chargeRoute(
+      post(
+        OPERATOR.uid,
+        {
+          boothId: BOOTH_ID,
+          buyer: { paymentCode: buyer.paymentCode },
+          items: [{ itemId: "scone", qty: 2 }],
+          expectedAmountCents: 600,
+        },
+        { key },
+      ),
+    );
+    expect(await errorCode(res)).toBe("CATALOG_CHANGED");
+    expect((await idempotencyCol().doc(`${OPERATOR.uid}_${key}`).get()).exists).toBe(false);
+  });
+
+  it("aborts when the price moved down as well as up", async () => {
+    const buyer = await freshBuyer(2000);
+    await setSconePrice(250);
+    const res = await chargeRoute(
+      post(OPERATOR.uid, {
+        boothId: BOOTH_ID,
+        buyer: { paymentCode: buyer.paymentCode },
+        items: [{ itemId: "scone", qty: 1 }],
+        expectedAmountCents: SCONE_PRICE_CENTS,
+      }),
+    );
+    expect(res.status).toBe(409);
+    expect(await errorCode(res)).toBe("CATALOG_CHANGED");
+    expect(await ledgerFor(buyer.uid)).toHaveLength(0);
+  });
+
+  it("accepts the refreshed total the operator re-confirms after a reprice", async () => {
+    const buyer = await freshBuyer(2000);
+    await setSconePrice(450);
+
+    const stale = await chargeRoute(
+      post(OPERATOR.uid, {
+        boothId: BOOTH_ID,
+        buyer: { paymentCode: buyer.paymentCode },
+        items: [{ itemId: "scone", qty: 2 }],
+        expectedAmountCents: 600,
+      }),
+    );
+    expect(await errorCode(stale)).toBe("CATALOG_CHANGED");
+
+    const reconfirmed = await chargeRoute(
+      post(OPERATOR.uid, {
+        boothId: BOOTH_ID,
+        buyer: { paymentCode: buyer.paymentCode },
+        items: [{ itemId: "scone", qty: 2 }],
+        expectedAmountCents: 900,
+      }),
+    );
+    expect(reconfirmed.status).toBe(200);
+    expect((await usersCol().doc(buyer.uid).get()).data()?.balanceCents).toBe(1100);
+    expect(await ledgerFor(buyer.uid)).toHaveLength(1);
+  });
+
+  it("rejects an archived item with CATALOG_CHANGED, expected amount or not", async () => {
+    for (const expectedAmountCents of [undefined, 200]) {
+      const buyer = await freshBuyer(2000);
+      const res = await chargeRoute(
+        post(OPERATOR.uid, {
+          boothId: BOOTH_ID,
+          buyer: { paymentCode: buyer.paymentCode },
+          items: [{ itemId: "retired", qty: 1 }],
+          ...(expectedAmountCents === undefined ? {} : { expectedAmountCents }),
+        }),
+      );
+      expect(res.status).toBe(409);
+      expect(await errorCode(res)).toBe("CATALOG_CHANGED");
+      expect((await usersCol().doc(buyer.uid).get()).data()?.balanceCents).toBe(2000);
+      expect(await ledgerFor(buyer.uid)).toHaveLength(0);
+    }
+  });
+
+  it("keeps an archived line distinct from an unknown one in the same cart shape", async () => {
+    const buyer = await freshBuyer(2000);
+    const archived = await chargeRoute(
+      post(OPERATOR.uid, {
+        boothId: BOOTH_ID,
+        buyer: { paymentCode: buyer.paymentCode },
+        items: [
+          { itemId: "coffee", qty: 1 },
+          { itemId: "retired", qty: 1 },
+        ],
+      }),
+    );
+    const unknown = await chargeRoute(
+      post(OPERATOR.uid, {
+        boothId: BOOTH_ID,
+        buyer: { paymentCode: buyer.paymentCode },
+        items: [
+          { itemId: "coffee", qty: 1 },
+          { itemId: "never-existed", qty: 1 },
+        ],
+      }),
+    );
+    expect(await errorCode(archived)).toBe("CATALOG_CHANGED");
+    expect(await errorCode(unknown)).toBe("BOOTH_NOT_SELLABLE");
+    expect(await ledgerFor(buyer.uid)).toHaveLength(0);
+  });
+
+  it("rejects an expected amount that is not a positive multiple of 50 cents", async () => {
+    for (const expectedAmountCents of [0, -600, 625, 600.5]) {
+      const buyer = await freshBuyer(2000);
+      const res = await chargeRoute(
+        post(OPERATOR.uid, {
+          boothId: BOOTH_ID,
+          buyer: { paymentCode: buyer.paymentCode },
+          items: [{ itemId: "scone", qty: 2 }],
+          expectedAmountCents,
+        }),
+      );
+      expect(res.status).toBe(400);
+      expect(await errorCode(res)).toBe("VALIDATION");
+      expect(await ledgerFor(buyer.uid)).toHaveLength(0);
+    }
+  });
+
+  it("replays a committed key with its stored success even after a reprice (loop)", async () => {
+    for (let i = 0; i < 10; i += 1) {
+      const buyer = await freshBuyer(2000);
+      const key = nextKey();
+      const body = {
+        boothId: BOOTH_ID,
+        buyer: { paymentCode: buyer.paymentCode },
+        items: [{ itemId: "scone", qty: 2 }],
+        expectedAmountCents: 600,
+      };
+
+      const first = await chargeRoute(post(OPERATOR.uid, body, { key }));
+      expect(first.status).toBe(200);
+
+      await setSconePrice(450);
+
+      const replay = await chargeRoute(post(OPERATOR.uid, body, { key }));
+      expect(replay.status).toBe(200);
+      expect(replay.headers.get("idempotent-replay")).toBe("true");
+      expect(await replay.text()).toBe(await first.text());
+      expect((await usersCol().doc(buyer.uid).get()).data()?.balanceCents).toBe(1400);
+      expect(await ledgerFor(buyer.uid)).toHaveLength(1);
+
+      await setSconePrice(SCONE_PRICE_CENTS);
+    }
+  }, 60_000);
+});
+
 describe("charge concurrency (money module)", () => {
   function ctxFor(actorUid: string, key: string, body: unknown) {
     const request = new Request(`${ORIGIN}${ENDPOINT}`, {
@@ -567,5 +797,46 @@ describe("charge concurrency (money module)", () => {
       expect((await usersCol().doc(buyer.uid).get()).data()?.balanceCents).toBe(1500);
       expect(await ledgerFor(buyer.uid)).toHaveLength(1);
     }
+  }, 120_000);
+
+  it("never writes a partial charge when a reprice races the guard (loop)", async () => {
+    let rejections = 0;
+    for (let i = 0; i < 25; i += 1) {
+      const buyer = await freshBuyer(2000);
+      const newPriceCents = i % 2 === 0 ? 450 : 250;
+      const body = {
+        boothId: BOOTH_ID,
+        buyer: { paymentCode: buyer.paymentCode },
+        items: [{ itemId: "scone", qty: 2 }],
+        expectedAmountCents: SCONE_PRICE_CENTS * 2,
+      };
+
+      try {
+        const [outcome] = await Promise.all([
+          charge({ input: body, idempotency: ctxFor(OPERATOR.uid, nextKey(), body) }).catch(
+            (err: unknown) => err,
+          ),
+          setSconePrice(newPriceCents),
+        ]);
+
+        const entries = await ledgerFor(buyer.uid);
+        const balanceCents = (await usersCol().doc(buyer.uid).get()).data()?.balanceCents;
+
+        if (outcome instanceof Error) {
+          rejections += 1;
+          expect(entries, `${outcome.name} must leave nothing written`).toHaveLength(0);
+          expect(balanceCents).toBe(2000);
+        } else {
+          const result = outcome as ChargeResult;
+          expect(result.amountCents).toBe(SCONE_PRICE_CENTS * 2);
+          expect(entries).toHaveLength(1);
+          expect(entries[0]!.amountCents).toBe(result.amountCents);
+          expect(balanceCents).toBe(2000 - result.amountCents);
+        }
+      } finally {
+        await setSconePrice(SCONE_PRICE_CENTS);
+      }
+    }
+    console.info(`[p11-t003] reprice race: ${rejections}/25 attempts saw the changed catalog`);
   }, 120_000);
 });

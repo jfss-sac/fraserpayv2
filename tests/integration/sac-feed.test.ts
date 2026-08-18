@@ -73,6 +73,15 @@ async function makeUser(
 let seq = 0;
 const BASE_MS = 1_700_000_000_000;
 
+function iso(atMs: number): string {
+  return new Date(atMs).toISOString();
+}
+
+function rangeQuery(fromMs: number, toMs: number, extra = ""): string {
+  const query = `?from=${encodeURIComponent(iso(fromMs))}&to=${encodeURIComponent(iso(toMs))}`;
+  return extra ? `${query}&${extra}` : query;
+}
+
 async function seedLedger(
   overrides: Partial<LedgerEntryDoc> & { atMs?: number } = {},
 ): Promise<string> {
@@ -263,6 +272,18 @@ describe("GET /api/sac/feed — access & validation", () => {
     expect(res.status).toBe(400);
     expect(await errorCode(res)).toBe("VALIDATION");
   });
+
+  it("rejects malformed or reversed time ranges", async () => {
+    const malformed = await feedRoute(feedReq(MEMBER.uid, "?from=not-an-instant"));
+    expect(malformed.status).toBe(400);
+    expect(await errorCode(malformed)).toBe("VALIDATION");
+
+    const reversed = await feedRoute(
+      feedReq(MEMBER.uid, rangeQuery(BASE_MS + 2_000, BASE_MS + 1_000)),
+    );
+    expect(reversed.status).toBe(400);
+    expect(await errorCode(reversed)).toBe("VALIDATION");
+  });
 });
 
 describe("GET /api/sac/feed — merge ordering", () => {
@@ -335,6 +356,127 @@ describe("GET /api/sac/feed — filters", () => {
     const body = await getFeedBody(MEMBER.uid, "?actorUid=actor-x");
     expect(body.entries.map((e) => e.id)).toEqual([myAudit, myLedger]);
     expect(body.entries.map((e) => e.kind)).toEqual(["audit", "ledger"]);
+  });
+});
+
+describe("GET /api/sac/feed — time ranges", () => {
+  it("includes from, excludes to, and does not fall back to an unranged feed", async () => {
+    const fromMs = BASE_MS + 10_000;
+    const toMs = BASE_MS + 20_000;
+    const before = await seedLedger({ atMs: fromMs - 1 });
+    const atFrom = await seedLedger({ atMs: fromMs });
+    const beforeTo = await seedAudit({ atMs: toMs - 1 });
+    const atTo = await seedLedger({ atMs: toMs });
+    const after = await seedAudit({ atMs: toMs + 1 });
+
+    const body = await getFeedBody(MEMBER.uid, rangeQuery(fromMs, toMs));
+
+    expect(body.entries.map((entry) => entry.id)).toEqual([beforeTo, atFrom]);
+    expect(body.entries.map((entry) => entry.id)).not.toEqual(
+      expect.arrayContaining([before, atTo, after]),
+    );
+  });
+
+  it("returns an empty range rather than the unfiltered feed", async () => {
+    await seedLedger({ atMs: BASE_MS + 1_000 });
+    await seedAudit({ atMs: BASE_MS + 9_000 });
+
+    const body = await getFeedBody(MEMBER.uid, rangeQuery(BASE_MS + 3_000, BASE_MS + 4_000));
+
+    expect(body.entries).toEqual([]);
+    expect(body.repeatBuyers).toEqual([]);
+  });
+
+  it("composes the range with every existing filter without a missing-index error", async () => {
+    const fromMs = BASE_MS + 10_000;
+    const toMs = BASE_MS + 20_000;
+    const topup = await seedLedger({
+      type: "topup",
+      direction: "credit",
+      atMs: fromMs + 1_000,
+    });
+    const booth = await seedLedger({
+      boothId: "taco",
+      boothName: "Taco",
+      atMs: fromMs + 2_000,
+    });
+    const actorLedger = await seedLedger({
+      actorUid: "actor-x",
+      actorName: "X",
+      atMs: fromMs + 3_000,
+    });
+    const actorAudit = await seedAudit({
+      actorUid: "actor-x",
+      actorName: "X",
+      atMs: fromMs + 4_000,
+    });
+    const tagged = await seedLedger({ tags: ["high-amount"], atMs: fromMs + 5_000 });
+    await seedLedger({ type: "purchase", boothId: "pizza", atMs: fromMs + 6_000 });
+    await seedAudit({ actorUid: "actor-y", actorName: "Y", atMs: fromMs + 7_000 });
+
+    const queries = [
+      rangeQuery(fromMs, toMs),
+      rangeQuery(fromMs, toMs, "type=topup"),
+      rangeQuery(fromMs, toMs, "boothId=taco"),
+      rangeQuery(fromMs, toMs, "actorUid=actor-x"),
+      rangeQuery(fromMs, toMs, "tag=high-amount"),
+    ];
+    for (const query of queries) {
+      const response = await feedRoute(feedReq(MEMBER.uid, query));
+      expect(response.status).toBe(200);
+    }
+
+    expect((await getFeedBody(MEMBER.uid, queries[1])).entries.map((entry) => entry.id)).toEqual([
+      topup,
+    ]);
+    expect((await getFeedBody(MEMBER.uid, queries[2])).entries.map((entry) => entry.id)).toEqual([
+      booth,
+    ]);
+    expect((await getFeedBody(MEMBER.uid, queries[3])).entries.map((entry) => entry.id)).toEqual([
+      actorAudit,
+      actorLedger,
+    ]);
+    expect((await getFeedBody(MEMBER.uid, queries[4])).entries.map((entry) => entry.id)).toEqual([
+      tagged,
+    ]);
+  });
+
+  it("keeps the range on every cursor page", async () => {
+    const fromMs = BASE_MS + 100_000;
+    const toMs = BASE_MS + 200_000;
+    const ids: string[] = [];
+    for (let i = 0; i < FEED_PAGE_SIZE + 7; i += 1) {
+      ids.push(await seedLedger({ atMs: fromMs + i * 1_000 }));
+    }
+    await seedLedger({ atMs: fromMs - 1 });
+    await seedAudit({ atMs: toMs });
+
+    const drained = await drain(rangeQuery(fromMs, toMs));
+
+    expect(drained.map((entry) => entry.id)).toEqual([...ids].reverse());
+  });
+
+  it("limits repeat-buyer scanning to a live selected range", async () => {
+    const now = BASE_MS + 500_000;
+    const fromMs = now - 30_000;
+    const toMs = now + 1_000;
+    for (let i = 0; i < REPEAT_BUYER_THRESHOLD; i += 1) {
+      await seedLedger({ studentUid: "old-range-buyer", atMs: now - 60_000 });
+      await seedLedger({ studentUid: "live-range-buyer", atMs: now - 10_000 });
+    }
+
+    const live = await getFeed({ from: iso(fromMs), to: iso(toMs) }, now);
+    expect(live.repeatBuyers).toEqual([
+      {
+        studentUid: "live-range-buyer",
+        studentName: "Seed Student",
+        charges: REPEAT_BUYER_THRESHOLD,
+      },
+    ]);
+
+    const past = await getFeed({ from: iso(now - 90_000), to: iso(now - 30_000) }, now);
+    expect(past.repeatBuyers).toEqual([]);
+    expect(past.repeatBuyersTruncated).toBe(false);
   });
 });
 

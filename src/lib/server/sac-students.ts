@@ -2,6 +2,7 @@ import "server-only";
 import { z } from "zod";
 import { type LedgerEntryDoc, type UserDoc, ledgerCol, usersCol } from "./db";
 import { ValidationError } from "./errors";
+import { firestoreDocumentIdSchema, isFirestoreDocumentId } from "@/lib/shared/document-id";
 import type {
   SacLedgerEntry,
   StudentDetail,
@@ -17,7 +18,7 @@ const PREFIX_HIGH = String.fromCharCode(0xf8ff);
 export const studentSearchSchema = z.object({ q: z.string().trim().min(1) }).strict();
 
 export const studentLedgerQuerySchema = z
-  .object({ cursor: z.string().trim().min(1).optional() })
+  .object({ cursor: firestoreDocumentIdSchema.optional() })
   .strict();
 
 export type SearchMode = "email" | "studentNumber" | "name";
@@ -107,8 +108,11 @@ export async function getStudentLedger(uid: string, cursor?: string): Promise<St
     .limit(LEDGER_PAGE_SIZE + 1);
 
   if (cursor) {
+    const unknownCursor = new ValidationError("cursor: Unknown cursor.");
+    if (!isFirestoreDocumentId(cursor)) throw unknownCursor;
     const cursorSnap = await ledgerCol().doc(cursor).get();
-    if (!cursorSnap.exists) throw new ValidationError("cursor: Unknown cursor.");
+    const cursorDoc = cursorSnap.data();
+    if (!cursorDoc || cursorDoc.studentUid !== uid) throw unknownCursor;
     query = query.startAfter(cursorSnap);
   }
 

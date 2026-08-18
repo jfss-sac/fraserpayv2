@@ -5,12 +5,15 @@ import { NextRequest } from "next/server";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { POST as authSession } from "../../src/app/api/auth/session/route";
 import { POST as authSignout } from "../../src/app/api/auth/signout/route";
+import { GET as boothCatalog } from "../../src/app/api/booth/[id]/catalog/route";
+import { GET as boothHistory } from "../../src/app/api/booth/[id]/history/route";
 import { GET as boothSummary } from "../../src/app/api/booth/[id]/summary/route";
 import { POST as boothCharge } from "../../src/app/api/booth/charge/route";
 import { POST as boothLookup } from "../../src/app/api/booth/lookup/route";
 import { POST as boothsJoin } from "../../src/app/api/booths/join/route";
 import { POST as boothsRegister } from "../../src/app/api/booths/register/route";
 import { POST as execAdjust } from "../../src/app/api/exec/adjust/route";
+import { POST as execBoothCreate } from "../../src/app/api/exec/booths/route";
 import { POST as execBoothApprove } from "../../src/app/api/exec/booths/[id]/approve/route";
 import { POST as execBoothItems } from "../../src/app/api/exec/booths/[id]/items/route";
 import { POST as execBoothItemAdd } from "../../src/app/api/exec/booths/[id]/items/add/route";
@@ -18,15 +21,19 @@ import { POST as execBoothItemArchive } from "../../src/app/api/exec/booths/[id]
 import { POST as execBoothMemberRemove } from "../../src/app/api/exec/booths/[id]/members/remove/route";
 import { POST as execBoothRotateCode } from "../../src/app/api/exec/booths/[id]/rotate-code/route";
 import { POST as execBoothStatus } from "../../src/app/api/exec/booths/[id]/status/route";
+import { POST as execLedgerExport } from "../../src/app/api/exec/ledger/export/route";
 import { POST as execPaymentCode } from "../../src/app/api/exec/payment-code/route";
 import { POST as execRefund } from "../../src/app/api/exec/refund/route";
 import { POST as execRoles } from "../../src/app/api/exec/roles/route";
 import { POST as execSuspend } from "../../src/app/api/exec/suspend/route";
+import { GET as sacBoothHistory } from "../../src/app/api/sac/booths/[id]/history/route";
 import { GET as sacBoothSummary } from "../../src/app/api/sac/booths/[id]/summary/route";
 import { GET as sacFeed } from "../../src/app/api/sac/feed/route";
 import { POST as sacLookup } from "../../src/app/api/sac/lookup/route";
 import { GET as sacReconciliation } from "../../src/app/api/sac/reconciliation/route";
+import { GET as sacReconciliationExport } from "../../src/app/api/sac/reconciliation/export/route";
 import { GET as sacReports } from "../../src/app/api/sac/reports/route";
+import { GET as sacReportsExport } from "../../src/app/api/sac/reports/export/route";
 import { GET as sacStudentLedger } from "../../src/app/api/sac/students/[uid]/ledger/route";
 import { GET as sacStudents } from "../../src/app/api/sac/students/route";
 import { POST as sacTopup } from "../../src/app/api/sac/topup/route";
@@ -103,7 +110,7 @@ const ENDPOINTS: Endpoint[] = [
     path: "/api/booth/lookup",
     method: "POST",
     handler: boothLookup as AnyHandler,
-    role: "active",
+    role: "boothOperator",
     rateLimit: "lookup",
     body: { boothId: BOOTH_ID, buyer: { paymentCode: "fp1-sweep-student" } },
   },
@@ -111,7 +118,7 @@ const ENDPOINTS: Endpoint[] = [
     path: "/api/booth/charge",
     method: "POST",
     handler: boothCharge as AnyHandler,
-    role: "active",
+    role: "boothOperator",
     rateLimit: "charge",
     idempotent: true,
     body: {
@@ -124,7 +131,23 @@ const ENDPOINTS: Endpoint[] = [
     path: "/api/booth/[id]/summary",
     method: "GET",
     handler: boothSummary as AnyHandler,
-    role: "active",
+    role: "boothMember",
+    rateLimit: "reads",
+    params: { id: BOOTH_ID },
+  },
+  {
+    path: "/api/booth/[id]/catalog",
+    method: "GET",
+    handler: boothCatalog as AnyHandler,
+    role: "boothOperator",
+    rateLimit: "reads",
+    params: { id: BOOTH_ID },
+  },
+  {
+    path: "/api/booth/[id]/history",
+    method: "GET",
+    handler: boothHistory as AnyHandler,
+    role: "boothMember",
     rateLimit: "reads",
     params: { id: BOOTH_ID },
   },
@@ -132,6 +155,14 @@ const ENDPOINTS: Endpoint[] = [
     path: "/api/sac/booths/[id]/summary",
     method: "GET",
     handler: sacBoothSummary as AnyHandler,
+    role: "sacMember",
+    rateLimit: "reads",
+    params: { id: BOOTH_ID },
+  },
+  {
+    path: "/api/sac/booths/[id]/history",
+    method: "GET",
+    handler: sacBoothHistory as AnyHandler,
     role: "sacMember",
     rateLimit: "reads",
     params: { id: BOOTH_ID },
@@ -183,9 +214,23 @@ const ENDPOINTS: Endpoint[] = [
     rateLimit: "reads",
   },
   {
+    path: "/api/sac/reconciliation/export",
+    method: "GET",
+    handler: sacReconciliationExport as AnyHandler,
+    role: "sacMember",
+    rateLimit: "reads",
+  },
+  {
     path: "/api/sac/reports",
     method: "GET",
     handler: sacReports as AnyHandler,
+    role: "sacMember",
+    rateLimit: "reads",
+  },
+  {
+    path: "/api/sac/reports/export",
+    method: "GET",
+    handler: sacReportsExport as AnyHandler,
     role: "sacMember",
     rateLimit: "reads",
   },
@@ -206,6 +251,14 @@ const ENDPOINTS: Endpoint[] = [
     rateLimit: "exec-mutations",
     idempotent: true,
     body: { studentUid: "sweep-student", amountCents: 50, reason: "sweep" },
+  },
+  {
+    path: "/api/exec/ledger/export",
+    method: "POST",
+    handler: execLedgerExport as AnyHandler,
+    role: "sacExec",
+    rateLimit: "exec-mutations",
+    body: { from: "2024-01-01T00:00:00.000Z", to: "2024-01-02T00:00:00.000Z" },
   },
   {
     path: "/api/exec/payment-code",
@@ -230,6 +283,18 @@ const ENDPOINTS: Endpoint[] = [
     role: "sacExec",
     rateLimit: "exec-mutations",
     body: { targetUid: "sweep-student", role: "sacMember", grant: true },
+  },
+  {
+    path: "/api/exec/booths",
+    method: "POST",
+    handler: execBoothCreate as AnyHandler,
+    role: "sacExec",
+    rateLimit: "exec-mutations",
+    body: {
+      name: "Sweep Created Booth",
+      description: "created by security sweep",
+      items: [{ name: "Sweep Item", priceCents: 100 }],
+    },
   },
   {
     path: "/api/exec/booths/[id]/approve",
@@ -316,6 +381,13 @@ const FIXTURES = [
     suspended: true,
     booth: true,
   },
+  {
+    uid: "sweep-exec",
+    number: "900006",
+    roles: { sacMember: true, sacExec: true },
+    suspended: false,
+    booth: false,
+  },
 ];
 
 const cookies: Record<string, string> = {};
@@ -344,6 +416,7 @@ function call(
     secFetchSite?: string;
     idempotencyKey?: string;
     headers?: Record<string, string>;
+    query?: string;
   } = {},
 ): Promise<Response> {
   const headers: Record<string, string> = {
@@ -356,7 +429,7 @@ function call(
   }
   if (opts.secFetchSite) headers["sec-fetch-site"] = opts.secFetchSite;
   if (opts.uid) headers.cookie = `${SESSION_COOKIE_NAME}=${cookies[opts.uid]}`;
-  const request = new Request(`${ORIGIN}${endpoint.path}`, {
+  const request = new Request(`${ORIGIN}${endpoint.path}${opts.query ?? ""}`, {
     method: endpoint.method,
     headers,
     ...(endpoint.method === "POST" ? { body: JSON.stringify(endpoint.body ?? {}) } : {}),
@@ -596,7 +669,13 @@ describe("role sweep (arch §7)", () => {
 
 describe("IDOR sweep", () => {
   const boothScoped = ENDPOINTS.filter((e) =>
-    ["/api/booth/lookup", "/api/booth/charge", "/api/booth/[id]/summary"].includes(e.path),
+    [
+      "/api/booth/lookup",
+      "/api/booth/charge",
+      "/api/booth/[id]/summary",
+      "/api/booth/[id]/catalog",
+      "/api/booth/[id]/history",
+    ].includes(e.path),
   );
 
   it.each(boothScoped)("$path re-checks booth membership for $method", async (endpoint) => {
@@ -605,20 +684,105 @@ describe("IDOR sweep", () => {
     expect(await errorCode(res)).toBe("FORBIDDEN");
   });
 
-  it("admits the same calls for an actual member of that booth", async () => {
-    const summary = ENDPOINTS.find((e) => e.path === "/api/booth/[id]/summary")!;
-    const res = await call(summary, { uid: "sweep-seller" });
-    expect(res.status).toBe(200);
+  it.each(["/api/booth/[id]/summary", "/api/booth/[id]/catalog", "/api/booth/[id]/history"])(
+    "admits %s for an actual member of that booth",
+    async (path) => {
+      const res = await call(
+        ENDPOINTS.find((e) => e.path === path)!,
+        { uid: "sweep-seller" },
+      );
+      expect(res.status).toBe(200);
+    },
+  );
+
+  it.each(["/api/booth/[id]/summary", "/api/booth/[id]/catalog", "/api/booth/[id]/history"])(
+    "does not let a booth member read %s of another booth",
+    async (path) => {
+      const endpoint = ENDPOINTS.find((e) => e.path === path)!;
+      const res = await call(
+        { ...endpoint, params: { id: "some-other-booth" } },
+        { uid: "sweep-seller" },
+      );
+      expect(res.status).toBe(403);
+      expect(await errorCode(res)).toBe("FORBIDDEN");
+    },
+  );
+});
+
+describe("request-supplied document id validation", () => {
+  const malformedId = "a/b";
+  const documentIdFields = [
+    "boothId",
+    "studentUid",
+    "targetUid",
+    "originalEntryId",
+    "uid",
+  ] as const;
+  const bodyCases = ENDPOINTS.flatMap((endpoint) => {
+    const body = endpoint.body;
+    if (body === undefined || body === null || typeof body !== "object" || Array.isArray(body)) {
+      return [];
+    }
+    return documentIdFields
+      .filter((field) => field in body)
+      .map((field) => ({ path: endpoint.path, field }));
   });
 
-  it("does not let a booth member read another booth's summary", async () => {
-    const summary = ENDPOINTS.find((e) => e.path === "/api/booth/[id]/summary")!;
-    const res = await call(
-      { ...summary, params: { id: "some-other-booth" } },
-      { uid: "sweep-seller" },
+  function actorFor(endpoint: Endpoint): string {
+    if (endpoint.role === "sacExec") return "sweep-exec";
+    if (endpoint.role === "sacMember") return "sweep-member";
+    return "sweep-seller";
+  }
+
+  function loggedRequestCodes(): string[] {
+    return vi.mocked(console.log).mock.calls.flatMap(([line]) => {
+      try {
+        const record = JSON.parse(String(line)) as { event?: string; code?: string };
+        return record.event === "request" && record.code ? [record.code] : [];
+      } catch {
+        return [];
+      }
+    });
+  }
+
+  it.each(bodyCases)("$path rejects a slash in $field", async ({ path, field }) => {
+    const endpoint = ENDPOINTS.find((candidate) => candidate.path === path)!;
+    const body = { ...(endpoint.body as Record<string, unknown>), [field]: malformedId };
+    vi.mocked(console.log).mockClear();
+
+    const res = await call({ ...endpoint, body }, { uid: actorFor(endpoint) });
+
+    expect(res.status).toBe(400);
+    expect(await errorCode(res)).toBe("VALIDATION");
+    expect(loggedRequestCodes()).not.toContain("INTERNAL");
+  });
+
+  it("rejects a slash in the student-ledger cursor", async () => {
+    const endpoint = ENDPOINTS.find(
+      (candidate) => candidate.path === "/api/sac/students/[uid]/ledger",
+    )!;
+    vi.mocked(console.log).mockClear();
+
+    const res = await call(endpoint, { uid: "sweep-member", query: "?cursor=a%2Fb" });
+
+    expect(res.status).toBe(400);
+    expect(await errorCode(res)).toBe("VALIDATION");
+    expect(loggedRequestCodes()).not.toContain("INTERNAL");
+  });
+
+  const dynamicEndpoints = ENDPOINTS.filter((endpoint) => endpoint.params);
+
+  it.each(dynamicEndpoints)("$path rejects a decoded slash in route params", async (endpoint) => {
+    const params = Object.fromEntries(
+      Object.keys(endpoint.params!).map((name) => [name, malformedId]),
     );
-    expect(res.status).toBe(403);
-    expect(await errorCode(res)).toBe("FORBIDDEN");
+    vi.mocked(console.log).mockClear();
+
+    const res = await call({ ...endpoint, params }, { uid: actorFor(endpoint) });
+
+    expect(res.status).toBe(400);
+    expect(await errorCode(res)).toBe("VALIDATION");
+    expect(loggedRequestCodes()).not.toContain("INTERNAL");
   });
 });
 

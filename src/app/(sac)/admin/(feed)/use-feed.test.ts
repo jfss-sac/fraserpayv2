@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { FeedAuditEntry, FeedDTO, FeedLedgerEntry } from "@/lib/shared/types";
 import { ApiError } from "@/lib/ui/api-client";
 import { requestFeed } from "./api";
+import type { FeedTimeRange } from "./feed-time-range";
 import { FEED_POLL_MS, useFeed } from "./use-feed";
 
 vi.mock("./api", async (importOriginal) => {
@@ -11,6 +12,12 @@ vi.mock("./api", async (importOriginal) => {
 });
 
 const mockRequestFeed = vi.mocked(requestFeed);
+
+const RANGE: FeedTimeRange = {
+  from: "2026-07-26T11:45:00.000Z",
+  to: "2026-07-26T12:00:00.000Z",
+  label: "Last 15 min",
+};
 
 function ledger(id: string, overrides: Partial<FeedLedgerEntry> = {}): FeedLedgerEntry {
   return {
@@ -58,6 +65,58 @@ afterEach(() => {
 });
 
 describe("filters and pagination", () => {
+  test("composes the active range with filters and older-page requests", async () => {
+    mockRequestFeed
+      .mockResolvedValueOnce({
+        entries: [ledger("r1")],
+        nextCursor: "r2",
+        repeatBuyers: [],
+        repeatBuyersTruncated: false,
+      })
+      .mockResolvedValueOnce({
+        entries: [ledger("r2")],
+        nextCursor: "r3",
+        repeatBuyers: [],
+        repeatBuyersTruncated: false,
+      })
+      .mockResolvedValueOnce({
+        entries: [ledger("r3")],
+        nextCursor: null,
+        repeatBuyers: [],
+        repeatBuyersTruncated: false,
+      });
+    const { result } = renderHook(() =>
+      useFeed({ initialEntries: [ledger("a")], initialCursor: null }),
+    );
+
+    act(() => {
+      result.current.setRange(RANGE);
+    });
+    await flush();
+    expect(mockRequestFeed).toHaveBeenLastCalledWith({ from: RANGE.from, to: RANGE.to });
+
+    act(() => {
+      result.current.setFilter({ kind: "type", type: "purchase" });
+    });
+    await flush();
+    expect(mockRequestFeed).toHaveBeenLastCalledWith({
+      type: "purchase",
+      from: RANGE.from,
+      to: RANGE.to,
+    });
+
+    act(() => {
+      result.current.loadOlder();
+    });
+    await flush();
+    expect(mockRequestFeed).toHaveBeenLastCalledWith({
+      type: "purchase",
+      from: RANGE.from,
+      to: RANGE.to,
+      cursor: "r3",
+    });
+  });
+
   test("changing the filter fetches with that filter and replaces the entries", async () => {
     mockRequestFeed.mockResolvedValue({
       entries: [ledger("t1")],

@@ -33,7 +33,7 @@ function ScopeRow({ usage }: { usage: ActivityScopeUsage }) {
       </span>
       <span className="text-muted">
         peak {usage.peakRequests} / {windowLabel(usage.windowMs)}
-        <span className="text-muted/70"> (cap {usage.limit})</span>
+        <span className="text-muted"> (cap {usage.limit})</span>
       </span>
     </li>
   );

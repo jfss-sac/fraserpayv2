@@ -7,10 +7,11 @@ import { usersCol } from "@/lib/server/db";
 import { InternalError, NotFoundError } from "@/lib/server/errors";
 import { defineHandler } from "@/lib/server/http";
 import { generatePaymentCode } from "@/lib/server/paymentCode";
+import { firestoreDocumentIdSchema } from "@/lib/shared/document-id";
 
 const MAX_CODE_ATTEMPTS = 10;
 
-const regenSchema = z.object({ studentUid: z.string().trim().min(1) }).strict();
+const regenSchema = z.object({ studentUid: firestoreDocumentIdSchema }).strict();
 
 export const POST = defineHandler(
   { role: "sacExec", schema: regenSchema, rateLimit: "exec-mutations" },

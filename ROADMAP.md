@@ -51,13 +51,13 @@ The web app is feature-complete and fully tested; how it works is documented in 
 - [ ] Add a booth transaction history and a booth items view to the booth member screen
 - [ ] Walk through the old FraserPay (v1) UI screen by screen to catch anything v2 is still missing
 - [ ] Reports and reconciliation print/export view for the end-of-day closeout
-- [ ] iOS add-to-home-screen hint on the wallet (previously cut; revisit if iPhone install uptake is low)
+- [x] iOS add-to-home-screen hint on the wallet
 - [ ] Admin dashboard mobile usability pass for execs who manage from their phones
-- [ ] Small-screen audit at 320 px width across every student-facing page
+- [x] Small-screen audit at 320 px width across every student-facing page
 
 ## Deeper testing
 
-- [ ] Flake hunt: run the full E2E journey suite on repeat until three consecutive fully green runs are boring
+- [x] Flake hunt: run the full E2E journey suite on repeat until three consecutive fully green runs are boring
 - [ ] Extend axe accessibility scans to the remaining admin pages
 - [ ] Lighthouse baseline for wallet and POS, tracked over time
 - [ ] Visual regression snapshots for the wallet and POS shells

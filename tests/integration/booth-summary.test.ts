@@ -20,6 +20,7 @@ const ORIGIN = "http://127.0.0.1";
 
 const OPERATOR = { uid: "summary-operator", name: "Opal Operator" };
 const OUTSIDER = { uid: "summary-outsider", name: "Otto Outsider" };
+const EXEC_OUTSIDER = { uid: "summary-exec-outsider", name: "Eddie Exec" };
 
 const BOOTH_ID = "summary-booth";
 const OTHER_BOOTH_ID = "summary-other-booth";
@@ -205,8 +206,15 @@ beforeAll(async () => {
     roles: { sacMember: true, sacExec: true },
   });
   await makeUser({ uid: OUTSIDER.uid, displayName: OUTSIDER.name, paymentCode: "fp1-SOUTSI" });
+  await makeUser({
+    uid: EXEC_OUTSIDER.uid,
+    displayName: EXEC_OUTSIDER.name,
+    paymentCode: "fp1-SEOUTS",
+    roles: { sacMember: true, sacExec: true },
+  });
   cookies[OPERATOR.uid] = await mintSessionCookie(OPERATOR.uid);
   cookies[OUTSIDER.uid] = await mintSessionCookie(OUTSIDER.uid);
+  cookies[EXEC_OUTSIDER.uid] = await mintSessionCookie(EXEC_OUTSIDER.uid);
 
   await makeBooth(BOOTH_ID);
   await makeBooth(OTHER_BOOTH_ID);
@@ -278,6 +286,12 @@ describe("GET /api/booth/[id]/summary", () => {
 
   it("forbids a non-member with FORBIDDEN", async () => {
     const res = await summaryRoute(summaryRequest(OUTSIDER.uid), summaryContext(BOOTH_ID));
+    expect(res.status).toBe(403);
+    expect(await errorCode(res)).toBe("FORBIDDEN");
+  });
+
+  it("forbids a non-member exec with FORBIDDEN", async () => {
+    const res = await summaryRoute(summaryRequest(EXEC_OUTSIDER.uid), summaryContext(BOOTH_ID));
     expect(res.status).toBe(403);
     expect(await errorCode(res)).toBe("FORBIDDEN");
   });

@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { SignOutButton } from "./sign-out-button";
 
 export type Mode = "student" | "sell" | "admin";
 
@@ -33,8 +32,8 @@ export function AppShell({
   return (
     <div className="flex min-h-dvh flex-col">
       <header className="border-b border-border bg-surface">
-        <div className="mx-auto flex w-full max-w-3xl items-center justify-between gap-4 p-4">
-          <nav aria-label="Mode" className="flex items-center gap-1">
+        <div className="mx-auto flex w-full max-w-3xl flex-wrap items-center justify-between gap-2 p-4">
+          <nav aria-label="Mode" className="flex flex-wrap items-center gap-1">
             {modes.map((mode) => {
               const meta = MODE_META[mode];
               const isActive = mode === active;
@@ -54,7 +53,20 @@ export function AppShell({
               );
             })}
           </nav>
-          <SignOutButton />
+          <nav aria-label="Account" className="flex flex-wrap items-center gap-1">
+            <Link
+              href="/account"
+              className="flex min-h-11 items-center rounded-md px-3 py-2 text-sm font-medium text-muted"
+            >
+              Account
+            </Link>
+            <Link
+              href="/leaderboard"
+              className="flex min-h-11 items-center rounded-md px-3 py-2 text-sm font-medium text-muted"
+            >
+              Leaderboard
+            </Link>
+          </nav>
         </div>
       </header>
       {suspended ? (
