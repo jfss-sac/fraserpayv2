@@ -64,3 +64,6 @@ firebase-export-*/
 next-env.d.ts
 
 certificates
+
+#legacy FraserPay reference checkout
+/legacy/fraserpay-sac/
