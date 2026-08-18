@@ -222,8 +222,8 @@ export function BoothRegisterForm({ actorUid }: { actorUid: string }) {
             Items (prices in $0.50 steps)
           </legend>
           {draft.items.map((item, index) => (
-            <div key={index} className="flex items-end gap-2">
-              <div className="flex flex-1 flex-col gap-1">
+            <div key={index} className="flex flex-col gap-2 sm:flex-row sm:items-end">
+              <div className="flex flex-col gap-1 sm:min-w-0 sm:flex-1">
                 <label htmlFor={`item-name-${index}`} className="text-xs text-foreground">
                   Item name
                 </label>
@@ -234,7 +234,7 @@ export function BoothRegisterForm({ actorUid }: { actorUid: string }) {
                   className="rounded-md border border-border px-3 py-2"
                 />
               </div>
-              <div className="flex w-28 flex-col gap-1">
+              <div className="flex w-full flex-col gap-1 sm:w-28">
                 <label htmlFor={`item-price-${index}`} className="text-xs text-foreground">
                   Price ($)
                 </label>
@@ -250,7 +250,7 @@ export function BoothRegisterForm({ actorUid }: { actorUid: string }) {
                 type="button"
                 onClick={() => removeItem(index)}
                 disabled={draft.items.length === 1}
-                className="rounded-md border border-border px-3 py-2 text-sm disabled:opacity-40"
+                className="self-start rounded-md border border-border px-3 py-2 text-sm disabled:opacity-40 sm:self-end"
               >
                 Remove
               </button>
