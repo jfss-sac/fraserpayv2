@@ -19,6 +19,7 @@ const prettierIgnore = readFileSync(join(root, ".prettierignore"), "utf8");
 const firebaseConfig = readJson("firebase.json");
 const legacyFirebaseConfig = readJson("legacy/fraserpay-sac/firebase.local.json");
 const legacyRules = readFileSync(join(root, "legacy/fraserpay-sac/firestore.local.rules"), "utf8");
+const rootRules = firebaseConfig.firestore?.rules;
 
 check(
   Array.isArray(tsconfig.exclude) && tsconfig.exclude.includes("legacy"),
@@ -30,7 +31,7 @@ check(
   ".prettierignore must exclude the legacy checkout from v2 formatting.",
 );
 check(
-  firebaseConfig.firestore?.rules === "firestore.rules",
+  rootRules === "firestore.rules",
   "Root Firebase deployment must use the v2 firestore.rules file.",
 );
 check(
@@ -42,7 +43,7 @@ check(
   "Legacy emulator config must use its local-only Firestore rules.",
 );
 check(
-  !firebaseConfig.firestore?.rules.includes("legacy"),
+  typeof rootRules === "string" && !rootRules.includes("legacy"),
   "Root Firebase deployment must not reference the legacy checkout.",
 );
 check(
