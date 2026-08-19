@@ -20,6 +20,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
+      - name: Verify v2 boundary
+        run: pnpm check:v2-boundary
       - name: Typecheck
         run: pnpm typecheck
       - name: Lint

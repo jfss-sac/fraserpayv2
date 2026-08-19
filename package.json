@@ -37,6 +37,7 @@
     "scan:server-only": "node scripts/security-scan.mjs server-only",
     "scan:secrets": "node scripts/security-scan.mjs secrets",
     "scan:security": "node scripts/security-scan.mjs",
+    "check:v2-boundary": "node scripts/check-v2-boundary.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },

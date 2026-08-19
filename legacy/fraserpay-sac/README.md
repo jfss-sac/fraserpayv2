@@ -1,5 +1,12 @@
 # FraserPay
 
+> This is a legacy reference checkout for local emulator work only. It is not
+> part of the root FraserPay v2 typecheck, lint, format, build, or deployment.
+> Its permissive `firestore.local.rules` file is intentionally limited to the
+> emulators configured by `firebase.local.json`; never deploy this checkout or
+> those rules to a real Firebase project. The root `firebase.json` and
+> `firestore.rules` are the only v2 Firestore deployment configuration.
+
 ![Vite](https://img.shields.io/badge/Vite-646CFF?style=for-the-badge&logo=vite&logoColor=white)
 ![React](https://img.shields.io/badge/React-61DAFB?style=for-the-badge&logo=react&logoColor=black)
 ![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white)

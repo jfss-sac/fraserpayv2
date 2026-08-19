@@ -10,3 +10,4 @@ pnpm-lock.yaml
 .docs/
 public/sw.js
 plugins/
+legacy/
