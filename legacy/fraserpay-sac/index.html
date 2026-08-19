@@ -1,0 +1,187 @@
+
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no" />
+    <title>Fraser Pay</title>
+    <meta name="description" content="Payment system for John Fraser Secondary School" />
+    <meta name="author" content="Akshat Chopra" />
+    <meta name="theme-color" content="#00c9a7" />
+
+    <!-- Prevent caching for fresh content -->
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+
+    <!-- PWA related tags -->
+    <link rel="manifest" href="/manifest.json" />
+    <link rel="apple-touch-icon" href="/lovable-uploads/ed1f3f9a-22a0-42de-a8cb-354fb8c82dae.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Fraser Pay" />
+
+    <!-- iOS splash screen images -->
+    <link rel="apple-touch-startup-image" href="/lovable-uploads/ed1f3f9a-22a0-42de-a8cb-354fb8c82dae.png" />
+
+    <!-- Open Graph / Social Media -->
+    <meta property="og:title" content="Fraser Pay" />
+    <meta property="og:description" content="Payment system for John Fraser Secondary School" />
+    <meta property="og:type" content="website" />
+    <meta property="og:image" content="/lovable-uploads/ed1f3f9a-22a0-42de-a8cb-354fb8c82dae.png" />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:site" content="@jfsac" />
+    <meta name="twitter:image" content="/lovable-uploads/ed1f3f9a-22a0-42de-a8cb-354fb8c82dae.png" />
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/png" href="/lovable-uploads/ed1f3f9a-22a0-42de-a8cb-354fb8c82dae.png" />
+    
+    <!-- Preload critical assets -->
+    <link rel="preload" href="/lovable-uploads/ed1f3f9a-22a0-42de-a8cb-354fb8c82dae.png" as="image" />
+    
+    <!-- Critical CSS -->
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+        background: linear-gradient(to bottom, #f8fafc, #f1f5f9);
+        min-height: 100vh;
+        width: 100%;
+        overflow-x: hidden;
+        position: relative;
+      }
+      
+      /* iOS specific fixes */
+      body.ios {
+        /* Add padding for iOS notch and home indicator */
+        padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+      }
+      
+      /* Splash screen during initial load */
+      #splash {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        background: linear-gradient(to bottom, #f8fafc, #f1f5f9);
+        z-index: 9999;
+        opacity: 1;
+        transition: opacity 0.3s ease-out;
+      }
+      
+      #splash.hidden {
+        opacity: 0;
+        pointer-events: none;
+      }
+      
+      #splash img {
+        width: 80px;
+        height: 80px;
+        margin-bottom: 16px;
+      }
+      
+      .spinner {
+        border: 3px solid #f3f3f3;
+        border-top: 3px solid #00c9a7;
+        border-radius: 50%;
+        width: 30px;
+        height: 30px;
+        animation: spin 1s linear infinite;
+      }
+      
+      @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+      
+      /* Hide content until it's fully loaded */
+      #root {
+        opacity: 0;
+        transition: opacity 0.3s ease-in;
+        width: 100%;
+      }
+      
+      #root.loaded {
+        opacity: 1;
+      }
+    </style>
+  </head>
+
+  <body>
+    <!-- Splash screen that shows during initial load -->
+    <div id="splash">
+      <img src="/lovable-uploads/ed1f3f9a-22a0-42de-a8cb-354fb8c82dae.png" alt="Fraser Pay Logo" />
+      <div class="spinner"></div>
+    </div>
+    
+    <div id="root"></div>
+    
+    <!-- IMPORTANT: DO NOT REMOVE THIS SCRIPT TAG OR THIS VERY COMMENT! -->
+    <script src="https://cdn.gpteng.co/gptengineer.js" type="module"></script>
+    
+    <!-- Initialize app -->
+    <script type="module" src="/src/main.tsx"></script>
+    
+    <script>
+      // Detect iOS and add class to body
+      if (/iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream) {
+        document.body.classList.add('ios');
+      }
+    
+      // Register service worker for PWA functionality
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/service-worker.js')
+            .then(registration => {
+              console.log('Service Worker registered with scope:', registration.scope);
+            })
+            .catch(error => {
+              console.error('Service Worker registration failed:', error);
+            });
+        });
+      }
+      
+      // Remove splash screen and show content when app is ready
+      window.addEventListener('load', () => {
+        // Use requestAnimationFrame to ensure DOM is ready before removal
+        requestAnimationFrame(() => {
+          // Delay a bit to ensure everything is loaded
+          setTimeout(() => {
+            const splash = document.getElementById('splash');
+            const root = document.getElementById('root');
+            
+            if (splash && root) {
+              splash.classList.add('hidden');
+              root.classList.add('loaded');
+              
+              // Completely remove splash after transition completes
+              setTimeout(() => {
+                if (splash.parentNode) {
+                  splash.parentNode.removeChild(splash);
+                }
+              }, 500);
+            }
+          }, 500);
+        });
+      });
+      
+      // Clear cache on each visit
+      if ('caches' in window) {
+        caches.keys().then(cacheNames => {
+          cacheNames.forEach(cacheName => {
+            caches.delete(cacheName);
+          });
+        });
+      }
+    </script>
+  </body>
+</html>
